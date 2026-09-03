@@ -1,0 +1,578 @@
+<title>Ten Decisions Before Build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<style>
+:root{
+  --ground:#F6F7F2; --surface:#FFFFFF; --surface-2:#EFF1E9;
+  --ink:#191C15; --ink-2:#4E5548; --ink-3:#757C6D;
+  --rule:#DCE0D2; --rule-strong:#C3C9B6;
+  --green-text:#567C18; --green-mark:#5E841A; --green-fill:#86BC25;
+  --alert:#8C3A14; --alert-soft:#F6E8E0;
+  --open:#7E6110; --open-soft:#F4EDDA;
+  --accepted-soft:#E7F0D9;
+  --display:'Archivo','Helvetica Neue',Arial,sans-serif;
+  --body:'Newsreader',Georgia,'Times New Roman',serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --measure:44rem;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#14170F; --surface:#1B1F16; --surface-2:#232820;
+    --ink:#E9ECE1; --ink-2:#AEB5A4; --ink-3:#828A73;
+    --rule:#2F3529; --rule-strong:#454D3C;
+    --green-text:#86BC25; --green-mark:#86BC25; --green-fill:#86BC25;
+    --alert:#E08A5C; --alert-soft:#32221A;
+    --open:#D6AC4A; --open-soft:#2B2517;
+    --accepted-soft:#1F2A14;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#14170F; --surface:#1B1F16; --surface-2:#232820;
+  --ink:#E9ECE1; --ink-2:#AEB5A4; --ink-3:#828A73;
+  --rule:#2F3529; --rule-strong:#454D3C;
+  --green-text:#86BC25; --green-mark:#86BC25; --green-fill:#86BC25;
+  --alert:#E08A5C; --alert-soft:#32221A;
+  --open:#D6AC4A; --open-soft:#2B2517;
+  --accepted-soft:#1F2A14;
+}
+
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);
+  font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--measure);margin:0 auto;padding:0 1.35rem}
+
+/* ---- masthead ---- */
+.mast{background:var(--surface);border-bottom:1px solid var(--rule)}
+.mast .wrap{padding-top:3.2rem;padding-bottom:2.4rem;display:flex;flex-direction:column;gap:1.5rem}
+.eyebrow{font-family:var(--mono);font-size:.66rem;font-weight:500;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--green-text)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(1.9rem,5.2vw,2.7rem);
+  line-height:1.12;letter-spacing:-.02em;margin:0;text-wrap:balance}
+.standfirst{font-size:1.12rem;color:var(--ink-2);margin:0;max-width:34rem;text-wrap:pretty}
+.meta{display:grid;grid-template-columns:auto 1fr;gap:.3rem 1.1rem;
+  font-family:var(--mono);font-size:.76rem;line-height:1.5;border-top:1px solid var(--rule);padding-top:1.3rem}
+.meta dt{color:var(--ink-3);text-transform:uppercase;letter-spacing:.07em;font-size:.66rem;padding-top:.15em}
+.meta dd{margin:0;color:var(--ink-2)}
+
+/* ---- flow ---- */
+main .wrap{padding-top:2.6rem;padding-bottom:4rem;display:flex;flex-direction:column;gap:2.6rem}
+section{display:flex;flex-direction:column;gap:1rem}
+h2{font-family:var(--display);font-weight:600;font-size:1.28rem;line-height:1.25;
+  letter-spacing:-.012em;margin:0;text-wrap:balance}
+h3{font-family:var(--display);font-weight:600;font-size:.95rem;margin:0;letter-spacing:-.005em}
+p{margin:0;text-wrap:pretty}
+a{color:var(--green-text)}
+strong{font-weight:600;color:var(--ink)}
+code,.fig{font-family:var(--mono);font-size:.86em;font-variant-numeric:tabular-nums}
+code{background:var(--surface-2);padding:.08em .32em;border-radius:2px;color:var(--ink-2)}
+ul{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:.5rem}
+li::marker{color:var(--green-mark)}
+hr{border:0;border-top:1px solid var(--rule);margin:0}
+
+/* ---- tables ---- */
+.scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-family:var(--display);font-size:.8rem;line-height:1.45}
+th,td{text-align:left;padding:.6rem .75rem;border-bottom:1px solid var(--rule);vertical-align:top}
+thead th{font-weight:600;font-size:.66rem;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--ink-3);background:var(--surface-2);white-space:nowrap;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink-2)}
+.tnote{font-family:var(--mono);font-size:.68rem;color:var(--ink-3);letter-spacing:.02em}
+
+/* ---- status chips ---- */
+.chip{display:inline-block;font-family:var(--mono);font-size:.62rem;font-weight:500;
+  letter-spacing:.06em;text-transform:uppercase;padding:.2em .5em;border-radius:2px;white-space:nowrap}
+.chip.accepted{background:var(--accepted-soft);color:var(--green-text)}
+.chip.open{background:var(--open-soft);color:var(--open)}
+.chip.gating{background:var(--alert-soft);color:var(--alert)}
+.chip.superseded{background:var(--surface-2);color:var(--ink-3);text-decoration:line-through}
+tr.struck td:not(:last-child){color:var(--ink-3);text-decoration:line-through}
+.banner{border-left:2px solid var(--ink-3);background:var(--surface-2);padding:.75rem 1rem;
+  border-radius:0 3px 3px 0;font-size:.92rem;color:var(--ink-2)}
+.banner b{color:var(--ink)}
+
+/* ---- decision records ---- */
+.decisions{display:flex;flex-direction:column;gap:0}
+.rec{display:grid;grid-template-columns:3.1rem 1fr;gap:0 1rem;
+  padding:1.9rem 0;border-top:1px solid var(--rule)}
+.rec.gate{border-top:2px solid var(--green-fill)}
+.rec .idx{font-family:var(--mono);font-size:.82rem;font-weight:600;color:var(--green-mark);
+  padding-top:.28em;font-variant-numeric:tabular-nums}
+.rec.gate .idx{color:var(--alert)}
+.rec .col{display:flex;flex-direction:column;gap:.85rem;min-width:0}
+.rec h2{font-size:1.16rem}
+.tags{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+.tag{font-family:var(--mono);font-size:.66rem;color:var(--ink-3);letter-spacing:.03em;
+  border:1px solid var(--rule-strong);padding:.16em .45em;border-radius:2px}
+.tag b{color:var(--ink-2);font-weight:500}
+
+.rx{border-left:2px solid var(--green-fill);background:var(--surface);
+  padding:.8rem 1rem;display:flex;flex-direction:column;gap:.4rem;border-radius:0 3px 3px 0}
+.rx .lab{font-family:var(--mono);font-size:.63rem;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--green-text)}
+.rx.warn{border-left-color:var(--alert)}
+.rx.warn .lab{color:var(--alert)}
+.dflt{font-family:var(--mono);font-size:.72rem;color:var(--ink-3);line-height:1.5}
+.dflt b{color:var(--ink-2);font-weight:500}
+
+/* ---- appendix vocab ---- */
+.vocab{background:var(--surface);border:1px solid var(--rule);border-radius:3px;
+  padding:.85rem 1rem;display:flex;flex-direction:column;gap:.35rem}
+.vocab .hd{font-family:var(--display);font-size:.78rem;font-weight:600}
+.vocab .hd span{font-family:var(--mono);font-weight:400;color:var(--ink-3);font-size:.72rem}
+.vocab .list{font-family:var(--mono);font-size:.73rem;line-height:1.75;color:var(--ink-2);
+  font-variant-numeric:tabular-nums}
+.vocab .list em{font-style:normal;color:var(--alert);font-weight:500}
+
+footer{border-top:1px solid var(--rule);background:var(--surface)}
+footer .wrap{padding-top:1.6rem;padding-bottom:2.6rem;display:flex;flex-direction:column;gap:.5rem}
+footer p{font-family:var(--mono);font-size:.71rem;color:var(--ink-3);line-height:1.6}
+
+@media (max-width:620px){
+  body{font-size:16px}
+  .rec{grid-template-columns:1fr;gap:.55rem}
+  .rec .idx{padding-top:0}
+  .meta{grid-template-columns:1fr;gap:.15rem}
+  .meta dt{padding-top:.6rem}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+:focus-visible{outline:2px solid var(--green-mark);outline-offset:2px}
+</style>
+
+<header class="mast">
+  <div class="wrap">
+    <p class="eyebrow">Mining &amp; Metals — Whitespace Intelligence Tool</p>
+    <h1>Ten decisions are needed before build starts, and one of them decides whether the build happens at all</h1>
+    <p class="standfirst">The design is complete and every factual claim in it has been re-measured against the two source workbooks. These ten things are not engineering decisions.</p>
+    <dl class="meta">
+      <dt>To</dt><dd>Kay Ampofo (workbook owner), Samuel Owusu (solution owner)</dd>
+      <dt>From</dt><dd>Design workstream</dd>
+      <dt>Status</dt><dd>All ten closed · 1 superseded by POC scope · risk review to book</dd>
+      <dt>Date</dt><dd>3 September 2026</dd>
+    </dl>
+  </div>
+</header>
+
+<main>
+<div class="wrap">
+
+<section>
+  <h2>Why this pack exists</h2>
+  <p>The design runs to seventeen sections and specifies schema, contracts, prompt structure and delivery plan. Every figure in it is held green by an automated check against the workbooks — <span class="fig">54</span> of <span class="fig">54</span> assertions passing. What it does not specify is the ten things below, because those ten are judgement calls about the practice, not about the code.</p>
+  <p><strong>Decision 1 decides whether the architecture is permissible at all.</strong> It has no engineering mitigation, the longest lead time, and an external owner. A refusal arriving in week eight rather than week one loses everything built on it. It starts on day one regardless of the rest of this pack.</p>
+  <p>The other nine block Phase 1. Each is a yes/no or a pick-one, each carries a recommendation, and each has a safe default — so construction is not held up by silence. What silence costs is a change of direction landing after the code is written.</p>
+  <div class="rx warn">
+    <span class="lab">A note on the source data</span>
+    <p>Both workbooks were read cell by cell, and several figures below contradict the original brief. Where they do, the measured figure governs. The most consequential correction: the population is <span class="fig">144</span> TSX and <span class="fig">115</span> TSXV with <strong>no</strong> other-exchange company. A count formula starting one row below the data drops the first company, and a hard-coded <code>+1</code> restores the total by inventing a company on an exchange that has no members.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Decision summary</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>#</th><th>Decision</th><th>Owner</th><th>Recommendation</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>Risk and legal acceptance of the hosting and model arrangement</td><td>Samuel</td><td>Start day one; narrowed to public issuer facts</td><td><span class="chip accepted">Closed</span></td></tr>
+        <tr><td class="num">2</td><td>Filing aggregator's storage restriction accepted as read</td><td>Kay + legal</td><td>Accept it; issuer-hosted documents only</td><td><span class="chip accepted">Closed</span></td></tr>
+        <tr><td class="num">3</td><td>May <code>Unclassified</code> be displayed as a tier state?</td><td>Kay</td><td>Yes — display it</td><td><span class="chip accepted">Closed</span></td></tr>
+        <tr><td class="num">4</td><td>Confirm the recovered province and jurisdiction axes</td><td>Kay</td><td>Confirm Appendix A; roll the US up to one bucket</td><td><span class="chip accepted">Closed</span></td></tr>
+        <tr><td class="num">5</td><td>Confirm the auditor entity identifier is carved out of the scope cut</td><td>Kay</td><td>Carve it out</td><td><span class="chip accepted">Closed</span></td></tr>
+        <tr><td class="num">6</td><td>Confirm computed prior-tier columns are written to the export</td><td>Kay</td><td>Write them</td><td><span class="chip accepted">Closed</span></td></tr>
+        <tr class="struck"><td class="num">7</td><td>Cut the Deloitte-clients cross-tab, or ship it with the gap shown?</td><td>Kay + Samuel</td><td>Ship it with <span class="fig">230</span> never-checked on the face of it</td><td><span class="chip superseded">Superseded</span></td></tr>
+        <tr><td class="num">8</td><td>A dark-first dashboard?</td><td>Samuel + brand</td><td>Light-first with corrected green tokens</td><td><span class="chip accepted">Closed</span></td></tr>
+        <tr><td class="num">9</td><td>Threshold operator and proximity band width</td><td>Kay</td><td>At or above $200M; 2% band</td><td><span class="chip accepted">Closed</span></td></tr>
+        <tr><td class="num">10</td><td>Coverage floors per chart, and who may override a blocked publish</td><td>Kay</td><td>Floors as tabled; Admin override with printed reason</td><td><span class="chip accepted">Closed</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="rx">
+    <span class="lab">All ten closed as at 3 September 2026</span>
+    <p>Both owners have accepted the recommendations as they stand. Nothing in this pack is outstanding.</p>
+    <p><strong>One decision was overtaken by a scope constraint set after it was accepted.</strong> Decision 7 was accepted by both owners and is then removed by the POC scope below, because the field it cross-tabulates is no longer stored. It is recorded as superseded rather than quietly dropped.</p>
+  </div>
+</section>
+
+<section>
+  <h2>The POC scope constraint, and the one view it removes</h2>
+  <p><strong>This build is a proof of concept, and no Deloitte client information is stored in it.</strong> If the firm later decides to hold client data in the application, it will run its own due diligence first. That constraint is set by the solution owner and governs the design; it is not a decision this pack asks for.</p>
+  <p>Three fields in the workbook could be read as client information. They are not equivalent, and only one has to come out.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Field</th><th>What it holds</th><th>Public?</th><th>Disposition</th></tr></thead>
+    <tbody>
+      <tr><td><code>Deloitte Tax Client</code><br><span class="tnote">col. AI</span></td><td><strong>28 <code>Yes</code>, 1 <code>No</code>, 230 blank.</strong> Names 28 companies as Deloitte tax clients</td><td><strong>No.</strong> A tax engagement is not a public disclosure</td><td><strong>Removed from the POC.</strong> Not parsed, not stored, not exported</td></tr>
+      <tr><td><code>DTT Market</code><br><span class="tnote">col. N</span></td><td>209 populated — British Columbia 121, Ontario 61, Quebec &amp; NCR 12, Prairies Region 7, Atlantic 5, Chile 3</td><td>Not client data — a Deloitte-internal geographic label on a public company</td><td><strong>Retained.</strong> Identifies no client. Flag if the firm reads it otherwise</td></tr>
+      <tr><td><code>Auditor</code><br><span class="tnote">col. AK</span></td><td>259 populated, <code>Deloitte</code> on 17 rows</td><td><strong>Yes</strong> — the auditor of record appears in every issuer's annual filing</td><td><strong>Retained.</strong> Publicly disclosed fact, sourced via a licensed platform</td></tr>
+    </tbody>
+  </table></div>
+  <div class="rx warn">
+    <span class="lab">The consequence — the cross-tab cannot be built</span>
+    <p>Decision 7 chose to ship the Deloitte-clients cross-tab with three states, so the <span class="fig">230</span> never-checked companies were visible. With column AI out of scope there is no client status to cross-tabulate at all, so the view is cut from the POC — by the data policy, not by preference. It returns intact if due diligence later admits the field, and the three-state design stands ready for that.</p>
+    <p><strong>Kay should hear this from Samuel rather than find it on the dashboard</strong>, since he accepted a view that the scope constraint then removed.</p>
+  </div>
+  <h3>What the constraint does not change</h3>
+  <ul>
+    <li><strong>The personal-data controls stay exactly as designed.</strong> Named individuals sit in both uploaded files regardless of what is stored downstream — three cell comments by a named employee, and a sheet of named partners and client contacts in the screener. Parse-before-persist, the one-hour quarantine and the person-data tripwire are unaffected.</li>
+    <li><strong>The prompt-egress controls stay too</strong>, and the reason is worth stating: if this POC is what the firm evaluates during due diligence, the controls that keep internal fields out of prompts should already be in place to <em>be</em> evaluated. Removing them because there is currently nothing to protect makes the later review harder, not easier.</li>
+    <li><strong>The licence position is unchanged.</strong> Public issuer facts are still held under two third-party licences. Public does not mean freely storable.</li>
+  </ul>
+</section>
+
+<hr>
+
+<div class="decisions">
+
+<article class="rec gate">
+  <div class="idx">01</div>
+  <div class="col">
+    <h2>Risk and legal must accept the hosting and model arrangement before anything else is built</h2>
+    <div class="tags"><span class="tag">Owner <b>Samuel</b></span><span class="tag">Blocks <b>everything</b></span><span class="tag">Lead time <b>external, unbounded</b></span><span class="chip gating">Gating</span></div>
+    <p><strong>Decision needed.</strong> Do risk and legal accept (a) licensed exchange and screener extracts, and (b) internal Deloitte client flags, held in a non-Deloitte cloud, with (c) company facts sent as prompts to the model vendor?</p>
+    <p>Three separate acceptances are bundled in one question, and they can be granted separately.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>What is being asked</th><th>Exposure</th><th>If refused</th></tr></thead>
+      <tbody>
+        <tr><td>Licensed extract facts in the database</td><td>Public company data under two third-party licences</td><td><strong>Fatal</strong> to the architecture</td></tr>
+        <tr class="struck"><td>Internal client flags in the database</td><td>Tax-client flag, Deloitte market, pursuit fields</td><td><strong>Withdrawn from the POC</strong> — the field is not stored, so this acceptance is not sought</td></tr>
+        <tr><td>Company facts in prompts</td><td>Public issuer facts only; internal fields excluded by three mechanisms</td><td>Survivable — enrichment becomes manual, removing most of the value</td></tr>
+      </tbody>
+    </table></div>
+    <h3>Take these mitigations into the review; they are designed in, not promised</h3>
+    <ul>
+      <li><strong>Personal data is never persisted.</strong> Uploads land in one-hour quarantine, are parsed, and the raw bytes are deleted rather than archived. A tripwire blocks the commit and names the cell coordinates — never the value — if person-shaped data reaches an ingested field.</li>
+      <li><strong>Internal fields cannot reach a prompt.</strong> A type boundary the prompt builder will not accept, revoked column privileges on the worker's database role, and a pre-flight egress scan that throws and dead-letters the job. The last is covered by a contract test.</li>
+      <li><strong>Both licence notices travel with every export</strong> and onto printable dashboard views. No share links and no public dashboards in Phase 1.</li>
+      <li><strong>Residual stored data is public-only</strong> if the second acceptance is refused, which is what makes that refusal survivable.</li>
+    </ul>
+    <div class="rx">
+      <span class="lab">State the purpose limitation in the ask</span>
+      <p>These records are used for one thing: deciding which companies the practice pursues. A named, bounded purpose is easier to accept than an open-ended data holding, and it is the truth.</p>
+    </div>
+    <div class="rx warn">
+      <span class="lab">Do not overstate how public the corpus is</span>
+      <p>The issuer facts are public records and this pack treats them that way. Two things in the uploaded files are not, and a reviewer will find them. <strong>Personal data sits in both files</strong> — the whitespace workbook carries three cell comments authored by a named employee; the screener's third sheet holds named partners, named client relationship owners, and free-text notes recording individuals' responses to outreach. And <strong>the tax-client flag</strong>, populated on <span class="fig">29</span> rows, records which companies are Deloitte clients — an internal fact about the firm, not a public record about the issuer.</p>
+      <p>Raising both unprompted is the stronger position, because the design already answers them.</p>
+    </div>
+    <p><strong>One item to raise explicitly:</strong> the model vendor's training and retention posture. Request zero-retention if it is available on the account.</p>
+    <div class="banner"><b>Position accepted. Narrowed on 3 September 2026 by the POC scope constraint.</b> The second acceptance is withdrawn — the tax-client field is not stored, so the review is not asked to approve internal client data in a non-Deloitte cloud. <b>Two acceptances remain, both covering public issuer facts:</b> licensed extract records held in the database, and those same facts sent as prompts. That is a materially lighter ask than this section was originally written for, and the review should be framed to match. It still has to happen — licensed public records are not unrestricted ones, and the vendor's retention posture is still worth asking about.</div>
+  </div>
+</article>
+
+<article class="rec">
+  <div class="idx">02</div>
+  <div class="col">
+    <h2>Accept the filing aggregator's storage restriction as read, and fee coverage becomes a floor of tens rather than hundreds</h2>
+    <div class="tags"><span class="tag">Owner <b>Kay + legal</b></span><span class="tag">Blocks <b>fee dashboards</b></span></div>
+    <p><strong>Decision needed.</strong> Is the aggregator's restriction accepted as read — that it forbids automated <em>and</em> manual extraction, and forbids storing the retrieved data in a database?</p>
+    <p>The restriction reaches further than a scraping ban. It reaches the application's own document cache, so the source cannot be used even with a human in the loop. That leaves issuer-hosted documents as the only automated route to audit and tax fee disclosure — a materially smaller reachable population. Trading on a US over-the-counter venue generally does not make a Canadian issuer a filer there; of the venue spellings in the extract, only three are registrant venues.</p>
+    <p><strong>Consequence either way.</strong> Fee coverage is committed as a floor with a named count, never as a percentage. "Audit fees found for <span class="fig">61</span> of <span class="fig">259</span> companies" is honest. "24%" invites the question of what the rest are, and the answer is not "no fees" but "not disclosed where we may look."</p>
+    <div class="rx">
+      <span class="lab">Recommendation</span>
+      <p>Accept it. Fees are already sequenced last for independent reasons: they do not feed the tier logic, the source columns are empty across all <span class="fig">259</span> rows so there is no baseline to validate against, and they carry the highest fabrication stakes of any field in the product.</p>
+      <p>This is the one decision with a scheduled evidence check — week-one spike <strong>S2</strong> samples five companies for fee disclosure on issuer sites. If coverage is high, fees move up the order and the conversation reopens with data behind it.</p>
+    </div>
+    <p class="dflt"><b>Default if we hear nothing:</b> treat as accepted. Issuer-hosted only.</p>
+  </div>
+</article>
+
+<article class="rec">
+  <div class="idx">03</div>
+  <div class="col">
+    <h2>Displaying <code>Unclassified</code> is the difference between a truthful dashboard and a false one</h2>
+    <div class="tags"><span class="tag">Owner <b>Kay</b></span><span class="tag">Blocks <b>what day one looks like</b></span></div>
+    <p><strong>Decision needed.</strong> May <code>Unclassified</code> appear as a tier state, or must every company resolve to a tier between 1 and 6?</p>
+    <p>The stage-of-operations columns use an <code>X</code> presence marker, and blank means <em>not researched</em> — not <em>false</em>.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>State</th><th>Companies</th></tr></thead>
+      <tbody>
+        <tr><td>No stage marker at all</td><td class="num"><strong>242 of 259</strong></td></tr>
+        <tr><td>Royalty or streaming marker only</td><td class="num">17</td></tr>
+        <tr><td>Exploration, development or production marker</td><td class="num">0</td></tr>
+      </tbody>
+    </table></div>
+    <p>Modelling stage as four booleans collapses all <span class="fig">242</span> unresearched companies into the same input a company would have if an analyst had affirmatively confirmed it was pre-exploration. Agnico Eagle — a producer with properties in Nunavut, Ontario and Finland — and a dormant shell arrive at the classifier indistinguishable. That is precisely how today's dashboard reaches a single bar at Tier 4.</p>
+    <p>So the choice on day one, before enrichment has run, is between a dashboard showing <span class="fig">242</span> companies as <code>Unclassified</code> and one showing <span class="fig">259</span> companies at Tier 4. The first is true. The second is the defect this project exists to fix.</p>
+    <div class="rx">
+      <span class="lab">Recommendation</span>
+      <p>Display it, styled as a gap rather than a sixth colour in the tier ramp, with the count on the face of the chart. The state is implemented in the engine either way — only its display is in question — so this decision is reversible at no cost.</p>
+    </div>
+    <p class="dflt"><b>Default if we hear nothing:</b> display it.</p>
+  </div>
+</article>
+
+<article class="rec">
+  <div class="idx">04</div>
+  <div class="col">
+    <h2>Confirm the province and jurisdiction axes recovered from the data, because the headers that named them are gone</h2>
+    <div class="tags"><span class="tag">Owner <b>Kay</b></span><span class="tag">Blocks <b>two dashboard views</b></span></div>
+    <p><strong>Decision needed.</strong> Confirm the twelve Canadian jurisdictions and the foreign list in Appendix A as the canonical axes — and decide whether the United States is one bucket or fifty.</p>
+    <p>The "producing mines by Canadian province" table is eleven columns wide with <strong>nine of eleven header cells reduced to <code>#REF!</code></strong>. Two province labels survive. The jurisdiction table does not exist at all — no table, not even a broken one. The axes have been recovered from the property values themselves, and need confirming by someone who knows the practice's intent.</p>
+    <ul>
+      <li><strong>Thirteen Canadian tokens collapse to twelve jurisdictions.</strong> <code>NT</code> (<span class="fig">6</span>) and <code>NWT</code> (<span class="fig">1</span>) are the same territory. Prince Edward Island is absent. Three of the twelve are territories, so "by province" is the wrong label — suggest "by province and territory".</li>
+      <li><strong>The foreign axis mixes two levels of granularity.</strong> Every column holds country names except the USA column, which holds twenty US <em>state</em> codes — Nevada <span class="fig">25</span>, Alaska <span class="fig">15</span>, Arizona <span class="fig">10</span>. One axis cannot hold both without ranking Nevada against Mexico.</li>
+      <li><strong>Both axes carry the same spelling disease as the auditor column.</strong> <code>Colombia</code> beside <code>Columbia</code>, <code>Côte d'Ivoire</code> beside <code>Cote D'Ivoire</code>, <code>Ethiopia</code> beside <code>Ethopia</code>, plus <code>Sambia</code> and <code>Botawana</code>. Each needs an alias map, built once and confirmed once.</li>
+    </ul>
+    <div class="rx">
+      <span class="lab">Recommendation</span>
+      <p>Confirm Appendix A. Roll the United States up to a single bucket on the jurisdiction axis and keep the state detail on the company profile, where it is useful and where nothing is being ranked.</p>
+    </div>
+    <p class="dflt"><b>Default if we hear nothing:</b> Appendix A as listed, US rolled up, aliases as mapped — all reversible, none silently.</p>
+  </div>
+</article>
+
+<article class="rec">
+  <div class="idx">05</div>
+  <div class="col">
+    <h2>The auditor entity identifier must be carved out of the empty-artifact scope cut</h2>
+    <div class="tags"><span class="tag">Owner <b>Kay</b></span><span class="tag">Blocks <b>the identity model</b></span></div>
+    <p><strong>Decision needed.</strong> Confirm that <code>Entity ID (S&amp;P)</code> on the auditor tab is explicitly excluded from the decision to cut empty artifacts from scope.</p>
+    <p>The scope cut says nothing empty in the source workbooks is designed in. Applied carelessly, it takes this column with it — and the column is not empty.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Identifier</th><th>Coverage</th><th>Usable?</th></tr></thead>
+      <tbody>
+        <tr><td><code>Co_ID</code> (TSX extract)</td><td class="num">0 of 181</td><td>No — header-only placeholder</td></tr>
+        <tr><td><code>Co_ID</code> / <code>PO ID</code> (TSXV extract)</td><td class="num">0 of 899 each</td><td>No — header-only placeholders</td></tr>
+        <tr><td><code>Entity ID (S&amp;P)</code> (auditor tab)</td><td class="num"><strong>143 real IDs</strong>, 116 "Not found"</td><td><strong>Yes</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p>It resembles the two genuinely empty vendor columns closely enough to be swept away by the same reading, and it is the only stable non-ticker identifier anywhere in the corpus.</p>
+    <p><strong>Why that matters more than it sounds.</strong> Ticker plus exchange is not a stable key either: <span class="fig">98</span> rows in the TSX extract carry a venture-graduate flag, so a majority of the senior-exchange cohort has already changed exchange at least once. A composite key reads an ordinary graduation as one company disappearing and a different one appearing — corrupting period comparison and tier migration for exactly the companies whose progression the practice most wants to track.</p>
+    <div class="rx">
+      <span class="lab">Recommendation</span>
+      <p>Carve it out. This is a confirmation, not a trade-off.</p>
+    </div>
+    <p class="dflt"><b>Default if we hear nothing:</b> carved out.</p>
+  </div>
+</article>
+
+<article class="rec">
+  <div class="idx">06</div>
+  <div class="col">
+    <h2>Computed prior-tier columns go into the export, a deliberate departure from the scope cut</h2>
+    <div class="tags"><span class="tag">Owner <b>Kay</b></span><span class="tag">Blocks <b>the export contract</b></span></div>
+    <p><strong>Decision needed.</strong> Confirm that the export writes computed prior-period tier columns, even though the corresponding source columns are empty today.</p>
+    <p>Same scope cut as decision 5, and this time the departure is deliberate rather than a rescue. The prior-tier columns are empty because there has never been a prior period to compute from. The application will have one from its second period onward, and the tier-migration view the practice asked for is unreadable without it.</p>
+    <ul>
+      <li><strong>The exported totals will not match the workbook's.</strong> The application computes population from its own dataset; the workbook's proof block is off by one and carries a compensating <code>+1</code>. Expect "the numbers changed" as a defect on first delivery — the answer is pre-written and ships with the export.</li>
+      <li><strong>Nine source cells already begin with <code>@</code></strong>, which Excel interprets as a formula. The sanitiser marks any cell beginning with an interpretable character as text. An active concern with a live example, not a theoretical one.</li>
+    </ul>
+    <div class="rx"><span class="lab">Recommendation</span><p>Write them.</p></div>
+    <p class="dflt"><b>Default if we hear nothing:</b> written.</p>
+  </div>
+</article>
+
+<article class="rec">
+  <div class="idx">07</div>
+  <div class="col">
+    <h2>Ship the Deloitte-clients cross-tab with its gap on the face of it, or cut it — but do not ship it looking complete</h2>
+    <div class="tags"><span class="tag">Owner <b>Kay + Samuel</b></span><span class="tag">Blocks <b>a dashboard view</b></span><span class="chip superseded">Superseded</span></div>
+    <div class="banner"><b>Superseded, 3 September 2026.</b> Accepted by both owners, then removed by the POC scope constraint: the tax-client field is not stored, so there is no client status to cross-tabulate. The view is cut from the POC, and the reasoning below is retained for the point at which due diligence admits the field.</div>
+    <p><strong>Decision needed.</strong> Cut the cross-tab from Phase 1, or ship it showing the <span class="fig">230</span> never-checked companies explicitly?</p>
+    <p><strong><span class="fig">230</span> of <span class="fig">259</span> rows are blank on the client flag, and blank means never checked — not "not a client."</strong> The denominator is unknown for <span class="fig">89%</span> of the population. A cross-tab treating blank as "no" reports a whitespace count that could be wrong by up to <span class="fig">230</span> in one direction.</p>
+    <p>The workbook's version compounds this: cross-tabs fail on string mismatch rather than missing data. Headers typed as <code>Quebec and NCR</code> and <code>Prairie Region</code> never match the stored <code>Quebec &amp; NCR</code> and <code>Prairies Region</code>, so two of five market rows can only ever return zero. Separately, <span class="fig">53</span> of <span class="fig">259</span> companies have a foreign head office and therefore no Deloitte market at all, dropping a fifth of the population out of every market view.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Option</th><th>Assessment</th></tr></thead>
+      <tbody>
+        <tr><td>Cut it from Phase 1</td><td>Honest, and removes a view the practice asked for</td></tr>
+        <tr><td><strong>Three states, not two</strong> — client, confirmed not a client, never checked</td><td><strong>Recommended</strong></td></tr>
+        <tr><td>Ship as a two-state chart</td><td><strong>Not recommended at any price.</strong> A confident number that is wrong, on a partner's screen, with nothing on screen saying so</td></tr>
+      </tbody>
+    </table></div>
+    <div class="rx">
+      <span class="lab">Recommendation</span>
+      <p>Three states. The gap is the finding — it tells the practice that client status has never been established for <span class="fig">89%</span> of the companies it tracks, which is worth knowing and is fixable by an afternoon of checking rather than by AI enrichment.</p>
+    </div>
+    <p class="dflt"><b>Accepted by both owners, then superseded.</b> Option 2 stands as the design for the day the field returns; the POC ships without the view.</p>
+  </div>
+</article>
+
+<article class="rec">
+  <div class="idx">08</div>
+  <div class="col">
+    <h2>The brand green fails contrast on white, which forces a palette decision rather than an accessibility footnote</h2>
+    <div class="tags"><span class="tag">Owner <b>Samuel + brand</b></span><span class="tag">Blocks <b>palette tokens</b></span><span class="chip accepted">Accepted</span></div>
+    <p><strong>Decision needed.</strong> Dark-first dashboard, or light-first with corrected green tokens?</p>
+    <p>The Deloitte signature green <code>#86BC25</code> measures <strong>2.27:1 on white</strong> and <strong>9.23:1 on black</strong>. WCAG requires 3:1 for non-text and 4.5:1 for text. On a light surface the brand green cannot carry axis text, thin lines, focus rings or small markers — and the failure is invisible to eye-checking, because large green fills look perfectly fine.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Use</th><th>Light token</th><th>Ratio</th><th>Dark token</th><th>Ratio</th></tr></thead>
+      <tbody>
+        <tr><td>Focus rings, borders <span class="tnote">3:1 floor</span></td><td><code>#5E841A</code></td><td class="num">4.38:1 ✓</td><td><code>#86BC25</code></td><td class="num">7.66:1 ✓</td></tr>
+        <tr><td>Green text <span class="tnote">4.5:1 floor</span></td><td><code>#567C18</code></td><td class="num">4.89:1 ✓</td><td><code>#86BC25</code></td><td class="num">7.66:1 ✓</td></tr>
+      </tbody>
+    </table></div>
+    <p>Text and non-text have different floors and one token cannot serve both, which is why there are two light-mode greens above.</p>
+    <p><strong>Being straight about this one.</strong> Dark-first resolves the problem cleanly and the measurement is not in doubt. But this is a Deloitte deliverable that partners will see beside other Deloitte material, and a dark dashboard may be wrong for that context in ways a contrast ratio does not capture. The light alternative — corrected greens for every small mark, brand green reserved for large fills — is entirely workable and only slightly less elegant. This is a taste-and-brand decision wearing an accessibility argument, and it is put as a question for that reason.</p>
+    <div class="rx">
+      <span class="lab">Recommendation</span>
+      <p>Light-first with the corrected tokens. The brand green stays on screen where it reads as the brand — in large fills — and gets out of the way where it cannot be read. <em>This page is built on those tokens.</em></p>
+    </div>
+    <p class="dflt"><b>Accepted by the solution owner.</b> One dependency remains: the exact tokens need confirming against Deloitte's internal brand hub. Public sources corroborate the green as Pantone 368 but are not authoritative. That blocks visual sign-off at milestone five, not function.</p>
+  </div>
+</article>
+
+<article class="rec">
+  <div class="idx">09</div>
+  <div class="col">
+    <h2>The threshold operator is ambiguous, and two companies sit close enough to the line for it to matter next quarter</h2>
+    <div class="tags"><span class="tag">Owner <b>Kay</b></span><span class="tag">Blocks <b>entrant and drop-out semantics</b></span></div>
+    <p><strong>Decision needed.</strong> Is the market-cap threshold <em>strictly above</em> $200M or <em>at or above</em> $200M — and how wide is the proximity band?</p>
+    <p>The threshold is stated three ways in the workbook: "in excess of" $200M on the cover, "≥ CAD $200M" on the consolidated list, and $50M on the dashboard labels. The active autofilter baked into the extract uses <code>greaterThanOrEqual 200000000</code>.</p>
+    <p>Today both readings yield the same <span class="fig">259</span> companies, because the smallest is <span class="fig">$201,701,608</span>. So this looks like it does not matter. It matters next quarter: <strong>Generation Mining and Greenland Resources sit <span class="fig">0.85%</span> and <span class="fig">0.86%</span> above the line.</strong> A normal market move drops either below it, and the application reports a drop-out — a company the practice stopped tracking — when nothing happened except a share price.</p>
+    <div class="rx">
+      <span class="lab">Recommendation</span>
+      <p>At or above $200M, matching the filter actually baked into the source file. Add a <strong>2% proximity band</strong> so companies within it are flagged as near-threshold on both sides rather than silently entering and leaving the population. Both companies above fall inside that band today, which is the point.</p>
+    </div>
+    <p class="dflt"><b>Default if we hear nothing:</b> at or above, 2% band.</p>
+  </div>
+</article>
+
+<article class="rec">
+  <div class="idx">10</div>
+  <div class="col">
+    <h2>Coverage floors decide when a period may be published, and someone has to be able to override them</h2>
+    <div class="tags"><span class="tag">Owner <b>Kay</b></span><span class="tag">Blocks <b>the publish gate</b></span></div>
+    <p><strong>Decision needed.</strong> Confirm the per-chart coverage floors below which publish is blocked, and confirm that an Admin may override with a recorded reason.</p>
+    <p>Publish freezes an immutable snapshot that every dashboard then reads. It is blocked while any default-dashboard chart sits below its floor, while unresolved conflicts remain, or while the run's fabrication rate exceeds its ceiling.</p>
+    <p>The floors are a judgement about how much of a chart may be missing before the chart misleads. Engineering has no basis for setting them; the practice does. <strong>Proposed starting values, to be confirmed or moved</strong> — only the stage floor is carried over from the design, the rest are proposals:</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Chart</th><th>Proposed floor</th></tr></thead>
+      <tbody>
+        <tr><td>Tier distribution</td><td class="num">95% with a resolved stage</td></tr>
+        <tr><td>Footprint views</td><td class="num">95% with a resolved footprint</td></tr>
+        <tr><td>Province and jurisdiction views</td><td class="num">90% with resolved property regions</td></tr>
+        <tr><td>Auditor cross-tab</td><td class="num">90%</td></tr>
+        <tr><td>Fee views</td><td class="num"><strong>No floor</strong> — named count, per decision 2</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>On the override.</strong> It must exist — a quarter close will eventually arrive with a chart one company short of its floor, and a tool that cannot be published is a tool that gets abandoned for the workbook. The override sits with an Admin and <strong>prints the recorded reason in the dashboard header</strong>, where a reader sees it. That is the mechanism that stops a stale-data warning becoming a banner nobody reads — which is what happened to the workbook's own <code>TAB NOT UPDATED</code> notice.</p>
+    <div class="rx"><span class="lab">Recommendation</span><p>Floors as tabled. Admin-only override, reason mandatory and printed.</p></div>
+    <p class="dflt"><b>Default if we hear nothing:</b> as tabled.</p>
+  </div>
+</article>
+
+</div>
+
+<hr>
+
+<section>
+  <h2>What happens next</h2>
+  <p>With all ten closed, <strong>Milestone 1 is unblocked</strong> — ingestion, validation report and the tier truth table, no AI. It is where the design already puts weeks two and three, and it is the milestone that de-risks the most for the least cost.</p>
+  <p>The caveat that previously sat here has lifted. Milestone 1 was to run against a local database while the internal-client-flag question was open; with the tax-client field out of scope entirely, nothing it writes is client data. The licence acceptance for the public issuer records still wants settling before the hosted store carries a full period, but it no longer gates the parser, the validation report or the tier engine.</p>
+  <p><strong>One thing to carry into Milestone 1:</strong> the parser's column allowlist must exclude column AI positively, and the validation report should name it as deliberately skipped rather than silently absent — so the exclusion is visible to whoever runs due diligence later.</p>
+</section>
+
+<section>
+  <h2>Six things the design assumed, recorded here rather than buried</h2>
+  <p>Where the brief was silent, these were chosen. None blocks Phase 1; each is stated so it can be challenged.</p>
+  <ul>
+    <li><strong>Six tiers in the model, grouped 5-and-6 on the dashboard.</strong> The source computes six, the dashboard shows five, the pursuit tab lists five and omits exploration. Six is kept because grouping is reversible and losing a tier is not.</li>
+    <li><strong><code>Unclassified</code> is implemented regardless of decision 3.</strong> The engine needs the state; only its display is in question.</li>
+    <li><strong>Fees are sequenced last</strong>, which the brief lists third. See decision 2.</li>
+    <li><strong>The evaluation set is a regression and failure-mode instrument, not a precision estimate.</strong> At <span class="fig">25</span> companies the confidence interval is roughly ±20 points, and it should not be quoted as an accuracy figure.</li>
+    <li><strong>Magic-link authentication only</strong>, no passwords, for the pilot.</li>
+    <li><strong>Batched enrichment is the default</strong> and synchronous is the exception, reversing the usual assumption. It halves the token cost and removes the deadline problem.</li>
+  </ul>
+</section>
+
+<hr>
+
+<section>
+  <h2>Appendix A — the recovered axes, for decision 4</h2>
+  <p>Extracted from the property region columns of the whitespace matrix (<code>A.02 Matrix</code>, columns Y–AF, rows 6–264), splitting multi-value cells on commas, slashes and conjunctions. Counts are company-mentions, not companies. Reproducible from the source workbook. <span class="tnote">Values in red need confirming.</span></p>
+
+  <h3>Canadian jurisdictions — 13 tokens, 12 jurisdictions, 112 mentions</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Token</th><th>Mentions</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><code>BC</code></td><td class="num">27</td><td></td></tr>
+      <tr><td><code>ON</code></td><td class="num">25</td><td></td></tr>
+      <tr><td><code>QC</code></td><td class="num">17</td><td></td></tr>
+      <tr><td><code>YT</code></td><td class="num">12</td><td>Territory</td></tr>
+      <tr><td><code>SK</code></td><td class="num">8</td><td></td></tr>
+      <tr><td><code>NL</code></td><td class="num">6</td><td></td></tr>
+      <tr><td><code>NT</code></td><td class="num">6</td><td>Territory</td></tr>
+      <tr><td><code>NU</code></td><td class="num">3</td><td>Territory</td></tr>
+      <tr><td><code>MB</code></td><td class="num">3</td><td></td></tr>
+      <tr><td><code>AB</code></td><td class="num">2</td><td></td></tr>
+      <tr><td><code>NB</code></td><td class="num">1</td><td></td></tr>
+      <tr><td><code>NWT</code></td><td class="num">1</td><td><strong>Alias of NT</strong></td></tr>
+      <tr><td><code>NS</code></td><td class="num">1</td><td></td></tr>
+    </tbody>
+  </table></div>
+  <p class="tnote">Prince Edward Island does not appear. Three of the twelve are territories.</p>
+
+  <h3>Foreign jurisdictions — 82 tokens, 342 mentions</h3>
+  <div class="vocab">
+    <p class="hd">Latin America <span>16 tokens · 147 mentions</span></p>
+    <p class="list">Mexico 36 · Peru 21 · Chile 20 · Brazil 19 · Argentina 18 · Colombia 6 · Guyana 6 · Bolivia 5 · Nicaragua 4 · Ecuador 3 · Dominican Republic 2 · Panama 2 · Suriname 2 · Guatemala 1 · <em>Columbia 1</em> · Venezuela 1</p>
+  </div>
+  <div class="vocab">
+    <p class="hd">United States <span>20 tokens · 86 mentions · state codes, not countries</span></p>
+    <p class="list">NV 25 · AK 15 · AZ 10 · ID 8 · CA 5 · UT 5 · WY 3 · SD 2 · MT 2 · OR 1 · WV 1 · VA 1 · MI 1 · SC 1 · CO 1 · MN 1 · NY 1 · TX 1 · NM 1 · AR 1</p>
+  </div>
+  <div class="vocab">
+    <p class="hd">Africa <span>24 tokens · 51 mentions</span></p>
+    <p class="list">Cote D'Ivoire 6 · Mali 5 · Burkina Faso 5 · Namibia 3 · DRC 3 · Tanzania 3 · Zambia 3 · Ghana 3 · Guinea 2 · Senegal 2 · Mauritania 2 · South Africa 2 · Morocco 1 · Niger 1 · Sudan 1 · Guinea-Bissau 1 · Gabon 1 · Malawi 1 · Nigeria 1 · <em>Côte d'Ivoire 1</em> · <em>Ethopia 1</em> · Ethiopia 1 · <em>Sambia 1</em> · <em>Botawana 1</em></p>
+  </div>
+  <div class="vocab">
+    <p class="hd">UK and Europe <span>12 tokens · 29 mentions</span></p>
+    <p class="list">Turkiye 6 · Finland 5 · Sweden 4 · Spain 3 · Ireland 3 · Portugal 2 · Bulgaria 1 · Serbia 1 · Greece 1 · Netherlands 1 · Greenland 1 · Poland 1</p>
+  </div>
+  <div class="vocab">
+    <p class="hd">Australia, NZ and PNG <span>3 tokens · 15 mentions</span></p>
+    <p class="list">Australia 12 · Papua New Guinea 2 · New Zealand 1</p>
+  </div>
+  <div class="vocab">
+    <p class="hd">Asia <span>6 tokens · 13 mentions</span></p>
+    <p class="list">Mongolia 5 · Philippines 3 · China 2 · South Korea 1 · Kazakhstan 1 · Malaysia 1</p>
+  </div>
+  <div class="vocab">
+    <p class="hd">Other <span>1 token · 1 mention</span></p>
+    <p class="list">Saudi Arabia 1</p>
+  </div>
+
+  <h3>Alias map proposed for confirmation</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Variant found</th><th>Canonical</th></tr></thead>
+    <tbody>
+      <tr><td><code>NWT</code></td><td>NT</td></tr>
+      <tr><td><code>Columbia</code></td><td>Colombia</td></tr>
+      <tr><td><code>Cote D'Ivoire</code></td><td>Côte d'Ivoire</td></tr>
+      <tr><td><code>Ethopia</code></td><td>Ethiopia</td></tr>
+      <tr><td><code>Sambia</code></td><td>Zambia — <strong>confirm</strong></td></tr>
+      <tr><td><code>Botawana</code></td><td>Botswana — <strong>confirm</strong></td></tr>
+      <tr><td><code>Turkiye</code></td><td>Türkiye</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tnote">The last two are inferences from a single mention each and should be checked against the underlying companies before the map is fixed.</p>
+</section>
+
+<section>
+  <h2>Appendix B — where these decisions come from</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>Decision</th><th>Design section</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td><code>11-security-privacy-compliance</code>, <code>14-delivery-plan</code> (spike S6, risk R1)</td></tr>
+      <tr><td class="num">2</td><td><code>02-scope-phases-non-goals</code>, <code>14-delivery-plan</code> (spike S2, risk R2)</td></tr>
+      <tr><td class="num">3</td><td><code>00-corrected-ground-truth</code>, <code>07-classification-engine</code></td></tr>
+      <tr><td class="num">4</td><td><code>00-corrected-ground-truth</code>, <code>09-dashboards-and-reporting</code></td></tr>
+      <tr><td class="num">5</td><td><code>00-corrected-ground-truth</code>, <code>05-domain-model-and-schema</code></td></tr>
+      <tr><td class="num">6</td><td><code>10-excel-export</code></td></tr>
+      <tr><td class="num">7</td><td><code>05-domain-model-and-schema</code>, <code>09-dashboards-and-reporting</code></td></tr>
+      <tr><td class="num">8</td><td><code>09-dashboards-and-reporting</code>, <code>16-least-confident-decisions</code></td></tr>
+      <tr><td class="num">9</td><td><code>00-corrected-ground-truth</code></td></tr>
+      <tr><td class="num">10</td><td><code>08-review-workspace</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+</div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Every figure in this pack is re-measured against the source workbooks by <code>scripts/verify_ground_truth.py</code> — currently 54 of 54 assertions passing. The Appendix A extraction is reproducible from the same workbooks.</p>
+    <p>Source workbooks are not committed to the repository. Canonical text: <code>docs/decisions/QUESTIONS-PACK.md</code>.</p>
+  </div>
+</footer>

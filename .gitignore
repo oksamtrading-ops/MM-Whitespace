@@ -1,0 +1,32 @@
+# Source workbooks are NOT committed.
+# Both files carry third-party licence restrictions (TSX Group Inc. and Refinitiv
+# are the recorded creators) and embedded personal data: each records a named
+# last modifier, the whitespace workbook carries cell comments authored by a
+# named employee, and the LSEG screen contains a sheet of named partners,
+# client contacts and free-text notes on client responses.
+# See docs/design/11-security-privacy-compliance.md.
+reference/
+*.xlsx
+*.xlsb
+*.xlsm
+
+# ...except the synthesised fixture, which contains no real company data and
+# no personal data, and which the test suite needs in order to run anywhere.
+!tests/fixtures/synthetic_whitespace.xlsx
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+.vercel/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
