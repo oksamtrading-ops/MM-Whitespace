@@ -88,10 +88,9 @@ def main(argv=None):
     if args.json:
         payload = {
             "period": report.get("period"),
-            "companies": [
-                {k: v for k, v in c.items() if k not in ("region_provenance",)}
-                for c in companies.values()
-            ],
+            # region_provenance is exported: the commit step needs it to write
+            # the fact assertion, which is what makes a re-upload safe.
+            "companies": list(companies.values()),
             "report": {
                 "blocking": [f._asdict() for f in report["blocking"]],
                 "warnings": [f._asdict() for f in report["warnings"]],

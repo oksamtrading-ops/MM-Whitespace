@@ -5,9 +5,14 @@
   "type": "module",
   "description": "Mining Whitespace Intelligence Tool -- Milestone 1: ingestion, validation, tiering.",
   "scripts": {
-    "test": "node --test 'src/**/*.test.ts'",
+    "test": "node --test 'src/**/*.test.ts' && python3 -m unittest discover -s tests",
+    "test:node": "node --test 'src/**/*.test.ts'",
+    "test:py": "python3 -m unittest discover -s tests",
     "ingest": "python3 -m mmparser.cli",
-    "parity": "python3 scripts/parity_check.py"
+    "commit": "node scripts/commit_period.mjs",
+    "parity": "node scripts/parity_check.mjs"
   },
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  }
 }

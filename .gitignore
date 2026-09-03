@@ -30,3 +30,8 @@ build/
 .DS_Store
 *.swp
 .idea/
+
+# Local database files from the period commit
+*.db
+*.db-journal
+*.sqlite

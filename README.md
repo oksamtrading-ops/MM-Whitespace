@@ -33,6 +33,19 @@ node --test 'src/**/*.test.ts'
 
 The Node suite needs no dependencies — Node 24 runs TypeScript directly.
 
+### Committing a period
+
+```bash
+python3 -m mmparser.cli "reference/M&M - Whitespace Analysis Q3-2026.xlsx" --json /tmp/period.json
+node scripts/commit_period.mjs /tmp/period.json ./period.db --fresh
+```
+
+Writes companies, identifier intervals, the immutable fact snapshot, resolved
+values, stage presence rows, tiers and rule-by-rule traces. Re-running it is
+idempotent. On the real workbook the committed tier distribution is **242
+unclassified and 17 at Tier 4** — the honest spread, against the workbook's own
+single false bar of 259.
+
 ### The parity check
 
 Runs the tier engine across all 259 real companies and asserts the difference
@@ -66,7 +79,10 @@ python3 scripts/verify_ground_truth.py --reference-dir reference
 | `mmparser/ingest.py` | Identity resolution, three-way region merge, proof totals |
 | `src/lib/tiering/` | The classification engine and its 64-row truth table |
 | `tests/fixtures/` | A synthesised structural derivative. The real workbook is never a fixture |
-| `scripts/` | Parity check and the ground-truth regression |
+| `supabase/migrations/` | The canonical schema, in Postgres. `0003` is Postgres-only and is not applied locally |
+| `src/lib/db/dialect.ts` | Mechanical Postgres→SQLite translation, so the schema under test is the schema that ships |
+| `src/lib/db/commit.ts` | The period commit |
+| `scripts/` | Period commit, parity check and the ground-truth regression |
 
 ## Two things that are easy to get wrong
 
@@ -82,3 +98,42 @@ the consolidated list and nowhere in the extracts. Under a naive overwrite a
 re-parse nulls all five, and for two companies that flips the footprint and moves
 them a tier — a tier change caused purely by re-reading the file. Region cells are
 a three-way merge, and every carry-forward is warned per occurrence by name.
+
+## The database
+
+The migrations in `supabase/migrations/` are written in Postgres and are the
+artifact that ships. There is no Postgres on this machine, so the local runtime
+translates them mechanically for SQLite rather than keeping a second schema by
+hand — `src/lib/db/dialect.ts` throws on any construct it cannot translate
+faithfully, so an untranslated one fails at load instead of quietly changing
+meaning. Roles and row-level security live in a Postgres-only migration that the
+local path skips.
+
+**Precedence is enforced by the database, not by the commit code.** The promotion
+of extract values is a conditional upsert that can only ever overwrite another
+extract value:
+
+```sql
+on conflict (period_id, company_id, field_key) do update
+  set value = excluded.value
+  where v.source = 'extract' and v.frozen_at is null
+```
+
+So an accepted finding, a manual override or a value frozen at publish survives a
+re-import even if the application code is wrong. The tests assert exactly that,
+because it is the invariant a refactor is most likely to break.
+
+### Two schema decisions worth knowing
+
+`companies` has **no `deloitte_tax_client` column.** The design specifies one;
+this build stores no Deloitte client information. The Deloitte market is a
+different case — it is the firm's own label on a public company and identifies no
+client, so it is stored, classified `deloitte_internal`, and hidden from Viewers
+by policy. That leaves the classification mechanism exercised by a live row
+rather than by none, which is what a later due-diligence review needs in order to
+inspect it.
+
+`company_identifiers` uses **two partial unique indexes, not one constraint.** A
+`UNIQUE` constraint treats NULLs as distinct in both dialects, so a scheme with
+no exchange — `sp_entity_id`, 143 of them — would never conflict with itself and
+every re-import would insert the whole set again.
