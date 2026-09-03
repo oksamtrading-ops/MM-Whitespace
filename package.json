@@ -10,7 +10,8 @@
     "test:py": "python3 -m unittest discover -s tests",
     "ingest": "python3 -m mmparser.cli",
     "commit": "node scripts/commit_period.mjs",
-    "parity": "node scripts/parity_check.mjs"
+    "parity": "node scripts/parity_check.mjs",
+    "setup": "git config core.hooksPath .githooks && echo 'pre-commit hook enabled'"
   },
   "engines": {
     "node": ">=24"

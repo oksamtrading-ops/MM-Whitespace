@@ -1,0 +1,47 @@
+#!/bin/sh
+# Refuse to commit a licensed source workbook.
+#
+# GitHub branch protection is unavailable on a private repo on the Free plan,
+# so this is the enforcement point. It runs before anything reaches history,
+# which is the only moment the problem is cheap to fix: once a workbook is in
+# GitHub history, removing it means rewriting history, not deleting a file.
+#
+# Enabled by:  git config core.hooksPath .githooks
+# Bypassed by: git commit --no-verify   (deliberately possible, never routine)
+
+FIXTURE='tests/fixtures/synthetic_whitespace.xlsx'
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+bad=$(printf '%s\n' "$staged" | grep -iE '\.(xlsx|xlsb|xlsm)$' | grep -vxF "$FIXTURE")
+if [ -n "$bad" ]; then
+  echo "pre-commit: refusing to commit a spreadsheet that is not the synthetic fixture."
+  echo
+  printf '%s\n' "$bad" | sed 's/^/    /'
+  echo
+  echo "  The source workbooks carry personal data and two third-party licences"
+  echo "  and must never be committed. See docs/design/11-security-privacy-compliance.md."
+  echo "  If this really is a synthetic fixture, add it to the allowlist in .githooks/pre-commit."
+  exit 1
+fi
+
+ref=$(printf '%s\n' "$staged" | grep -E '^reference/')
+if [ -n "$ref" ]; then
+  echo "pre-commit: refusing to commit files under reference/ -- that directory holds"
+  echo "  the private copies of the source workbooks."
+  printf '%s\n' "$ref" | sed 's/^/    /'
+  exit 1
+fi
+
+# A large binary is usually a workbook that slipped past the extension check.
+for f in $staged; do
+  [ -f "$f" ] || continue
+  [ "$f" = "$FIXTURE" ] && continue
+  size=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
+  if [ -n "$size" ] && [ "$size" -gt 2000000 ]; then
+    echo "pre-commit: $f is ${size} bytes. Large binaries are refused by default;"
+    echo "  use --no-verify if this is genuinely intended."
+    exit 1
+  fi
+done
+
+exit 0

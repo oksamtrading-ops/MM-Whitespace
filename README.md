@@ -21,6 +21,16 @@ Renders the validation report: blocking findings, warnings requiring
 acknowledgement, and the six proof totals, which must tie before a period may be
 committed. Nothing is written anywhere.
 
+### First, after cloning
+
+```bash
+npm run setup
+```
+
+Points git at `.githooks/`, which refuses to commit a source workbook. Git does
+not enable a repository's hooks on clone, so this step is manual and is the one
+thing worth not skipping — see below.
+
 ### Running the tests
 
 ```bash
@@ -137,3 +147,31 @@ inspect it.
 `UNIQUE` constraint treats NULLs as distinct in both dialects, so a scheme with
 no exchange — `sp_entity_id`, 143 of them — would never conflict with itself and
 every re-import would insert the whole set again.
+
+## Why a commit hook rather than branch protection
+
+GitHub branch protection and rulesets both require GitHub Pro on a private
+repository, so neither is available here. The protection that matters most is
+therefore local and lives in `.githooks/pre-commit`, which refuses to commit any
+spreadsheet other than the synthetic fixture, anything under `reference/`, or any
+unexpected large binary.
+
+That is the right enforcement point regardless of plan. Once a licensed workbook
+reaches GitHub history, removing it means rewriting history and force-pushing —
+not deleting a file. The hook stops it before the commit exists.
+
+CI backs this up rather than replacing it: the `guard` job fails the build if any
+workbook other than the fixture is tracked, or has ever been committed on any
+branch. That catches anything committed with `--no-verify`, or from a clone where
+`npm run setup` was skipped — but it catches it *after* the push, which is why the
+hook comes first.
+
+If the repository later moves to a Deloitte-controlled organisation, or the
+account moves to Pro, add server-side protection on `main` with these five
+required checks and force-push and deletion disabled:
+
+    no licensed workbook is tracked
+    tier engine and period commit
+    parser (3.9)
+    parser (3.12)
+    the fixture rebuilds from source
