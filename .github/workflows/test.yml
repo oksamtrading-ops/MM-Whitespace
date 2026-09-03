@@ -1,0 +1,86 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Deliberately NOT run here: scripts/parity_check.mjs and
+# scripts/verify_ground_truth.py. Both read the source workbooks, which carry
+# personal data and two third-party licences and are never committed. They run
+# locally or in a nightly job with access to the private copies.
+
+jobs:
+  guard:
+    name: no licensed workbook is tracked
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Assert only the synthetic fixture is tracked
+        run: |
+          tracked=$(git ls-files '*.xlsx' '*.xlsb' '*.xlsm' | grep -v '^tests/fixtures/synthetic_whitespace.xlsx$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::A licensed workbook is tracked. These files must never be committed:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "OK - only the synthetic fixture is tracked."
+      - name: Assert no workbook is anywhere in history
+        run: |
+          hist=$(git log --all --diff-filter=A --name-only --pretty=format: \
+                 | sort -u \
+                 | grep -iE '\.(xlsx|xlsb|xlsm)$' \
+                 | grep -v '^tests/fixtures/synthetic_whitespace.xlsx$' || true)
+          if [ -n "$hist" ]; then
+            echo "::error::A licensed workbook exists in git history and must be removed:"
+            echo "$hist"
+            exit 1
+          fi
+          echo "OK - no licensed workbook has ever been committed."
+
+  node:
+    name: tier engine and period commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # No dependencies: Node 24 runs TypeScript directly and node:sqlite is
+      # built in, so there is nothing to install.
+      - run: npm run test:node
+
+  python:
+    name: parser
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the floor this code targets; the upper version catches drift.
+        python-version: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install openpyxl
+      - run: npm run test:py
+
+  fixture:
+    name: the fixture rebuilds from source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install openpyxl
+      # The committed fixture must be reproducible: delete it, regenerate it,
+      # and the suite must still pass against the rebuilt file.
+      - run: |
+          rm -f tests/fixtures/synthetic_whitespace.xlsx
+          python3 tests/fixtures/build_fixture.py
+          python3 -m unittest discover -s tests
