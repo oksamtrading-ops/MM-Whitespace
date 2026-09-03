@@ -1,0 +1,13 @@
+{
+  "name": "mm-whitespace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mining Whitespace Intelligence Tool -- Milestone 1: ingestion, validation, tiering.",
+  "scripts": {
+    "test": "node --test 'src/**/*.test.ts'",
+    "ingest": "python3 -m mmparser.cli",
+    "parity": "python3 scripts/parity_check.py"
+  },
+  "engines": { "node": ">=24" }
+}
