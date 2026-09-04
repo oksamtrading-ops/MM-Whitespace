@@ -67,7 +67,9 @@ Fees come last on evidence, not preference: they do not feed the tier logic, the
 
 ## Per-route model and citation decisions
 
-The constraint that "structured output cannot be combined with citations" is **true only for web search**, where citations are always enabled. It does not generalise, and treating it as global throws away the strongest available guard.
+The constraint that "structured output cannot be combined with citations" was recorded here as **true only for web search**. **That is wrong against the current API** — corrected 4 September 2026, when the client module was built. Setting `citations: {enabled: true}` on a document block together with `output_config.format` returns a 400 on any route, not only a searching one.
+
+The fees route therefore **keeps citations and gives up structured output**, because this section's own reasoning for citations is the stronger of the two: an API-generated span over the document cannot be fabricated, whereas a model-authored excerpt in a structured field can. Fee findings are parsed from citation blocks, and the anchoring gate re-verifies them regardless. Every other route keeps structured output and leaves citations off. `src/lib/enrich/client.ts` asserts the two are never both set, so the combination cannot be reintroduced by accident.
 
 | Route | Model | Output mode | Rationale |
 |---|---|---|---|

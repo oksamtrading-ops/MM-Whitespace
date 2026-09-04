@@ -3,7 +3,7 @@
 **To:** Kay Ampofo (workbook owner), Samuel Owusu (solution owner)
 **From:** Design workstream
 **Re:** Mining Whitespace Intelligence Tool — decisions required to start Phase 1
-**Status:** all ten decisions closed, 3 September 2026. Retained as the decision record.
+**Status:** all ten decisions closed. **Decision 1 approved by legal, 4 September 2026.** Retained as the decision record.
 
 ---
 
@@ -97,6 +97,8 @@ Raising both unprompted is the stronger position, because the design already ans
 **One item to raise explicitly:** the model vendor's training and retention posture. Request zero-retention if it is available on the account.
 
 **Recommendation.** Book the review this week and take all three acceptances at once. Confirm the database region and that backups inherit it, and state plainly in the sign-off that the compute region may differ from the data region.
+
+> **Approved by legal, 4 September 2026.** This decision is closed. The remaining prerequisites for a first live call are operational, not legal: credentials in the environment, and spike S3 — confirm the account tier and limits, set per-environment spend limits, and exercise both spend-limit error shapes. `src/lib/enrich/client.ts` classifies both shapes as halt rather than retry, and refuses to run live without credentials.
 
 **Position accepted by the solution owner. Narrowed on 3 September 2026 by the POC scope constraint.**
 
