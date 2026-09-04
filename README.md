@@ -56,6 +56,21 @@ idempotent. On the real workbook the committed tier distribution is **242
 unclassified and 17 at Tier 4** — the honest spread, against the workbook's own
 single false bar of 259.
 
+### Milestone 2 — one company enriched end to end
+
+```bash
+npm run research
+```
+
+Drives a company through the ledger — queued, claimed, researching, persisting,
+completed — runs every proposed finding through the anchoring gate, scores the
+evidence, and persists. **Nothing is sent anywhere.** Replay is the default and
+live mode throws in this build, pending the risk and legal review under decision 1.
+
+The recordings in `tests/cassettes/` are synthesised, not captured vendor
+responses; see the README there. One deliberately contains a fabricated tax fee
+that the gate quarantines while accepting the real audit fee beside it.
+
 ### The parity check
 
 Runs the tier engine across all 259 real companies and asserts the difference
@@ -175,3 +190,42 @@ required checks and force-push and deletion disabled:
     parser (3.9)
     parser (3.12)
     the fixture rebuilds from source
+
+## The grounding gate
+
+The worst output this system can produce is a fabricated audit fee on a partner's
+dashboard, so the guard against it is mechanical rather than prompt-based: a
+numeric value must appear, after normalisation, in text the application itself
+retrieved from a URL the application itself fetched.
+
+`src/lib/enrich/anchor.ts` closes the holes that a naive "check the excerpt
+against the document" leaves open:
+
+| Hole | Rule |
+|---|---|
+| Re-extraction drift | Verify against the byte-identical stored artifact, keyed by hash. Never re-extract at verification time |
+| Unicode | Compare a versioned normalised form on both sides — ligatures, soft hyphens, non-breaking spaces inside figures, dash and quote variants |
+| Tables | A fee and its label are rarely contiguous, so for numerics contiguity is dropped and a **proximity conjunction** is required instead: numeral, controlled label, and fiscal year within one window |
+| Scale words | "$412" under an "in thousands" header is $412,000. The finding declares its scale and the verifier checks it against the document's own phrase |
+| No text layer | A characters-per-page gate, producing a distinct state rather than a rejection |
+| Language | Quebec issuers file in French, so label lists are bilingual |
+
+Every failure is an explicit state and none is a silent drop. The distinctions
+the workbook loses are kept: searched-and-found-nothing is not the same as
+source-unreachable, which is not the same as never-attempted — and an
+**abstention is not a hallucination**, so it has its own state and is excluded
+from the rate that gates publish.
+
+### Evidence strength, not self-confidence
+
+A model's self-reported float is uncalibrated, incomparable across fields, and
+drifts with every prompt change. Since bulk-accept keys off this number, using it
+would make the highest-leverage control in the product one backed by nothing
+measured.
+
+`src/lib/enrich/evidence.ts` computes a versioned function of observable
+components instead — source tier, recency against the field's cadence, anchor
+strength, corroboration, extraction agreement. The self-report is stored beside
+it and excluded from the threshold. The fixture demonstrates why: the fabricated
+fee carries **higher** self-confidence than the real one, and lower evidence
+strength.

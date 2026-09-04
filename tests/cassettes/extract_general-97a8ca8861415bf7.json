@@ -1,0 +1,106 @@
+{
+  "key": "extract_general-97a8ca8861415bf7",
+  "recordedAt": "2026-09-04T09:03:20.402Z",
+  "request": {
+    "route": "extract_general",
+    "model": "claude-sonnet-5",
+    "promptVersion": "2026-09-04.1",
+    "userContent": "Company: Northco Mining Corp.\nAlso known as: Northco Mining Corp.\nTicker: NRTH (TSX)\nKnown property regions:\n  CANADA: ON\n  LATIN AMERICA: Peru\nPeriod as of: 2026-05-31"
+  },
+  "response": {
+    "documents": [
+      {
+        "contentHash": "sha256:aif-northco",
+        "url": "https://northco.invalid/aif-2025.pdf",
+        "text": "\nNorthco Mining Corp.\nAnnual Information Form for the year ended 31 December 2025\n\nNorthco is a producing gold company. The Kirkland mine in northern Ontario\nachieved commercial production on 1 July 2024 and produced 118,000 ounces in\n2025. The Company also holds the Cerro Blanco development property in Peru,\nwhere a feasibility study is under way, and a portfolio of exploration claims\nin British Columbia.\n\nThe Company's auditor is Deloitte LLP, Chartered Professional Accountants,\nappointed at the 2021 annual meeting.\n",
+        "pageCount": 2,
+        "charsPerPage": 262,
+        "sourceTier": 1,
+        "docType": "annual_information_form",
+        "hasTextLayer": true
+      },
+      {
+        "contentHash": "sha256:circular-northco",
+        "url": "https://northco.invalid/circular-2026.pdf",
+        "text": "\nNorthco Mining Corp.\nManagement Information Circular -- Auditor's Fees\n\nThe following table sets out the fees billed by the Company's auditor for the\nfinancial years indicated. All amounts are expressed in thousands of Canadian\ndollars.\n\n                                        2025          2024\nAudit fees                               412           388\nAudit-related fees                        45            41\nTax fees                                 118           102\nAll other fees                             -             7\nTotal                                    575           538\n\nThe audit committee pre-approves all services provided by the auditor.\n",
+        "pageCount": 2,
+        "charsPerPage": 332.5,
+        "sourceTier": 1,
+        "docType": "information_circular",
+        "hasTextLayer": true,
+        "scalePhrase": "in thousands"
+      }
+    ],
+    "findings": [
+      {
+        "field_key": "stage_evidence_state",
+        "value": {
+          "exploration": true,
+          "development": true,
+          "production": true,
+          "royalty_streaming": false
+        },
+        "evidence_excerpt": "The Kirkland mine in northern Ontario achieved commercial production on 1 July 2024",
+        "document_hash": "sha256:aif-northco",
+        "source_url": "https://northco.invalid/aif-2025.pdf",
+        "source_tier": 1,
+        "document_age_days": 120,
+        "corroborating_sources": 2,
+        "model_self_confidence": 0.91
+      },
+      {
+        "field_key": "auditor",
+        "value": "Deloitte",
+        "evidence_excerpt": "The Company's auditor is Deloitte LLP, Chartered Professional Accountants",
+        "document_hash": "sha256:aif-northco",
+        "source_url": "https://northco.invalid/aif-2025.pdf",
+        "source_tier": 1,
+        "document_age_days": 120,
+        "corroborating_sources": 1,
+        "model_self_confidence": 0.88
+      },
+      {
+        "field_key": "audit_fee",
+        "value": 412000,
+        "numeric": {
+          "value": 412000,
+          "scale": "thousands",
+          "fiscalYear": 2025
+        },
+        "document_hash": "sha256:circular-northco",
+        "source_url": "https://northco.invalid/circular-2026.pdf",
+        "source_tier": 1,
+        "document_age_days": 90,
+        "corroborating_sources": 1,
+        "model_self_confidence": 0.84
+      },
+      {
+        "field_key": "tax_fee",
+        "value": 265000,
+        "numeric": {
+          "value": 265000,
+          "scale": "thousands",
+          "fiscalYear": 2025
+        },
+        "document_hash": "sha256:circular-northco",
+        "source_url": "https://northco.invalid/circular-2026.pdf",
+        "source_tier": 1,
+        "document_age_days": 90,
+        "corroborating_sources": 1,
+        "model_self_confidence": 0.93
+      }
+    ],
+    "usage": {
+      "input_tokens": 8412,
+      "output_tokens": 611,
+      "cache_read_input_tokens": 7900
+    },
+    "cost_usd": 0.021
+  },
+  "usage": {
+    "input_tokens": 8412,
+    "output_tokens": 611,
+    "cache_read_input_tokens": 7900
+  },
+  "verbatimTurn": null
+}

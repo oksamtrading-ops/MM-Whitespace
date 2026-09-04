@@ -31,8 +31,13 @@ const payload = (companies: ParsedCompany[], period = "2026-05-31"): Payload =>
 test("the canonical Postgres migrations apply, and the policy file is skipped", () => {
   const db = fresh();
   const r = applySchema(new DatabaseSync(":memory:"));
-  assert.deepEqual(r.applied, ["0001_m1_core.sql", "0002_seed_catalog.sql"]);
-  assert.deepEqual(r.skipped, ["0003_roles_and_policies.sql"]);
+  // Assert the property, not the exact list -- a new migration is expected to
+  // be applied and should not fail this test.
+  assert.ok(r.applied.includes("0001_m1_core.sql"));
+  assert.ok(r.applied.includes("0002_seed_catalog.sql"));
+  assert.deepEqual(r.skipped, ["0003_roles_and_policies.sql"],
+    "every Postgres-only migration must be skipped locally");
+  assert.ok(!r.applied.some((f) => r.skipped.includes(f)));
   const tables = db.prepare(
     "select name from sqlite_master where type='table'").all().map((t: any) => t.name);
   for (const t of ["periods", "companies", "company_identifiers", "company_period_facts",

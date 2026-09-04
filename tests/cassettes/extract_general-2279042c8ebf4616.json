@@ -1,0 +1,65 @@
+{
+  "key": "extract_general-2279042c8ebf4616",
+  "recordedAt": "2026-09-04T09:03:20.413Z",
+  "request": {
+    "route": "extract_general",
+    "model": "claude-sonnet-5",
+    "promptVersion": "2026-09-04.1",
+    "userContent": "Company: Royalco Streaming Inc.\nAlso known as: Royalco Streaming Inc.\nTicker: ROYL (TSX)\nKnown property regions:\n  \nPeriod as of: 2026-05-31"
+  },
+  "response": {
+    "documents": [
+      {
+        "contentHash": "sha256:royalco-ar",
+        "url": "https://royalco.invalid/annual-2025.pdf",
+        "text": "Royalco Streaming Inc. holds royalty and streaming interests over mines\noperated by third parties. The Company holds no mineral properties directly and\nconducts no exploration, development or mining operations of its own.",
+        "pageCount": 1,
+        "charsPerPage": 220,
+        "sourceTier": 1,
+        "docType": "annual_report",
+        "hasTextLayer": true
+      }
+    ],
+    "findings": [
+      {
+        "field_key": "stage_evidence_state",
+        "value": {
+          "exploration": false,
+          "development": false,
+          "production": false,
+          "royalty_streaming": true
+        },
+        "evidence_excerpt": "Royalco Streaming Inc. holds royalty and streaming interests over mines operated by third parties",
+        "document_hash": "sha256:royalco-ar",
+        "source_url": "https://royalco.invalid/annual-2025.pdf",
+        "source_tier": 1,
+        "document_age_days": 200,
+        "corroborating_sources": 1,
+        "model_self_confidence": 0.95
+      },
+      {
+        "field_key": "audit_fee",
+        "value": null,
+        "abstained": true,
+        "abstention_reason": "the document does not disclose fees",
+        "document_hash": "sha256:royalco-ar",
+        "source_url": "https://royalco.invalid/annual-2025.pdf",
+        "source_tier": 1,
+        "document_age_days": 200,
+        "model_self_confidence": 0.12
+      }
+    ],
+    "usage": {
+      "input_tokens": 3100,
+      "output_tokens": 240,
+      "cache_read_input_tokens": 2800
+    },
+    "cost_usd": 0.008
+  },
+  "usage": {
+    "input_tokens": 3100,
+    "output_tokens": 240,
+    "cache_read_input_tokens": 2800
+  },
+  "verbatimTurn": null
+}
