@@ -1,8 +1,11 @@
 name: test
 
+# Every push on every branch, deliberately. The guard job below is the only
+# thing standing between a routine commit and a licensed workbook in GitHub
+# history, and restricting it to main would leave feature branches unchecked --
+# which is where the work actually happens.
 on:
   push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
