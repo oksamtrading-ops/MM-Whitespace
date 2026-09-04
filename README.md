@@ -229,3 +229,22 @@ strength, corroboration, extraction agreement. The self-report is stored beside
 it and excluded from the threshold. The fixture demonstrates why: the fabricated
 fee carries **higher** self-confidence than the real one, and lower evidence
 strength.
+
+## The fetcher
+
+The model discovers candidate sources; **the application fetches and caches
+them**; code enforces the citation. That split is the only reason a fee can be
+required to cite a filing by construction rather than by prompt — but it holds
+only if `src/lib/enrich/fetch.ts` refuses to fetch whatever it is pointed at.
+
+| Control | Rule |
+|---|---|
+| Server-side request forgery | Private, loopback and link-local space is blocked **after DNS resolution**, and re-checked on every redirect. Checking the hostname alone is defeated by a name that resolves inward |
+| Domain trust | The allowlist is derived from issuer websites **in the extract**. A domain the model proposed is never fetchable on that basis. Matching is on label boundaries, so `evil-northco.invalid` does not pass for `northco.invalid` |
+| Type confusion | The type is sniffed from the bytes. Content declared `application/pdf` whose bytes are not a PDF is refused rather than parsed |
+| Resource exhaustion | Byte, page-count, redirect and time caps |
+| Documents | The extracted **text** is stored, keyed by the hash of the bytes received. The file itself never is, and embedded scripts are stripped before storage |
+
+The allowlist derivation deliberately ignores non-URL website values: 45 of the
+143 populated values in the real workbook are page titles, and a page title must
+not widen what the fetcher will reach.

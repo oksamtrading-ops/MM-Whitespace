@@ -19,6 +19,7 @@ import {
   buildPrompt, egressScan, restrictionsFromCatalog, PROMPT_VERSION,
   type PublicCompanyRow, type Route,
 } from "./prompt.ts";
+import { buildAllowlist, type FetchedDocument } from "./fetch.ts";
 
 export const SCHEMA_HASH = "findings-v1";
 export const DEFAULT_MODEL = "claude-sonnet-5";
@@ -268,6 +269,49 @@ function persist(
     });
   }
   return out;
+}
+
+/**
+ * The fetch allowlist, derived from the extract.
+ *
+ * Built from the issuer websites the workbook itself carries, never from a
+ * domain a model proposed -- that asymmetry is what makes "the application
+ * fetched this" a meaningful claim. A model may nominate a URL; if its host is
+ * not reachable from this set, the fetcher declines it.
+ */
+export function allowlistFromPeriod(db: DatabaseSync, periodId: string): Set<string> {
+  const rows = db.prepare(
+    `select value from company_period_field_values
+      where period_id = ? and field_key = 'website' and value is not null`,
+  ).all(periodId) as Array<{ value: string }>;
+
+  const domains: string[] = [];
+  for (const r of rows) {
+    let v: unknown;
+    try { v = JSON.parse(r.value); } catch { v = r.value; }
+    if (typeof v !== "string" || !v) continue;
+    // Only values that are actually URLs. 45 of 143 in the real workbook are
+    // page titles, and a page title is not a domain.
+    if (!/^https?:\/\//i.test(v)) continue;
+    try { domains.push(new URL(v).hostname); } catch { /* not a URL after all */ }
+  }
+  return buildAllowlist(domains);
+}
+
+/** Persist a fetched document. The text is stored; the file never is. */
+export function storeDocument(db: DatabaseSync, doc: FetchedDocument): string {
+  db.prepare(
+    `insert into documents (content_hash, url, final_url, retrieved_at, extractor,
+                            extractor_version, normalization_version, text_content,
+                            char_count, page_count, chars_per_page, source_tier,
+                            doc_type, has_text_layer)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     on conflict (content_hash) do nothing`,
+  ).run(doc.contentHash, doc.url, doc.finalUrl, doc.retrievedAt, doc.extractor,
+        doc.extractorVersion, doc.normalizationVersion, doc.text, doc.charCount,
+        doc.pageCount, doc.charsPerPage, doc.sourceTier, doc.docType,
+        doc.hasTextLayer ? 1 : 0);
+  return doc.contentHash;
 }
 
 /**
