@@ -19,6 +19,7 @@ export type ParsedCompany = {
   region_provenance?: Record<string, "extract" | "analyst_retained" | "absent">;
   commodities: string[]; venture_graduate: boolean;
   auditor: string | null; auditor_class: string | null;
+  website?: string | null;
   entity_id?: string | null;
   tier_workbook: number | null; footprint_workbook: string | null;
 };
@@ -198,6 +199,10 @@ export function commitPeriod(
       value("property_regions", c.regions, "extract",
             c.property_evidence === "none" ? "absent_confirmed" : "asserted");
       value("auditor", c.auditor, "extract", c.auditor === null ? "unknown" : "asserted");
+      // Null where the source held a page title rather than a URL: that is an
+      // enrichment target, not a website.
+      value("website", c.website ?? null, "extract",
+            c.website ? "asserted" : "unknown");
       value("stage_evidence_state", c.stage_evidence, "extract",
             c.stage_evidence === "none" ? "unknown" : "asserted");
       value("property_evidence_state", c.property_evidence, "derived", "asserted");

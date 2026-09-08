@@ -148,7 +148,7 @@ footer p{font-family:var(--mono);font-size:.71rem;color:var(--ink-3);line-height
     <dl class="meta">
       <dt>To</dt><dd>Kay Ampofo (workbook owner), Samuel Owusu (solution owner)</dd>
       <dt>From</dt><dd>Design workstream</dd>
-      <dt>Status</dt><dd>All ten closed · 1 superseded by POC scope · risk review to book</dd>
+      <dt>Status</dt><dd>All ten closed · decision 1 approved by legal, 4 Sep 2026</dd>
       <dt>Date</dt><dd>3 September 2026</dd>
     </dl>
   </div>
@@ -174,7 +174,7 @@ footer p{font-family:var(--mono);font-size:.71rem;color:var(--ink-3);line-height
     <table>
       <thead><tr><th>#</th><th>Decision</th><th>Owner</th><th>Recommendation</th><th>Status</th></tr></thead>
       <tbody>
-        <tr><td class="num">1</td><td>Risk and legal acceptance of the hosting and model arrangement</td><td>Samuel</td><td>Start day one; narrowed to public issuer facts</td><td><span class="chip accepted">Closed</span></td></tr>
+        <tr><td class="num">1</td><td>Risk and legal acceptance of the hosting and model arrangement</td><td>Samuel</td><td>Start day one; narrowed to public issuer facts</td><td><span class="chip accepted">Approved</span></td></tr>
         <tr><td class="num">2</td><td>Filing aggregator's storage restriction accepted as read</td><td>Kay + legal</td><td>Accept it; issuer-hosted documents only</td><td><span class="chip accepted">Closed</span></td></tr>
         <tr><td class="num">3</td><td>May <code>Unclassified</code> be displayed as a tier state?</td><td>Kay</td><td>Yes — display it</td><td><span class="chip accepted">Closed</span></td></tr>
         <tr><td class="num">4</td><td>Confirm the recovered province and jurisdiction axes</td><td>Kay</td><td>Confirm Appendix A; roll the US up to one bucket</td><td><span class="chip accepted">Closed</span></td></tr>
@@ -227,7 +227,7 @@ footer p{font-family:var(--mono);font-size:.71rem;color:var(--ink-3);line-height
   <div class="idx">01</div>
   <div class="col">
     <h2>Risk and legal must accept the hosting and model arrangement before anything else is built</h2>
-    <div class="tags"><span class="tag">Owner <b>Samuel</b></span><span class="tag">Blocks <b>everything</b></span><span class="tag">Lead time <b>external, unbounded</b></span><span class="chip gating">Gating</span></div>
+    <div class="tags"><span class="tag">Owner <b>Samuel</b></span><span class="tag">Blocks <b>everything</b></span><span class="tag">Lead time <b>external, unbounded</b></span><span class="chip accepted">Approved 4 Sep</span></div>
     <p><strong>Decision needed.</strong> Do risk and legal accept (a) licensed exchange and screener extracts, and (b) internal Deloitte client flags, held in a non-Deloitte cloud, with (c) company facts sent as prompts to the model vendor?</p>
     <p>Three separate acceptances are bundled in one question, and they can be granted separately.</p>
     <div class="scroll"><table>
@@ -255,7 +255,7 @@ footer p{font-family:var(--mono);font-size:.71rem;color:var(--ink-3);line-height
       <p>Raising both unprompted is the stronger position, because the design already answers them.</p>
     </div>
     <p><strong>One item to raise explicitly:</strong> the model vendor's training and retention posture. Request zero-retention if it is available on the account.</p>
-    <div class="banner"><b>Position accepted. Narrowed on 3 September 2026 by the POC scope constraint.</b> The second acceptance is withdrawn — the tax-client field is not stored, so the review is not asked to approve internal client data in a non-Deloitte cloud. <b>Two acceptances remain, both covering public issuer facts:</b> licensed extract records held in the database, and those same facts sent as prompts. That is a materially lighter ask than this section was originally written for, and the review should be framed to match. It still has to happen — licensed public records are not unrestricted ones, and the vendor's retention posture is still worth asking about.</div>
+    <div class="banner"><b>Approved by legal, 4 September 2026 — this decision is closed.</b> The remaining prerequisites for a first live call are operational, not legal: credentials in the environment, and spike S3 (confirm the account tier and limits, set per-environment spend limits, exercise both spend-limit error shapes). The client module classifies both spend-limit shapes as halt rather than retry, and refuses to run live without credentials.<br><br><b>Position accepted. Narrowed on 3 September 2026 by the POC scope constraint.</b> The second acceptance is withdrawn — the tax-client field is not stored, so the review is not asked to approve internal client data in a non-Deloitte cloud. <b>Two acceptances remain, both covering public issuer facts:</b> licensed extract records held in the database, and those same facts sent as prompts. That is a materially lighter ask than this section was originally written for, and the review should be framed to match. It still has to happen — licensed public records are not unrestricted ones, and the vendor's retention posture is still worth asking about.</div>
   </div>
 </article>
 

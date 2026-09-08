@@ -71,6 +71,17 @@ The recordings in `tests/cassettes/` are synthesised, not captured vendor
 responses; see the README there. One deliberately contains a fabricated tax fee
 that the gate quarantines while accepting the real audit fee beside it.
 
+### Exporting a period
+
+```bash
+python3 scripts/export_period.py ./period.db out.xlsx --csv out.csv
+```
+
+Writes a clean, version-controlled template — never back into the uploaded
+workbook, which is an input artifact and is returned untouched. Seven sheets,
+corrected proof formulas, both licence notices, and the rule trace on every tier
+cell as a comment.
+
 ### The parity check
 
 Runs the tier engine across all 259 real companies and asserts the difference
@@ -248,3 +259,55 @@ only if `src/lib/enrich/fetch.ts` refuses to fetch whatever it is pointed at.
 The allowlist derivation deliberately ignores non-URL website values: 45 of the
 143 populated values in the real workbook are page titles, and a page title must
 not widen what the fetcher will reach.
+
+## The export
+
+The uploaded workbook is an **input artifact, not a deliverable.** Writing back
+into it fails twice over: no library round-trips its conditional-formatting
+extension, charts, legacy drawing part or ~84 add-in defined names, and a
+faithful copy would re-emit the very defects the application exists to fix.
+
+So the export is a clean template the application fully controls, which is the
+only way to guarantee the proof totals tie.
+
+### What it deliberately does not reproduce
+
+| Defect, live in the source | Effect if copied forward |
+|---|---|
+| Counts starting one row below the data, plus a compensating `+1` | Restores a phantom exchange and misfiles a real company |
+| A footprint else-branch calling "no properties at all" *Canada only* | Files ~$146bn of market cap under a footprint those companies do not have |
+| Auditor counts matching one spelling of a firm | Loses a Deloitte client and both companies under the alternate spelling |
+| Broken references in the financial-metrics block | Reintroduces `#REF!` |
+| Nine cells beginning with `@` | Formula injection on open |
+
+The financial-metrics block is **omitted entirely** rather than exported empty —
+an empty block invites someone to reattach a broken lookup. The cover sheet
+carries the pre-written answer to the first defect report anyone will file,
+which is "the numbers changed".
+
+### The injection guard
+
+Nine source cells already begin with `@`, so this is an active concern with a
+live example. Worse, two of the strings this application writes are
+attacker-influenced: analyst overrides are free text, and evidence excerpts are
+model-generated strings taken verbatim from third-party pages — so whoever
+controls an issuer's investor-relations page controls a string that lands in a
+partner's spreadsheet.
+
+**Every cell in every export path goes through one writer helper.** A string
+beginning with `=`, `+`, `-`, `@`, tab or carriage return is written with the
+quote-prefix flag set, which is lossless — the value keeps its leading
+character, unlike prefixing an apostrophe into the value itself. Control
+characters are stripped and length is capped at the writer rather than trusting
+the model to respect a limit. A test audits a fully generated export and fails
+if any cell anywhere is left interpretable, so a column added later by a
+different code path cannot silently bypass the guard.
+
+The flat CSV is the exception that proves the rule: a CSV has no quote-prefix
+flag, so there the leading character genuinely is neutralised.
+
+### Formula vocabulary
+
+Nothing newer than 2007 — index-and-match, never the modern lookup — so a
+headless recalculation stays viable as an automated check. A test fails the
+build if a modern function appears.

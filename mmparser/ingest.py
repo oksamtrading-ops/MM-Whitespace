@@ -374,10 +374,18 @@ def ingest(path):
             findings.append(Finding("warning", "auditor_normalised",
                                     "%s: %r -> %r" % (cons["name"], diff[0], diff[1])))
 
+        # Only a URL is carried as the website. 45 of the 143 populated values
+        # are page titles; a title is routed to enrichment rather than stored
+        # as a URL, because downstream the value is used as one.
         website = mrow["website"]
-        if website.present and not website.value.lower().startswith(("http://", "https://", "www.")):
-            findings.append(Finding("warning", "website_is_title",
-                                    "%s: website value is a page title, not a URL" % cons["name"]))
+        website_url = None
+        if website.present:
+            if website.value.lower().startswith(("http://", "https://", "www.")):
+                website_url = website.value
+            else:
+                findings.append(Finding("warning", "website_is_title",
+                                        "%s: website value is a page title, not a URL"
+                                        % cons["name"]))
 
         has_props = any(regions[l] for l in REGION_HEADERS.values())
         if not has_props:
@@ -395,6 +403,7 @@ def ingest(path):
             "commodities": ext["commodities"],
             "venture_graduate": ext["venture_graduate"],
             "auditor": firm, "auditor_class": klass,
+            "website": website_url,
             "tier_workbook": mrow["tier_workbook"],
             "footprint_workbook": mrow["footprint_workbook"],
         }
