@@ -14,7 +14,8 @@
     "setup": "git config core.hooksPath .githooks && echo 'pre-commit hook enabled'",
     "research": "node scripts/research.mjs",
     "cassettes": "node tests/cassettes/build_cassettes.mjs",
-    "export": "python3 scripts/export_period.py"
+    "export": "python3 scripts/export_period.py",
+    "publish": "node scripts/publish_period.mjs"
   },
   "engines": {
     "node": ">=24"

@@ -1,0 +1,193 @@
+/**
+ * The publish gate.
+ *
+ * Publish is blocked while any default-dashboard chart sits below its coverage
+ * floor, while unresolved conflicts remain, or while the run's fabrication rate
+ * exceeds its ceiling.
+ *
+ * An Admin may override, with a recorded reason that is then PRINTED ON THE
+ * DASHBOARD HEADER. That printing is the point: it is what stops a stale-data
+ * warning becoming a banner nobody reads, which is exactly what happened to the
+ * source workbook's own "TAB NOT UPDATED" notice.
+ *
+ * See docs/design/08-review-workspace.md.
+ */
+import { DatabaseSync } from "node:sqlite";
+
+export type Coverage = {
+  chart: string;
+  label: string;
+  drivingField: string;
+  floorPct: number | null;
+  blocksPublish: boolean;
+  resolved: number;
+  population: number;
+  actualPct: number;
+  meetsFloor: boolean;
+};
+
+export type Blocker =
+  | { kind: "coverage"; chart: string; detail: string }
+  | { kind: "unresolved_conflicts"; count: number; detail: string }
+  | { kind: "hallucination_rate"; rate: number; ceiling: number; detail: string };
+
+export type GateResult = {
+  periodId: string;
+  population: number;
+  coverage: Coverage[];
+  blockers: Blocker[];
+  unresolvedCount: number;
+  publishable: boolean;
+};
+
+/** A value counts as resolved only when the source actually asserts something. */
+const RESOLVED = `
+  value is not null
+  and value != 'null'
+  and evidence_state = 'asserted'
+`;
+
+export function computeCoverage(db: DatabaseSync, periodId: string): Coverage[] {
+  const population = (db.prepare(
+    "select count(*) n from tiers where period_id = ?").get(periodId) as { n: number }).n;
+
+  const floors = db.prepare(
+    "select chart, label, driving_field, floor_pct, blocks_publish from coverage_floors order by chart",
+  ).all() as Array<{
+    chart: string; label: string; driving_field: string;
+    floor_pct: number | null; blocks_publish: number;
+  }>;
+
+  return floors.map((f) => {
+    let resolved: number;
+    if (f.driving_field === "stage_evidence_state") {
+      // "Resolved stage" means stage evidence exists -- not that the field has
+      // a value. Every company has the value 'none'; 242 of them mean "nobody
+      // has looked", which is the opposite of resolved.
+      resolved = (db.prepare(
+        `select count(*) n from company_period_field_values
+          where period_id = ? and field_key = 'stage_evidence_state'
+            and value not in ('null', '"none"')`).get(periodId) as { n: number }).n;
+    } else if (f.driving_field === "footprint") {
+      // A footprint of 'none' IS resolved -- it is the honest answer for a
+      // royalty company with no properties, and the whole point of adding the
+      // fourth value. What is unresolved is a company with no property evidence.
+      resolved = (db.prepare(
+        `select count(*) n from tiers t
+           join company_period_field_values v
+             on v.period_id = t.period_id and v.company_id = t.company_id
+            and v.field_key = 'property_evidence_state'
+          where t.period_id = ? and v.value != '"none"'`).get(periodId) as { n: number }).n;
+    } else {
+      resolved = (db.prepare(
+        `select count(*) n from company_period_field_values
+          where period_id = ? and field_key = ? and ${RESOLVED}`,
+      ).get(periodId, f.driving_field) as { n: number }).n;
+    }
+
+    const actualPct = population === 0 ? 0 : (100 * resolved) / population;
+    return {
+      chart: f.chart,
+      label: f.label,
+      drivingField: f.driving_field,
+      floorPct: f.floor_pct,
+      blocksPublish: f.blocks_publish === 1,
+      resolved,
+      population,
+      actualPct: Math.round(actualPct * 10) / 10,
+      meetsFloor: f.floor_pct === null ? true : actualPct >= f.floor_pct,
+    };
+  });
+}
+
+/**
+ * A conflict is a field where two sources disagree and nobody has adjudicated:
+ * more than one non-superseded proposal for the same company and field.
+ */
+export function unresolvedConflicts(db: DatabaseSync, periodId: string): number {
+  const row = db.prepare(
+    `select count(*) n from (
+       select f.company_id, f.field_key
+         from enrichment_findings f
+         join enrichment_runs r on r.id = f.run_id
+        where r.period_id = ? and f.state = 'proposed' and f.abstained = 0
+        group by f.company_id, f.field_key
+       having count(distinct f.proposed_value) > 1
+     )`).get(periodId) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
+/** Companies still carrying an unresolved value. Recorded, not prevented. */
+export function unresolvedCount(db: DatabaseSync, periodId: string): number {
+  return (db.prepare(
+    `select count(distinct company_id) n from company_period_field_values
+      where period_id = ? and evidence_state = 'unknown'`,
+  ).get(periodId) as { n: number }).n;
+}
+
+function hallucinationRateForPeriod(db: DatabaseSync, periodId: string) {
+  const row = db.prepare(
+    `select
+       sum(case when f.state = 'unsupported' then 1 else 0 end) as unsupported,
+       sum(case when f.state != 'abstained' then 1 else 0 end)  as assessed
+       from enrichment_findings f
+       join enrichment_runs r on r.id = f.run_id
+      where r.period_id = ?`).get(periodId) as
+    { unsupported: number | null; assessed: number | null };
+  const unsupported = row.unsupported ?? 0;
+  const assessed = row.assessed ?? 0;
+  return { unsupported, assessed, rate: assessed === 0 ? 0 : unsupported / assessed };
+}
+
+export function evaluateGate(db: DatabaseSync, periodId: string): GateResult {
+  const coverage = computeCoverage(db, periodId);
+  const population = coverage[0]?.population ?? 0;
+  const blockers: Blocker[] = [];
+
+  for (const c of coverage) {
+    if (c.blocksPublish && !c.meetsFloor) {
+      blockers.push({
+        kind: "coverage",
+        chart: c.chart,
+        detail: `${c.label}: ${c.actualPct}% resolved (${c.resolved} of ${c.population}), ` +
+                `floor is ${c.floorPct}%`,
+      });
+    }
+  }
+
+  const conflicts = unresolvedConflicts(db, periodId);
+  if (conflicts > 0) {
+    blockers.push({
+      kind: "unresolved_conflicts", count: conflicts,
+      detail: `${conflicts} field(s) have two proposals and no adjudication`,
+    });
+  }
+
+  const ceilingRow = db.prepare(
+    "select value from publish_thresholds where key = 'max_hallucination_rate'").get() as
+    { value: number } | undefined;
+  const ceiling = ceilingRow?.value ?? 0.02;
+  const h = hallucinationRateForPeriod(db, periodId);
+  if (h.rate > ceiling) {
+    blockers.push({
+      kind: "hallucination_rate", rate: h.rate, ceiling,
+      detail: `fabrication rate ${(h.rate * 100).toFixed(1)}% of ${h.assessed} assessed ` +
+              `findings exceeds the ${(ceiling * 100).toFixed(1)}% ceiling`,
+    });
+  }
+
+  return {
+    periodId, population, coverage, blockers,
+    unresolvedCount: unresolvedCount(db, periodId),
+    publishable: blockers.length === 0,
+  };
+}
+
+/** Rendered onto the dashboard header when a publish went through blocked. */
+export function overrideBanner(
+  reason: string, blockers: Blocker[], publishedAt: string,
+): string {
+  const what = blockers.map((b) => b.detail).join("; ");
+  return `Published ${publishedAt} through a blocked gate. Reason given: ` +
+         `"${reason}". Outstanding at publish: ${what}.`;
+}

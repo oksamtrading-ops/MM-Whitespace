@@ -71,6 +71,20 @@ The recordings in `tests/cassettes/` are synthesised, not captured vendor
 responses; see the README there. One deliberately contains a fabricated tax fee
 that the gate quarantines while accepting the real audit fee beside it.
 
+### The publish gate
+
+```bash
+node scripts/publish_period.mjs ./period.db --publish
+```
+
+Shows coverage per chart against its floor and refuses if any blocks. An Admin
+publishes anyway with `--override "reason"`, and that reason is printed on the
+dashboard header.
+
+On the real period the gate closes, correctly: stage coverage is 6.6% against a
+95% floor, because 242 of 259 companies have never been researched. That is the
+day-one state and the gate is right to stop.
+
 ### Exporting a period
 
 ```bash
@@ -311,3 +325,46 @@ flag, so there the leading character genuinely is neutralised.
 Nothing newer than 2007 — index-and-match, never the modern lookup — so a
 headless recalculation stays viable as an automated check. A test fails the
 build if a modern function appears.
+
+## Publish and the frozen snapshot
+
+Every dashboard reads **only** the frozen snapshot. Re-deriving the effective
+value of each field — override beats accepted finding beats extract — across a
+dozen queries would implement the precedence rule a dozen times and let it
+diverge, reintroducing by architecture the same defect as two tier tables
+disagreeing on one screen.
+
+### The gate
+
+Publish is blocked while any default-dashboard chart sits below its coverage
+floor, while unresolved conflicts remain, or while the run's fabrication rate
+exceeds its ceiling. Floors are **rows in `coverage_floors`, not constants** —
+engineering has no basis for setting them and the practice does.
+
+Two subtleties the gate gets right:
+
+- **A footprint of `none` counts as resolved.** It is the honest answer for a
+  royalty company with no properties, and the fourth value the workbook never
+  emitted. Counting it as unresolved would block a publish for getting something
+  right. What is unresolved is a company with no property *evidence*.
+- **Fee coverage has no percentage floor and never blocks.** "Found for 61 of
+  259" is honest; "24%" invites the question of what the other 76% are, and the
+  answer is not "no fees" but "not disclosed where we may look".
+
+An Admin may override with a reason, which is **printed on the dashboard
+header**. That printing is the point — it is what stops a stale-data warning
+becoming a banner nobody reads, which is exactly what happened to the source
+workbook's own `TAB NOT UPDATED` notice.
+
+### Immutability is by construction, not by trigger
+
+Every publish inserts into a fresh `publication_id`, and a correction after
+publish is an **amendment that bumps the revision** rather than an in-place
+mutation. So no code path updates a published row and there is nothing for a
+trigger to defend — which also keeps the migration portable, since Postgres and
+SQLite trigger syntax do not agree and a trigger would have forced a second,
+drifting schema. Postgres additionally revokes update and delete.
+
+Publishing also sets `frozen_at` on the source rows, which the commit path's
+conditional upsert already respects, so a re-import cannot move a published
+value even if the application code is wrong.
