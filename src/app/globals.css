@@ -1,0 +1,130 @@
+/*
+ * Decision 8: light-first, with corrected green tokens.
+ *
+ * The Deloitte signature green #86BC25 measures 2.27:1 on white -- below the
+ * 3:1 non-text floor and far below the 4.5:1 text floor. So it is used ONLY for
+ * large fills, where it reads as the brand, and never for text, thin lines,
+ * focus rings or small markers. Those get their own darker tokens.
+ *
+ * Text and non-text have different floors and one token cannot serve both.
+ */
+:root {
+  --brand-fill:  #86BC25;   /* large fills only */
+  --green-text:  #567C18;   /* 4.89:1 on white */
+  --green-mark:  #5E841A;   /* 4.38:1 -- focus rings, borders */
+
+  --ground:      #F6F7F2;
+  --surface:     #FFFFFF;
+  --surface-2:   #EFF1E9;
+  --ink:         #191C15;
+  --ink-2:       #4E5548;
+  --ink-3:       #757C6D;
+  --rule:        #DCE0D2;
+  --alert:       #8C3A14;
+  --alert-soft:  #F6E8E0;
+  --warn:        #7E6110;
+  --warn-soft:   #F4EDDA;
+
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* On black the brand green measures 9.23:1, so one token serves everything. */
+    --brand-fill: #86BC25; --green-text: #86BC25; --green-mark: #86BC25;
+    --ground: #14170F; --surface: #1B1F16; --surface-2: #232820;
+    --ink: #E9ECE1; --ink-2: #AEB5A4; --ink-3: #828A73;
+    --rule: #2F3529;
+    --alert: #E08A5C; --alert-soft: #32221A;
+    --warn: #D6AC4A; --warn-soft: #2B2517;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--green-text); }
+
+/* 3:1 minimum, which is why this is the darkened green and never the brand. */
+:focus-visible {
+  outline: 2px solid var(--green-mark);
+  outline-offset: 2px;
+}
+
+.shell { display: flex; min-height: 100vh; }
+
+.rail {
+  width: 200px; flex: 0 0 200px;
+  background: var(--surface); border-right: 1px solid var(--rule);
+  padding: 1.25rem 0; display: flex; flex-direction: column; gap: .25rem;
+}
+.rail .brand {
+  padding: 0 1.25rem 1rem; font-weight: 700; letter-spacing: -.01em;
+  border-bottom: 1px solid var(--rule); margin-bottom: .75rem;
+}
+.rail .brand span { color: var(--green-text); }
+.rail a {
+  padding: .5rem 1.25rem; color: var(--ink-2); text-decoration: none; font-size: .875rem;
+}
+.rail a:hover { background: var(--surface-2); color: var(--ink); }
+.rail a[aria-current="page"] {
+  color: var(--ink); font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--green-mark);
+}
+.rail .who {
+  margin-top: auto; padding: .75rem 1.25rem 0; border-top: 1px solid var(--rule);
+  font-size: .75rem; color: var(--ink-3); font-family: var(--mono);
+}
+
+main { flex: 1; padding: 1.75rem 2rem 4rem; min-width: 0; }
+h1 { font-size: 1.4rem; margin: 0 0 .35rem; letter-spacing: -.015em; }
+h2 { font-size: 1.05rem; margin: 2rem 0 .6rem; letter-spacing: -.01em; }
+.sub { color: var(--ink-2); margin: 0 0 1.5rem; }
+
+.banner {
+  border-left: 3px solid var(--warn); background: var(--warn-soft); color: var(--ink);
+  padding: .75rem 1rem; border-radius: 0 3px 3px 0; margin-bottom: 1.5rem; font-size: .875rem;
+}
+.banner b { display: block; margin-bottom: .2rem; }
+
+.cards { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.5rem; }
+.card {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 4px;
+  padding: .85rem 1rem; min-width: 150px;
+}
+.card .n { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.card .k { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); }
+
+table { border-collapse: collapse; width: 100%; max-width: 760px; font-size: .875rem; }
+th, td { text-align: left; padding: .45rem .7rem; border-bottom: 1px solid var(--rule); }
+thead th {
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); background: var(--surface-2);
+}
+td.n { font-variant-numeric: tabular-nums; text-align: right; font-family: var(--mono); }
+
+.bar { height: 10px; background: var(--brand-fill); border-radius: 2px; min-width: 2px; }
+.bar.muted { background: var(--ink-3); }
+
+.pill {
+  display: inline-block; font-size: .68rem; font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: .06em; padding: .12em .45em; border-radius: 2px;
+}
+.pill.ok { background: #E7F0D9; color: var(--green-text); }
+.pill.no { background: var(--alert-soft); color: var(--alert); }
+
+.empty {
+  border: 1px dashed var(--rule); border-radius: 4px; padding: 2rem;
+  color: var(--ink-2); max-width: 640px;
+}
+code { font-family: var(--mono); font-size: .85em; background: var(--surface-2); padding: .1em .3em; }

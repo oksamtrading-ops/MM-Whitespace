@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Mining Whitespace Intelligence Tool -- Milestone 1: ingestion, validation, tiering.",
   "scripts": {
-    "test": "node --test 'src/**/*.test.ts' && python3 -m unittest discover -s tests",
+    "test": "node --test 'src/**/*.test.ts' && python3 -m unittest discover -s tests && node scripts/check_role_assertions.mjs",
     "test:node": "node --test 'src/**/*.test.ts'",
     "test:py": "python3 -m unittest discover -s tests",
     "ingest": "python3 -m mmparser.cli",
@@ -15,9 +15,23 @@
     "research": "node scripts/research.mjs",
     "cassettes": "node tests/cassettes/build_cassettes.mjs",
     "export": "python3 scripts/export_period.py",
-    "publish": "node scripts/publish_period.mjs"
+    "publish": "node scripts/publish_period.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "check:auth": "node scripts/check_role_assertions.mjs"
   },
   "engines": {
     "node": ">=24"
+  },
+  "dependencies": {
+    "next": "^16.3.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "26.5.0",
+    "@types/react": "19.2.18",
+    "typescript": "7.0.2"
   }
 }

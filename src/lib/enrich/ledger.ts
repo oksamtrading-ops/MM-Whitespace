@@ -105,7 +105,8 @@ export function heartbeat(db: DatabaseSync, workerId: string): number {
   ).run(stamp(LEASE_SECONDS), stamp(), workerId);
   db.prepare("update worker_slots set lease_expires_at = ? where leased_by = ?")
     .run(stamp(LEASE_SECONDS), workerId);
-  return r.changes;
+  // node:sqlite reports `changes` as number | bigint.
+  return Number(r.changes);
 }
 
 /** Returns expired jobs to queued WITHOUT charging an attempt. */
@@ -118,7 +119,7 @@ export function reapExpiredLeases(db: DatabaseSync): number {
   db.prepare(
     `update worker_slots set leased_by = null, lease_expires_at = null
       where lease_expires_at < ?`).run(stamp());
-  return r.changes;
+  return Number(r.changes);
 }
 
 export function transition(

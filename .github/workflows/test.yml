@@ -45,16 +45,42 @@ jobs:
           echo "OK - no licensed workbook has ever been committed."
 
   node:
-    name: tier engine and period commit
+    name: libraries
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      # No dependencies: Node 24 runs TypeScript directly and node:sqlite is
-      # built in, so there is nothing to install.
+      # Still no install: Node 24 runs TypeScript directly, node:sqlite is
+      # built in, and no test imports the app. The application's dependencies
+      # are exercised in the `app` job below.
       - run: npm run test:node
+
+  auth:
+    name: every endpoint asserts a role
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # Middleware is not an authorisation boundary and a Server Action is
+      # addressable whether or not its control renders, so this is a build
+      # gate rather than a convention.
+      - run: npm run check:auth
+
+  app:
+    name: the application builds and type-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
 
   python:
     name: parser

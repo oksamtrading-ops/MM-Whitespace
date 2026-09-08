@@ -71,6 +71,25 @@ The recordings in `tests/cassettes/` are synthesised, not captured vendor
 responses; see the README there. One deliberately contains a fabricated tax fee
 that the gate quarantines while accepting the real audit fee beside it.
 
+### Running the application
+
+```bash
+npm install
+MM_DATABASE=./period.db MM_DEV_AUTH_SECRET=dev MM_CRON_SECRET=cron \
+  MM_ALLOWED_DOMAINS=example.invalid npm run dev
+```
+
+It is invite-only, so add yourself to `app_users` first, then sign in:
+
+```bash
+curl -X POST localhost:3000/api/dev/signin -H 'content-type: application/json' \
+  -d '{"email":"you@example.invalid"}' -c cookies.txt
+```
+
+That development sign-in is **not** magic-link authentication and refuses to run
+outside development. It exists so the app can be run before a Supabase project
+does.
+
 ### The publish gate
 
 ```bash
@@ -368,3 +387,52 @@ drifting schema. Postgres additionally revokes update and delete.
 Publishing also sets `frozen_at` on the source rows, which the commit path's
 conditional upsert already respects, so a re-import cannot move a published
 value even if the application code is wrong.
+
+## The application
+
+Next.js App Router, three roles, and one rule that shapes everything else.
+
+### Middleware is not an authorisation boundary
+
+Next.js middleware has a documented bypass class, and **every Server Action
+compiles to an addressable endpoint whether or not the control that calls it
+ever renders** — so a Viewer who can sign in could call publish. `src/proxy.ts`
+does redirects and nothing security-relevant.
+
+The real check is `assertRole` as the **first statement** of every route handler
+and server action, and `npm run check:auth` fails the build when one is missing.
+An endpoint that genuinely needs no role must say so out loud:
+
+```ts
+// @public-endpoint the cron tick authorises with a bearer secret instead
+export async function POST(request: Request) { ... }
+```
+
+so every exception is visible rather than silent. A test plants an unguarded
+handler and asserts the check fails — a check that never fails proves nothing.
+
+### Portability is one claim
+
+Authorisation never reads the identity provider's user table. It reads **one
+claim** — the email — and resolves it against the application's own `app_users`.
+Swapping providers changes the claim source and nothing else, which is what
+makes the eventual move to Deloitte SSO a configuration change rather than a
+rewrite. Invite-only: an email the provider would happily accept is still not a
+user, and a deactivated row is not a user either — there is no leaver process
+for an application outside Deloitte's estate.
+
+### The cron tick does almost nothing
+
+A cron firing every minute at a function that runs several hundred seconds
+produces roughly a dozen concurrently live workers; if each applies its own
+concurrency limit, actual concurrency is the product of the two. So the tick
+asks two questions — is there work, is a slot free — and returns. Because it does
+no work itself, a leaked secret only causes a no-op invocation. The secret is
+compared in constant time, a **missing** header is rejected rather than allowed,
+and an unset server secret fails closed.
+
+### Colour
+
+Decision 8, applied: the brand green `#86BC25` appears only in large fills. Text
+uses `#567C18` and focus rings `#5E841A`, because 2.27:1 on white is below both
+the text and non-text floors and the failure is invisible to eye-checking.

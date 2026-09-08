@@ -211,7 +211,12 @@ async function callVendor(config: RouteConfig, opts: SendOptions) {
 
   let Anthropic: any;
   try {
-    ({ default: Anthropic } = await import("@anthropic-ai/sdk"));
+    // The specifier is assembled rather than written as a literal, on purpose.
+    // The SDK is an OPTIONAL runtime dependency reached only on this path, so
+    // replay mode, the test suite and CI all run without it installed -- and a
+    // literal here would make the type checker demand it be present.
+    const specifier = ["@anthropic-ai", "sdk"].join("/");
+    ({ default: Anthropic } = await import(/* webpackIgnore: true */ specifier));
   } catch {
     throw new LiveModeUnavailable(
       "@anthropic-ai/sdk is not installed. It is imported dynamically and only " +
