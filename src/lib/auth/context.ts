@@ -3,7 +3,7 @@ import "server-only";
 import { cookies, headers } from "next/headers";
 import { DatabaseSync } from "node:sqlite";
 import { applySchema } from "../db/schema.ts";
-import { devClaimSource, type ClaimSource } from "./session.ts";
+import { assertRole, devClaimSource, type ClaimSource, type Role } from "./session.ts";
 
 export const DATABASE_PATH = process.env.MM_DATABASE ?? "./period.db";
 
@@ -35,6 +35,21 @@ export async function authContext() {
   const cookieHeader = store.getAll()
     .map((c) => `${c.name}=${encodeURIComponent(c.value)}`).join("; ");
   return { db: db(), claims: claims(), cookieHeader: cookieHeader || null };
+}
+
+/**
+ * THE entry point for every route handler, server action and guarded page.
+ *
+ * It builds the context and asserts the role in one call, so there is nothing
+ * an author can legitimately put before it -- which is what lets
+ * scripts/check_role_assertions.mjs demand it be the literal first statement.
+ * An earlier shape needed authContext() first, and "nearly first" is not a rule
+ * a checker can enforce.
+ */
+export async function requireRole(required: readonly Role[]) {
+  const ctx = await authContext();
+  const user = await assertRole(ctx, required);
+  return { user, db: ctx.db, claims: ctx.claims, cookieHeader: ctx.cookieHeader };
 }
 
 export async function requestCookieHeader(): Promise<string | null> {

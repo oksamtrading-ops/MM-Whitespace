@@ -436,3 +436,77 @@ and an unset server secret fails closed.
 Decision 8, applied: the brand green `#86BC25` appears only in large fills. Text
 uses `#567C18` and focus rings `#5E841A`, because 2.27:1 on white is below both
 the text and non-text floors and the failure is invisible to eye-checking.
+
+## The review grid
+
+259 companies by roughly ten enriched fields is about **2,590 decisions per
+period**. A company-by-field grid charges the Analyst a context switch on every
+cell; judging one field **down a column** reuses a single mental model. That is
+the difference between a two-hour review and a two-day one — and a two-day
+review means the period never gets published, which is the bottleneck this
+product exists to remove.
+
+So the Analyst lands on a triage board and picks a batch. Every number on it is
+a link that opens the grid pre-filtered; nobody faces 2,590 undifferentiated
+cells. Rows are sorted by **evidence ascending**, so the worst work comes first
+and the tail is bulk-acceptable.
+
+### What bulk accept refuses
+
+Seven refusals, as a pure function, each with a test:
+
+| Refused | Why |
+|---|---|
+| Fees, at any evidence level | The guarantee is that a fee cites a filing. A threshold is not a citation check |
+| Any extract-versus-AI conflict | High confidence in a wrong answer is exactly the failure this creates |
+| Any already-overridden value | Overrides are never overwritten; this is where that invariant would break |
+| Stage flags without a typed opt-in | Stage determines tier and tier is the deliverable |
+| Anything with zero sources | A confident answer with no source is a hallucination with good posture |
+| Anything the anchoring gate quarantined | Its excerpt did not verify against the document |
+| Anything below the threshold | — |
+
+Bulk accept is **always scoped to one field**; passing candidates from another
+throws. There is no accept-everything control anywhere in the product. The fee
+exclusion reads `bulk_acceptable` from the field catalogue, so it is data rather
+than a special case in the interface.
+
+### Decisions are rows
+
+Undo is therefore an **insert, not a delete** — the original decision stays on
+the record and the trail is append-only. Each decision binds to the
+`finding_attempt` it judged, without which an override silently re-binds to a
+later proposal and the trail no longer records what the Analyst actually saw. A
+flag without a reason and an override without a value are both refused **by the
+database**, not by the form.
+
+### Accessibility
+
+This is the screen where a WCAG 2.1 AA claim will actually fail, so the
+obligations are specific and verifiable in the rendered markup:
+
+- **One tab stop with a roving index** — 109 rows render one `tabindex="0"` and
+  108 at `-1`, never 2,590 tab stops
+- The company cell is the **row header**, so every announcement is anchored to a
+  company
+- Each cell's accessible name carries value, evidence band and review state:
+  `"Auditor, Deloitte, evidence medium, unreviewed"`
+- Evidence is **never colour alone** — four ordinal bands, the numeric value in
+  the cell, and the band word beside it
+- A **polite live region** announces each decision and its consequence
+- The evidence panel is a labelled `<section>` referenced by `aria-describedby`
+  from the focused cell — **not a tooltip**, because tooltips are unreachable by
+  keyboard and must never gate a value
+- Single unmodified letters are suppressed while focus sits in a text input, or
+  an Analyst typing an override fires three actions mid-word
+- Touch targets at least 44×44; focus rings use the darkened green, never the
+  brand green at 2.27:1
+
+### Driving it
+
+```bash
+node scripts/seed_review_fixture.mjs ./period.db
+```
+
+Seeds a **synthetic** queue so the grid can be exercised — these are not model
+outputs, and every row carries `prompt_version = 'synthetic-fixture'` so it is
+distinguishable from a real proposal in a query.

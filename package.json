@@ -19,7 +19,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "check:auth": "node scripts/check_role_assertions.mjs"
+    "check:auth": "node scripts/check_role_assertions.mjs",
+    "seed:review": "node scripts/seed_review_fixture.mjs"
   },
   "engines": {
     "node": ">=24"

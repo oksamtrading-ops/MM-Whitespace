@@ -26,7 +26,7 @@ const ROOT = process.argv[2]
   ? process.argv[2]
   : join(dirname(fileURLToPath(import.meta.url)), "..");
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
-const GUARDS = ["assertRole", "authoriseCron"];
+const GUARDS = ["requireRole", "assertRole", "authoriseCron"];
 
 function walk(dir, out = []) {
   let entries;

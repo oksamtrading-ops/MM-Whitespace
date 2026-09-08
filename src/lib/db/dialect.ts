@@ -45,6 +45,9 @@ const UNSUPPORTED: Array<[RegExp, string]> = [
   [/\bcreate\s+trigger\b/i, "triggers"],
   [/\bcreate\s+type\b/i, "custom types"],
   [/\bexclude\s+using\b/i, "exclusion constraints"],
+  // SQLite has no ADD CONSTRAINT. Declare checks inline in CREATE TABLE.
+  [/\balter\s+table\s+\w+\s+add\s+constraint\b/i, "ALTER TABLE ADD CONSTRAINT"],
+  [/\balter\s+table\s+\w+\s+drop\s+(column|constraint)\b/i, "ALTER TABLE DROP"],
   // Postgres writes this as `(values (...)) as alias(col, col)` -- the alias
   // follows the list, so the pattern has to look forward from `values`.
   [/\bvalues\s*\([\s\S]*?\)\s*\)?\s*as\s+\w+\s*\(/i, "column-aliased VALUES"],
