@@ -62,10 +62,15 @@ test("the audit log is not trimmed without an export path", () => {
     file.close();
 
     const { results } = run(path, { apply: true, exportPath: null }) as
-      { results: Array<{ key: string; note: string }> };
-    const audit = results.find((r) => r.key === "audit_log")!;
+      { results: Array<{ key: string; note: string; examined: number; deleted: number }> };
+    const audit = results.find((r) => r.key === "audit_log")! as
+      { key: string; note: string; examined: number; deleted: number };
     assert.match(audit.note, /REFUSED/);
     assert.match(audit.note, /export path/);
+    // A refusal must report the REAL count. Reporting 0 beside "REFUSED" reads
+    // as though there was nothing to do, which is the opposite of the truth.
+    assert.equal(audit.examined, 1, "the refusal states how many rows it declined to touch");
+    assert.equal(audit.deleted, 0);
 
     const after = new DatabaseSync(path);
     const n = after.prepare("select count(*) n from audit_log").get() as { n: number };

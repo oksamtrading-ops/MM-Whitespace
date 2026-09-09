@@ -74,11 +74,15 @@ export const RULES = [
         "select id, event, actor_id, period_id, detail, created_at from audit_log where created_at < ?",
       ).all(cutoff);
       if (rows.length && !opts.exportPath) {
-        throw new Error(
+        const err = new Error(
           "refusing to trim the audit log without an export path. The log is the one " +
           "artifact that answers who published what; trimming it unexported destroys " +
           "that answer. Pass --export-audit <path>.",
         );
+        // Carry the count, or the refusal reports "0 rows beyond retention"
+        // beside "REFUSED" and reads as though there was nothing to do.
+        err.examined = rows.length;
+        throw err;
       }
       if (apply && rows.length) {
         for (const row of rows) appendFileSync(opts.exportPath, JSON.stringify(row) + "\n");
@@ -124,7 +128,10 @@ export function run(dbPath, { apply = false, exportPath = null } = {}) {
     try {
       outcome = rule.apply(db, apply, { exportPath });
     } catch (err) {
-      outcome = { examined: 0, deleted: 0, note: `REFUSED: ${err.message}`, refused: true };
+      outcome = {
+        examined: err.examined ?? 0, deleted: 0,
+        note: `REFUSED: ${err.message}`, refused: true,
+      };
     }
     results.push({ ...rule, ...outcome });
   }
@@ -152,6 +159,7 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop()
     console.log(`    owner:     ${r.owner === UNOWNED ? "** UNASSIGNED **" : r.owner}` +
                 (r.transferable ? "  (automated — transfer to a named engineer when there is one)" : ""));
     console.log(`    ${r.examined} row(s) beyond retention — ${r.note}`);
+    if (r.refused) console.log("    NOTHING WAS DELETED for this rule.");
   }
 
   if (unowned.length) {
