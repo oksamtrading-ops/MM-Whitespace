@@ -621,7 +621,12 @@ npm run retention -- ./period.db --apply --export-audit ./audit.jsonl
 ```
 
 **It exits non-zero while any rule has no named owner**, because an unowned
-retention rule is one nobody will notice failing. Two rules refuse outright
+retention rule is one nobody will notice failing. All five are assigned to the
+solution owner for the pilot (open question 16, answered 9 September 2026); the
+two automated rules are marked transferable, so moving them to a named engineer
+is a visible act rather than a quiet reassignment. Tests assert every rule has
+an owner and that an owner is a **person, not a team** — a team cannot be paged
+and does not notice a job that stopped running. Two rules refuse outright
 rather than doing damage: the audit log will not be trimmed without an export
 path, since it is the one artifact that answers who published what; and expired
 document *text* is cleared while the row is kept, because deleting the row would

@@ -184,5 +184,10 @@ python3 scripts/verify_ground_truth.py --reference-dir reference
 ```
 
 `retention.mjs` **exits non-zero while any rule has no named owner.** That is
-deliberate: an unowned retention rule is one nobody will notice failing. Assign
-owners in the `RULES` table before it runs on a schedule.
+deliberate: an unowned retention rule is one nobody will notice failing.
+
+All five rules are owned by **Samuel Owusu** for the pilot. Two of them — raw
+uploads and extracted document text — are automated and carry no judgement; they
+are marked `transferable` and should move to a named engineer once there is one.
+Change the owner in the `RULES` table in `scripts/retention.mjs`; the tests will
+refuse a team name in that field.

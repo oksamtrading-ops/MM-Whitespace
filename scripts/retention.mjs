@@ -17,15 +17,25 @@ import { DatabaseSync } from "node:sqlite";
 const UNOWNED = "UNASSIGNED";
 
 /**
- * Owners are deliberately left UNASSIGNED here rather than guessed at. Naming
- * a plausible owner would be worse than naming none: it would look settled.
+ * Owners, assigned 9 September 2026 (open question 16).
+ *
+ * All five sit with the solution owner for the pilot. Two of them -- raw
+ * uploads and extracted document text -- are automated and have no judgement
+ * in them; they should transfer to a named engineer once there is one, and
+ * they are marked `transferable` so that hand-off is a visible act rather than
+ * a quiet reassignment.
+ *
+ * An owner is a person, never a team: "engineering" cannot be paged and does
+ * not notice a job that stopped running.
  */
+const SOLUTION_OWNER = "Samuel Owusu";
 export const RULES = [
   {
     key: "raw_uploads",
     label: "Raw uploads",
     retention: "1 hour, in quarantine",
-    owner: UNOWNED,
+    owner: SOLUTION_OWNER,
+    transferable: true,
     // Nothing to delete: uploads are parsed and the bytes dropped rather than
     // stored. The rule is listed so its absence is a stated fact, not a gap.
     apply: () => ({ examined: 0, deleted: 0,
@@ -35,7 +45,8 @@ export const RULES = [
     key: "document_text",
     label: "Extracted document text",
     retention: "90 days",
-    owner: UNOWNED,
+    owner: SOLUTION_OWNER,
+    transferable: true,
     apply: (db, apply) => {
       const cutoff = isoDaysAgo(90);
       const rows = db.prepare(
@@ -55,7 +66,8 @@ export const RULES = [
     key: "audit_log",
     label: "Audit log",
     retention: "24 months, with a periodic export first",
-    owner: UNOWNED,
+    owner: SOLUTION_OWNER,
+    transferable: false,
     apply: (db, apply, opts) => {
       const cutoff = isoDaysAgo(730);
       const rows = db.prepare(
@@ -81,14 +93,16 @@ export const RULES = [
     key: "findings_decisions_traces",
     label: "Findings, decisions and traces",
     retention: "life of the pilot",
-    owner: UNOWNED,
+    owner: SOLUTION_OWNER,
+    transferable: false,
     apply: () => ({ examined: 0, deleted: 0, note: "retained for the life of the pilot" }),
   },
   {
     key: "published_snapshots",
     label: "Frozen published snapshots",
     retention: "life of the pilot",
-    owner: UNOWNED,
+    owner: SOLUTION_OWNER,
+    transferable: false,
     apply: () => ({ examined: 0, deleted: 0,
                     note: "retained: they ARE the audit answer for a published period" }),
   },
@@ -135,7 +149,8 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop()
   for (const r of results) {
     console.log(`  ${r.label}`);
     console.log(`    retention: ${r.retention}`);
-    console.log(`    owner:     ${r.owner === UNOWNED ? "** UNASSIGNED **" : r.owner}`);
+    console.log(`    owner:     ${r.owner === UNOWNED ? "** UNASSIGNED **" : r.owner}` +
+                (r.transferable ? "  (automated — transfer to a named engineer when there is one)" : ""));
     console.log(`    ${r.examined} row(s) beyond retention — ${r.note}`);
   }
 
