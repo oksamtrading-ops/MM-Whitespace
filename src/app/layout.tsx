@@ -62,7 +62,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <span className="chip">
                 <span className={`dot${period.revision === null ? " draft" : ""}`} aria-hidden="true" />
                 <span className="fig-sm">{periodName(period.label).name}</span>
-                <span>{period.revision === null ? "draft" : `rev ${period.revision}`}</span>
+                <span className="rev">{period.revision === null ? "draft" : `rev ${period.revision}`}</span>
               </span>
             )}
             <div className="who">

@@ -6,7 +6,7 @@ import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
 import { setActive } from "./actions.ts";
 import ActiveButton from "./ActiveButton.tsx";
-import { fmtDate } from "../../_ui/format.ts";
+import { agoLabel, daysSince, fmtDate } from "../../_ui/format.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Access review" };
@@ -34,12 +34,11 @@ export default async function AccessReview() {
   }>;
 
   const now = Date.now();
-  const daysSince = (iso: string | null) =>
-    iso === null ? null : Math.floor((now - new Date(iso.replace(" ", "T")).getTime()) / 86_400_000);
+  const daysAgo = (iso: string | null) => (iso === null ? null : daysSince(iso, now));
 
   const active = users.filter((u) => u.is_active);
   const stale = active.filter((u) => {
-    const d = daysSince(u.last_sign_in_at);
+    const d = daysAgo(u.last_sign_in_at);
     return d === null || d > STALE_DAYS;
   });
 
@@ -67,14 +66,15 @@ export default async function AccessReview() {
       )}
 
       <Section id="accounts" title="Accounts" index={3}>
-        <table>
+        <table className="accounts">
           <caption>Every change is written to the audit log with the actor and the target.</caption>
           <thead>
-            <tr><th>Email</th><th>Role</th><th>Last sign-in</th><th>Status</th><th></th></tr>
+            <tr><th>Email</th><th>Role</th><th>Last sign-in</th><th>Status</th>
+                <th><span className="sr-only">Action</span></th></tr>
           </thead>
           <tbody>
             {users.map((u) => {
-              const days = daysSince(u.last_sign_in_at);
+              const days = daysAgo(u.last_sign_in_at);
               const isStale = u.is_active === 1 && (days === null || days > STALE_DAYS);
               const self = u.id === ctx.user.id;
               return (
@@ -84,7 +84,7 @@ export default async function AccessReview() {
                   <td>
                     {u.last_sign_in_at
                       ? <>{fmtDate(u.last_sign_in_at)}{" "}
-                          <span className="meta">({days}d ago)</span></>
+                          <span className="meta">({agoLabel(days as number)})</span></>
                       : <span className="meta">never</span>}
                     {isStale && <> <span className="pill warn">review</span></>}
                   </td>

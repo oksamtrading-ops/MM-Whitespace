@@ -11,7 +11,7 @@ const ACCOUNTS = [
     can: "The published dashboard only." },
 ];
 
-export default function SignInButtons() {
+export default function SignInButtons({ currentEmail = null }: { currentEmail?: string | null }) {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
 
@@ -23,6 +23,7 @@ export default function SignInButtons() {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ email }),
       });
+      // "/" sends each role to the screen it starts on.
       if (res.ok) { window.location.href = "/"; return; }
       const body = await res.json().catch(() => ({}));
       setMessage(body.error ?? "Sign-in failed. Try again.");
@@ -34,14 +35,20 @@ export default function SignInButtons() {
   return (
     <>
       <div className="roles">
-        {ACCOUNTS.map((a) => (
-          <button type="button" className="role" key={a.email}
-                  onClick={() => signIn(a.email)} disabled={pending !== null}>
-            <span className="name">{a.role}</span>
-            <span className="can">{a.can}</span>
-            <span className="chev" aria-hidden="true">{pending === a.email ? "…" : "→"}</span>
-          </button>
-        ))}
+        {ACCOUNTS.map((a) => {
+          const current = a.email === currentEmail;
+          return (
+            <button type="button" className="role" key={a.email}
+                    onClick={() => signIn(a.email)} disabled={pending !== null || current}>
+              <span className="name">
+                {a.role}
+                {current && <span className="pill quiet">current</span>}
+              </span>
+              <span className="can">{a.can}</span>
+              <span className="chev" aria-hidden="true">{pending === a.email ? "…" : current ? "" : "→"}</span>
+            </button>
+          );
+        })}
       </div>
       <div role="status" aria-live="polite">
         {message && <div className="notice alert" style={{ marginTop: 20 }}>{message}</div>}

@@ -364,7 +364,10 @@ table caption { caption-side: bottom; text-align: left; font-size: 13px; color: 
 .signin { max-width: 640px; margin: 8vh auto 0; }
 .signin h1 { font-size: 56px; font-weight: 700; letter-spacing: -.03em; display: flex; align-items: baseline; }
 .signin h1 .stop { display: inline-block; width: .22em; height: .22em; border-radius: 50%; background: var(--brand-fill); margin-left: .06em; }
-.signin .lede { font-size: 18px; color: var(--ink-2); margin: 10px 0 40px; max-width: 34ch; font-weight: 300; }
+.signin .lede { font-size: 18px; color: var(--ink-2); margin: 10px 0 40px; max-width: 40ch; font-weight: 300; }
+.signin .actions { display: flex; gap: 12px; margin: -24px 0 40px; }
+.signin .switch { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 10px; }
+.role .name .pill { margin-left: 8px; vertical-align: 2px; }
 .roles { border-top: 1px solid var(--rule); }
 .role {
   display: grid; grid-template-columns: 128px 1fr auto; gap: 24px; align-items: center;
@@ -512,6 +515,10 @@ dialog td:first-child { width: 112px; }
 
 /* -------------------------------------------------------------- access */
 
+/* The action column takes only what it needs, so the address column gets the
+   slack rather than a gulf opening between status and the control. */
+table.accounts td:last-child, table.accounts th:last-child { width: 1%; white-space: nowrap; }
+table.accounts td:first-child { overflow-wrap: anywhere; }
 .stale { color: var(--warn); }
 td .you { margin-left: 8px; }
 form.inline { display: inline; }
@@ -555,13 +562,15 @@ form.inline { display: inline; }
   .topbar { gap: 20px; }
   .who .email { display: none; }
 }
-@media (max-width: 760px) {
-  .chip span:not(.dot) { display: none; }
-  .chip { padding: 0 8px; }
+@media (max-width: 860px) {
+  /* Drop the revision before the period name: a lone dot in a pill says nothing. */
+  .chip .rev { display: none; }
+  .chip { padding: 0 10px; }
 }
 @media (max-width: 640px) {
   .topbar { gap: 16px; padding: 0 16px; }
-  .topbar .who { display: none; }
+  .topbar .who, .topbar .chip { display: none; }
+  .role .chev { display: none; }
   main { padding: 24px 16px 80px; }
   .hero { font-size: 32px; }
   .hero .fig-xl { font-size: 48px; }
