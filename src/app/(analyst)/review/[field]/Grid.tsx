@@ -94,6 +94,7 @@ export default function Grid(props: Props) {
   const [busy, setBusy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [bulk, setBulk] = useState<{ open: boolean; text: string | null }>({ open: false, text: null });
+  const submitRef = useRef<((d: string, extra?: Record<string, string>) => void) | null>(null);
   const cellRefs = useRef<Array<HTMLDivElement | null>>([]);
   const editorRef = useRef<HTMLInputElement | null>(null);
   const flagRef = useRef<HTMLInputElement | null>(null);
@@ -141,6 +142,11 @@ export default function Grid(props: Props) {
     });
   }, [announce, applyPatch, remaining, router]);
 
+  const keepExtract = useCallback(() => {
+    if (!row) return;
+    submitRef.current?.("override", { overrideSource: "extract" });
+  }, [row]);
+
   const submit = useCallback((decision: string, extra: Record<string, string> = {}) => {
     if (!row) return;
     const form = new FormData();
@@ -156,6 +162,7 @@ export default function Grid(props: Props) {
     const next = visible.findIndex((r, i) => i > index && !r.decided);
     if (next >= 0) setIndex(next);
   }, [row, periodId, fieldKey, run, visible, index]);
+  submitRef.current = submit;
 
   const doUndo = useCallback(() => {
     const form = new FormData();
@@ -215,6 +222,10 @@ export default function Grid(props: Props) {
         event.preventDefault(); setEditing(true); break;
       case "f": case "F":
         event.preventDefault(); setFlagging(true); break;
+      case "k": case "K":
+        // Only meaningful where there are two values to choose between.
+        if (row?.conflict && !row.decided) { event.preventDefault(); keepExtract(); }
+        break;
       case "e": case "E":
         if (row?.sourceUrl) window.open(row.sourceUrl, "_blank", "noopener,noreferrer");
         break;
@@ -225,7 +236,7 @@ export default function Grid(props: Props) {
       case "Escape":
         setShowHelp(false); break;
     }
-  }, [busy, visible.length, row, submit, doUndo, openBulk]);
+  }, [busy, visible.length, row, submit, doUndo, openBulk, keepExtract]);
 
   if (rows.length === 0) {
     return (
@@ -353,7 +364,7 @@ export default function Grid(props: Props) {
                   <div>
                     <span className="k">Extract</span>
                     <p className="v">{row.extractValue ?? "(empty)"}</p>
-                    <span className="s">source workbook</span>
+                    <span className="s">what the workbook says</span>
                   </div>
                   <div>
                     <span className="k">AI proposal</span>
@@ -374,11 +385,27 @@ export default function Grid(props: Props) {
               {row.tierNote && <p className="tiernote">{row.tierNote}</p>}
 
               {!row.decided && (
+                /* On a conflict the choice is between two named values, so the
+                   controls name them. No default is pre-selected and nothing
+                   resolves it by timing out. */
                 <div className="acts">
-                  <button type="button" className="btn primary" disabled={busy}
-                          onClick={() => submit("accept")}>Accept <kbd>A</kbd></button>
-                  <button type="button" className="btn" disabled={busy}
-                          onClick={() => setEditing(true)}>Override <kbd>O</kbd></button>
+                  {row.conflict ? (
+                    <>
+                      <button type="button" className="btn" disabled={busy}
+                              onClick={keepExtract}>Keep extract <kbd>K</kbd></button>
+                      <button type="button" className="btn" disabled={busy}
+                              onClick={() => submit("accept")}>Use AI <kbd>A</kbd></button>
+                      <button type="button" className="btn" disabled={busy}
+                              onClick={() => setEditing(true)}>Enter my own <kbd>O</kbd></button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" className="btn primary" disabled={busy}
+                              onClick={() => submit("accept")}>Accept <kbd>A</kbd></button>
+                      <button type="button" className="btn" disabled={busy}
+                              onClick={() => setEditing(true)}>Override <kbd>O</kbd></button>
+                    </>
+                  )}
                   <button type="button" className="btn" disabled={busy}
                           onClick={() => setFlagging(true)}>Flag <kbd>F</kbd></button>
                 </div>

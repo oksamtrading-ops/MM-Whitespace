@@ -91,7 +91,10 @@ export default async function ReviewBoard() {
         ) : (
           <ul className="queue">
             {buckets.map((b) => {
-              const href = firstField ? `/review/${firstField}?bucket=${b.key}` : null;
+              // The field that actually holds these rows, not merely the first
+              // field in the catalogue.
+              const field = b.firstField ?? firstField;
+              const href = field && b.count > 0 ? `/review/${field}?bucket=${b.key}` : null;
               const inner = (
                 <>
                   <span className="fig-lg">{b.count}</span>

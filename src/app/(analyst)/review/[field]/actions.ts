@@ -11,6 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import {
+  extractedFact,
   bulkConfirmation, partitionForBulkAccept, recordDecision, undoLast,
 } from "../../../../lib/review/decide.ts";
 import { fieldRows } from "../../../../lib/review/queue.ts";
@@ -26,22 +27,41 @@ export async function decide(form: FormData): Promise<ActionResult> {
   const decision = String(form.get("decision") ?? "") as "accept" | "override" | "flag";
   const reason = form.get("reason") ? String(form.get("reason")) : null;
   const rawOverride = form.get("overrideValue");
+  // "Keep extract" sends no value. The workbook's own assertion is read here
+  // rather than trusted from the client, which only ever had it formatted for
+  // display -- a region map arrives as "Canada: BC" and would be stored as
+  // that string.
+  const fromExtract = form.get("overrideSource") === "extract";
   const findingId = form.get("findingId") ? String(form.get("findingId")) : null;
   const findingAttempt = form.get("findingAttempt")
     ? Number(form.get("findingAttempt")) : null;
 
+  let overrideValue: unknown = undefined;
+  if (decision === "override") {
+    if (fromExtract) {
+      const fact = extractedFact(db, periodId, companyId, fieldKey);
+      if (!fact.present) {
+        return { ok: false, message: "The workbook asserts no value for this field, so there is nothing to keep." };
+      }
+      overrideValue = fact.value;
+    } else {
+      overrideValue = rawOverride === null ? undefined : String(rawOverride);
+    }
+  }
+
   try {
     recordDecision(db, {
-      periodId, companyId, fieldKey, decision,
-      overrideValue: decision === "override"
-        ? (rawOverride === null ? undefined : String(rawOverride)) : undefined,
+      periodId, companyId, fieldKey, decision, overrideValue,
       reason, findingId, findingAttempt, actorId: user.id,
     });
   } catch (err) {
     return { ok: false, message: (err as Error).message };
   }
   revalidatePath(`/review/${fieldKey}`);
-  return { ok: true, message: `${decision} recorded` };
+  return {
+    ok: true,
+    message: fromExtract ? "extract kept" : `${decision} recorded`,
+  };
 }
 
 export async function undo(form: FormData): Promise<ActionResult> {

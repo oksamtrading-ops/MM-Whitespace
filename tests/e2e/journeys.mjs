@@ -147,6 +147,25 @@ async function journeys() {
   check("evidence is not colour alone", /class="num">[\d.]+<\/span>/.test(grid.html) &&
         grid.html.includes('class="bandword"'));
 
+  // docs/design/08: a conflict is resolved by choosing between two named
+  // values, with no default pre-selected.
+  check("a conflict offers the extract, the AI, and your own value",
+        grid.html.includes("Keep extract") && grid.html.includes("Use AI") &&
+        grid.html.includes("Enter my own"));
+  check("the diff names which value each control takes",
+        grid.html.includes("what the workbook says") && grid.html.includes("AI proposal"));
+  // Every number on the board is a link, and it has to open rows that are
+  // actually in that bucket: the counts and the filter were two separate
+  // expressions and had drifted.
+  const boardHtml = (await get("/review", analyst.cookie)).html;
+  const needLink = boardHtml.match(/href="(\/review\/[a-z_]+\?bucket=need_review)"/);
+  check("the board links 'need review' to a field that holds some", Boolean(needLink));
+  const plain = await get(needLink?.[1] ?? "/review/auditor?bucket=need_review", analyst.cookie);
+  check("a row with nothing to disagree with is offered no choice between two values",
+        plain.html.includes('role="grid"') && plain.html.includes("Accept") &&
+        !plain.html.includes("Keep extract"),
+        "the three-way control leaked onto a non-conflict row, or the bucket opened empty");
+
   // 4. The access review is Admin only, and records last sign-in.
   console.log("\n4. the access review");
   const analystOnAccess = await get("/access", analyst.cookie);

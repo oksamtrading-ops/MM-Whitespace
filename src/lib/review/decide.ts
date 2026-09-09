@@ -128,6 +128,30 @@ export function isConflict(c: Candidate): boolean {
   return JSON.stringify(c.extractValue) !== JSON.stringify(c.proposedValue);
 }
 
+/**
+ * What the workbook asserted, read from the immutable fact table.
+ *
+ * NOT from company_period_field_values: that holds one row per field and the
+ * first accept or override rewrites its source away from 'extract', so the
+ * extract's value is gone from it the moment anyone decides anything. Keeping
+ * the extract has to stay possible after an accept and an undo, and the facts
+ * table is the only place the workbook's own assertion survives.
+ */
+export function extractedFact(
+  db: DatabaseSync, periodId: string, companyId: string, fieldKey: string,
+): { present: boolean; value: unknown } {
+  const row = db.prepare(
+    `select typed_value, assertion from company_period_facts
+      where period_id = ? and company_id = ? and field_key = ?`,
+  ).get(periodId, companyId, fieldKey) as
+    { typed_value: string | null; assertion: string } | undefined;
+  if (!row || row.assertion !== "asserted" || row.typed_value === null) {
+    return { present: false, value: null };
+  }
+  try { return { present: true, value: JSON.parse(row.typed_value) }; }
+  catch { return { present: true, value: row.typed_value }; }
+}
+
 export type RecordOptions = {
   periodId: string;
   companyId: string;

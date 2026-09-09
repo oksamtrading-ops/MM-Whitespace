@@ -20,6 +20,8 @@ export type QueueBucket = {
   count: number;
   /** Where the design says to start. */
   startHere?: boolean;
+  /** The field to open: counts are across fields, the grid shows one field. */
+  firstField: string | null;
 };
 
 export type FieldSummary = {
@@ -56,31 +58,57 @@ export function reviewableFields(db: DatabaseSync, periodId: string): FieldSumma
   });
 }
 
-/** Every number on the board is a link that opens the grid pre-filtered. */
+/**
+ * The five buckets, defined once.
+ *
+ * The board's counts and the rows behind its links came from two separate
+ * expressions, and they had drifted: "need review" counted the remainder but
+ * opened every undecided row, conflicts included. Every number on the board is
+ * a link that opens the grid pre-filtered, so the count and the filter have to
+ * be the same statement.
+ */
+type Bucketable = {
+  conflict?: boolean; findingState: string; anchorMode: string; sourceCount: number;
+  abstained?: boolean; bulkAcceptableField: boolean; evidenceStrength: number | null;
+  fieldKey: string;
+};
+
+export const IN_BUCKET: Record<string, (c: Bucketable, threshold: number) => boolean> = {
+  quarantined: (c) => c.findingState !== "proposed" ||
+                      c.anchorMode === "none" || c.anchorMode === "label_only",
+  no_evidence: (c) => c.sourceCount === 0 || Boolean(c.abstained),
+  conflict: (c) => Boolean(c.conflict),
+  bulkable: (c, t) => !IN_BUCKET.quarantined(c, t) && !IN_BUCKET.no_evidence(c, t) &&
+                      !IN_BUCKET.conflict(c, t) &&
+                      c.bulkAcceptableField && (c.evidenceStrength ?? 0) >= t &&
+                      !isStageField(c.fieldKey),
+  need_review: (c, t) => !IN_BUCKET.quarantined(c, t) && !IN_BUCKET.no_evidence(c, t) &&
+                         !IN_BUCKET.conflict(c, t) && !IN_BUCKET.bulkable(c, t),
+};
+
 export function queueBuckets(
   db: DatabaseSync, periodId: string, threshold = 0.8,
 ): QueueBucket[] {
-  const rows = allCandidates(db, periodId);
-  const undecided = rows.filter((c) => !c.decided);
-
-  const quarantined = undecided.filter(
-    (c) => c.findingState !== "proposed" ||
-           c.anchorMode === "none" || c.anchorMode === "label_only");
-  const noEvidence = undecided.filter((c) => c.sourceCount === 0 || c.abstained);
-  const conflicts = undecided.filter((c) => isConflict(c));
-  const rest = undecided.filter(
-    (c) => !quarantined.includes(c) && !noEvidence.includes(c) && !conflicts.includes(c));
-  const bulkable = rest.filter(
-    (c) => c.bulkAcceptableField && (c.evidenceStrength ?? 0) >= threshold &&
-           !(isStageField(c.fieldKey)));
-  const needReview = rest.filter((c) => !bulkable.includes(c));
+  const undecided = allCandidates(db, periodId)
+    .filter((c) => !c.decided)
+    .map((c) => ({ ...c, conflict: isConflict(c) }));
+  // A count is across fields and the grid shows one field, so each bucket also
+  // carries the field to open. Otherwise "need review 7" can land on a field
+  // holding none of them.
+  const bucket = (key: string, label: string, startHere?: boolean): QueueBucket => {
+    const inIt = undecided.filter((c) => IN_BUCKET[key](c, threshold));
+    return {
+      key, label, count: inIt.length, firstField: inIt[0]?.fieldKey ?? null,
+      ...(startHere ? { startHere } : {}),
+    };
+  };
 
   return [
-    { key: "bulkable", label: `above threshold — bulk-acceptable`, count: bulkable.length },
-    { key: "need_review", label: "need review", count: needReview.length },
-    { key: "conflict", label: "extract disagrees with AI", count: conflicts.length, startHere: true },
-    { key: "no_evidence", label: "no evidence found", count: noEvidence.length },
-    { key: "quarantined", label: "quarantined: excerpt did not anchor", count: quarantined.length },
+    bucket("bulkable", "above threshold — bulk-acceptable"),
+    bucket("need_review", "need review"),
+    bucket("conflict", "extract disagrees with AI", true),
+    bucket("no_evidence", "no evidence found"),
+    bucket("quarantined", "quarantined: excerpt did not anchor"),
   ];
 }
 
@@ -106,9 +134,12 @@ function allCandidates(db: DatabaseSync, periodId: string): Row[] {
             (select count(*) from finding_sources s where s.finding_id = e.id) as sourceCount,
             (select s.url from finding_sources s where s.finding_id = e.id limit 1) as sourceUrl,
             e.anchor_document_hash as documentHash,
-            (select v.value from company_period_field_values v
-              where v.period_id = ? and v.company_id = c.id and v.field_key = e.field_key
-                and v.source = 'extract') as extractValue,
+            -- From the facts table, not the resolved values: a decision
+            -- rewrites the resolved row's source away from 'extract', and the
+            -- diff would then show the AI's proposal against nothing.
+            (select f.typed_value from company_period_facts f
+              where f.period_id = ? and f.company_id = c.id and f.field_key = e.field_key
+                and f.assertion = 'asserted') as extractValue,
             (select d.decision from review_decisions d
               where d.period_id = ? and d.company_id = c.id and d.field_key = e.field_key
                 and d.decision != 'undo'
@@ -162,23 +193,10 @@ export function fieldRows(
   if (!bucket || bucket === "all") return all;
 
   const undecided = all.filter((r) => !r.decided);
-  switch (bucket) {
-    case "conflict":
-      return undecided.filter((r) => r.conflict);
-    case "quarantined":
-      return undecided.filter(
-        (r) => r.findingState !== "proposed" ||
-               r.anchorMode === "none" || r.anchorMode === "label_only");
-    case "no_evidence":
-      return undecided.filter((r) => r.sourceCount === 0 || r.abstained);
-    case "bulkable":
-      return undecided.filter(
-        (r) => r.bulkAcceptableField && (r.evidenceStrength ?? 0) >= threshold &&
-               !r.conflict && r.findingState === "proposed" && r.sourceCount > 0 &&
-               !isStageField(r.fieldKey));
-    default:
-      return undecided;
-  }
+  const predicate = IN_BUCKET[bucket];
+  // An unknown bucket shows everything undecided rather than nothing: a bad
+  // link in a shared URL should not read as an empty queue.
+  return predicate ? undecided.filter((r) => predicate(r, threshold)) : undecided;
 }
 
 /**

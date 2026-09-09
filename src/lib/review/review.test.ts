@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { applySchema } from "../db/schema.ts";
 import {
-  bulkConfirmation, effectiveDecision, evidenceBand, isConflict,
+  bulkConfirmation, effectiveDecision, evidenceBand, extractedFact, isConflict,
   partitionForBulkAccept, recordDecision, undoLast, type Candidate,
 } from "./decide.ts";
-import { cellLabel, formatValue } from "./queue.ts";
+import { cellLabel, formatValue, IN_BUCKET } from "./queue.ts";
 
 function candidate(over: Partial<Candidate> = {}): Candidate {
   return {
@@ -228,4 +228,137 @@ test("a multi-valued stage renders as its set, not as JSON", () => {
     "exploration + production");
   assert.equal(formatValue(null), "no value");
   assert.equal(formatValue("PwC"), "PwC");
+});
+
+/* --------------------------------------------------- keeping the extract */
+
+/** A conflict as it actually arrives: the workbook says KPMG, the model says Deloitte. */
+function conflicted() {
+  const seed = seeded();
+  const { db, periodId, companyId } = seed;
+  db.prepare(
+    `insert into company_period_facts
+       (period_id, company_id, field_key, raw_value, typed_value, assertion)
+     values (?, ?, 'auditor', 'KPMG', '"KPMG"', 'asserted')`).run(periodId, companyId);
+  db.prepare(
+    `insert into company_period_field_values
+       (period_id, company_id, field_key, value, source, evidence_state)
+     values (?, ?, 'auditor', '"KPMG"', 'extract', 'asserted')`).run(periodId, companyId);
+  return seed;
+}
+
+test("the workbook's assertion survives a decision, so it can still be kept", () => {
+  const { db, periodId, companyId } = conflicted();
+
+  // Accepting the model rewrites the resolved row's source away from 'extract'.
+  recordDecision(db, { periodId, companyId, fieldKey: "auditor", decision: "accept" });
+  const resolved = db.prepare(
+    `select source from company_period_field_values
+      where period_id = ? and company_id = ? and field_key = 'auditor'`,
+  ).get(periodId, companyId) as { source: string };
+  assert.equal(resolved.source, "ai_accepted",
+    "which is why the extract cannot be read back from this table");
+
+  // The facts table still holds it, which is what keeps "keep extract"
+  // available after an accept and an undo.
+  assert.deepEqual(extractedFact(db, periodId, companyId, "auditor"),
+                   { present: true, value: "KPMG" });
+});
+
+test("keeping the extract records an override carrying the workbook's value", () => {
+  const { db, periodId, companyId } = conflicted();
+  const fact = extractedFact(db, periodId, companyId, "auditor");
+  recordDecision(db, {
+    periodId, companyId, fieldKey: "auditor", decision: "override", overrideValue: fact.value });
+
+  const decision = effectiveDecision(db, periodId, companyId, "auditor");
+  assert.equal(decision?.decision, "override",
+    "choosing the workbook over the model is an override of the proposal");
+  assert.equal(JSON.parse(decision!.override_value!), "KPMG");
+
+  const resolved = db.prepare(
+    `select value, source from company_period_field_values
+      where period_id = ? and company_id = ? and field_key = 'auditor'`,
+  ).get(periodId, companyId) as { value: string; source: string };
+  assert.equal(JSON.parse(resolved.value), "KPMG");
+  assert.equal(resolved.source, "manual_override");
+});
+
+test("a value is kept whole, not as the string it was displayed as", () => {
+  const { db, periodId, companyId } = seeded();
+  const regions = { CANADA: ["BC", "ON"], AFRICA: [] };
+  db.prepare(
+    `insert into company_period_facts
+       (period_id, company_id, field_key, raw_value, typed_value, assertion)
+     values (?, ?, 'property_regions', 'BC, ON', ?, 'asserted')`,
+  ).run(periodId, companyId, JSON.stringify(regions));
+
+  // The client only ever had this formatted for display. The server reads the
+  // fact, so what is stored is the structure and not "Canada: BC, ON".
+  assert.deepEqual(extractedFact(db, periodId, companyId, "property_regions").value, regions);
+});
+
+test("there is nothing to keep where the workbook asserts nothing", () => {
+  const { db, periodId, companyId } = seeded();
+  assert.deepEqual(extractedFact(db, periodId, companyId, "website"),
+                   { present: false, value: null });
+  // absent_blank asserts that there is no value; it is not a value to keep.
+  db.prepare(
+    `insert into company_period_facts
+       (period_id, company_id, field_key, raw_value, typed_value, assertion)
+     values (?, ?, 'website', '', null, 'absent_blank')`).run(periodId, companyId);
+  assert.deepEqual(extractedFact(db, periodId, companyId, "website"),
+                   { present: false, value: null });
+});
+
+/* --------------------------- the board's counts and the grid's rows agree */
+
+test("every bucket's count is the number of rows its link opens", () => {
+  // These were two separate expressions and had drifted: "need review"
+  // counted the remainder but opened every undecided row, conflicts included.
+  const rows: Array<Parameters<typeof IN_BUCKET.conflict>[0]> = [
+    // a clean, strong, non-conflicting value: bulk-acceptable
+    { conflict: false, findingState: "proposed", anchorMode: "exact_normalized",
+      sourceCount: 2, abstained: false, bulkAcceptableField: true,
+      evidenceStrength: 0.9, fieldKey: "auditor" },
+    // the same, but weak: needs review
+    { conflict: false, findingState: "proposed", anchorMode: "exact_normalized",
+      sourceCount: 2, abstained: false, bulkAcceptableField: true,
+      evidenceStrength: 0.4, fieldKey: "auditor" },
+    // disagrees with the workbook: a conflict and nothing else
+    { conflict: true, findingState: "proposed", anchorMode: "exact_normalized",
+      sourceCount: 2, abstained: false, bulkAcceptableField: true,
+      evidenceStrength: 0.9, fieldKey: "auditor" },
+    // never anchored: quarantined and nothing else
+    { conflict: false, findingState: "proposed", anchorMode: "label_only",
+      sourceCount: 2, abstained: false, bulkAcceptableField: true,
+      evidenceStrength: 0.9, fieldKey: "auditor" },
+    // nothing found at all: no evidence and nothing else
+    { conflict: false, findingState: "proposed", anchorMode: "exact_normalized",
+      sourceCount: 0, abstained: false, bulkAcceptableField: true,
+      evidenceStrength: null, fieldKey: "auditor" },
+  ];
+  const keys = ["bulkable", "need_review", "conflict", "no_evidence", "quarantined"];
+  const counts: Record<string, number> = Object.fromEntries(
+    keys.map((k) => [k, rows.filter((r) => IN_BUCKET[k](r, 0.8)).length]));
+
+  // Before the deepEqual: node's assert narrows `counts` to the literal it is
+  // compared against, and a string index into that type no longer type-checks.
+  const total = keys.reduce((n, k) => n + counts[k], 0);
+  assert.equal(total, rows.length, "the buckets partition the undecided rows exactly once");
+  assert.deepEqual(counts,
+    { bulkable: 1, need_review: 1, conflict: 1, no_evidence: 1, quarantined: 1 });
+});
+
+test("a conflict is only ever in the conflict bucket", () => {
+  const conflicted = {
+    conflict: true, findingState: "proposed", anchorMode: "exact_normalized",
+    sourceCount: 2, abstained: false, bulkAcceptableField: true,
+    evidenceStrength: 0.95, fieldKey: "auditor",
+  };
+  assert.ok(IN_BUCKET.conflict(conflicted, 0.8));
+  assert.ok(!IN_BUCKET.need_review(conflicted, 0.8),
+    "a conflict opened from 'need review' would be resolved without its diff");
+  assert.ok(!IN_BUCKET.bulkable(conflicted, 0.8),
+    "and bulk accept must never sweep one up");
 });

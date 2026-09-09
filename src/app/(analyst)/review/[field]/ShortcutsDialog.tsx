@@ -5,8 +5,9 @@ import { useEffect, useRef } from "react";
 const KEYS: Array<[string, string]> = [
   ["↓ ↑", "Move row; the evidence follows"],
   ["Home End", "First or last row"],
-  ["A", "Accept"],
-  ["O", "Override"],
+  ["A", "Accept, or take the AI's value on a conflict"],
+  ["K", "Keep what the workbook says, on a conflict"],
+  ["O", "Enter your own value"],
   ["F", "Flag, with a reason"],
   ["Space", "Show or hide the evidence"],
   ["E", "Open the cited source"],
