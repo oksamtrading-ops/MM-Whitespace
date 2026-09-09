@@ -206,6 +206,34 @@ async function journeys() {
   check("an unknown parse is not a page that half-works",
         gone.html.includes("That report has gone"));
 
+  // 7. Publishing: who may, who may not, and what an override costs.
+  console.log("\n7. the publish screen");
+  const viewerOnPublish = await get("/publish", viewer.cookie);
+  check("a Viewer is refused the publish screen", viewerOnPublish.html.includes("Not permitted"));
+
+  const analystPublish = await get("/publish", analyst.cookie);
+  check("the gate's blockers are named on the page",
+        analystPublish.html.includes("The gate is blocked") &&
+        /floor is \d+%/.test(analystPublish.html));
+  // docs/design/08: only an Admin publishes through a blocked gate.
+  check("an Analyst is offered no way through a blocked gate",
+        !analystPublish.html.includes("overrideReason") &&
+        analystPublish.html.includes("An Admin may publish through it"));
+
+  const adminPublish = await get("/publish", admin.cookie);
+  check("an Admin is offered the override, and it demands a reason",
+        adminPublish.html.includes('name="overrideReason"') &&
+        adminPublish.html.includes("printed on the dashboard header"));
+  // The journey database was published with this override; the reason it
+  // carried is part of the record and has to still be readable.
+  check("the published revision is listed with the reason it carried",
+        adminPublish.html.includes("Revisions already published") &&
+        adminPublish.html.includes("End-to-end journey: day-one baseline."),
+        "the revisions table did not show revision 1 and its override reason");
+  check("a further publication is an amendment, not a replacement",
+        adminPublish.html.includes("Publish an amendment") &&
+        adminPublish.html.includes('name="amendmentReason"'));
+
   // 5. The cron endpoint is closed to everything but the right secret.
   console.log("\n5. the cron endpoint");
   const noHeader = await fetch(`${BASE}/api/cron/tick`, { method: "POST" });
@@ -231,6 +259,8 @@ async function journeys() {
     ["/access (admin)", "/access", admin.cookie],
     ["/upload (analyst)", "/upload", analyst.cookie],
     [`/upload/{id} (analyst)`, `/upload/${parse.id}`, analyst.cookie],
+    ["/publish (admin)", "/publish", admin.cookie],
+    ["/publish (viewer, refused)", "/publish", viewer.cookie],
   ];
   for (const [name, path, cookie] of routes) {
     const { html } = await get(path, cookie);

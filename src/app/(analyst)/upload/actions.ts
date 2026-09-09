@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { commitPeriod } from "../../../lib/db/commit.ts";
 import { requireRole } from "../../../lib/auth/context.ts";
@@ -62,5 +63,7 @@ export async function commitParsed(_prev: CommitResultMessage | null, form: Form
     return { ok: false, message: (err as Error).message };
   }
   dropParse(id);
+  // The top bar carries the period and its status.
+  revalidatePath("/", "layout");
   redirect("/review");
 }

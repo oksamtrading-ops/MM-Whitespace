@@ -134,7 +134,9 @@ export default async function ReviewBoard() {
 
       <Section id="gate" title="Publish gate" index={4}>
         {gate.blockers.length === 0
-          ? <p className="gateline ok"><span className="mark" aria-hidden="true">✓</span> Open. This period may be published.</p>
+          ? <p className="gateline ok"><span className="mark" aria-hidden="true">✓</span>
+              <span className="what">Open. This period may be published.</span>
+              <Link href="/publish" prefetch={false}>Go to publish →</Link></p>
           : (
             <>
               <ul className="gatelist">
@@ -144,7 +146,7 @@ export default async function ReviewBoard() {
               </ul>
               <p className="note">
                 An Admin may publish through a blocked gate with a reason, which is then
-                printed on the dashboard header.
+                printed on the dashboard header. <Link href="/publish" prefetch={false}>Go to publish →</Link>
               </p>
             </>
           )}

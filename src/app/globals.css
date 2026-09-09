@@ -557,6 +557,7 @@ dialog td:first-child { width: 112px; }
 .findings summary:hover { color: var(--ink); }
 
 .gateline .what { flex: 1; }
+.gateline a { font-size: 13px; white-space: nowrap; }
 .gateline .fig-sm { color: var(--ink-2); }
 
 .commit { max-width: 480px; }
@@ -566,7 +567,12 @@ dialog td:first-child { width: 112px; }
   font: inherit; font-size: 15px; width: 100%; min-height: 44px; padding: 0 12px;
   border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); color: var(--ink);
 }
-.commit input:focus { border-color: var(--green-mark); }
+.commit textarea {
+  font: inherit; font-size: 15px; width: 100%; padding: 10px 12px; resize: vertical;
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); line-height: 1.5;
+}
+.commit input:focus, .commit textarea:focus { border-color: var(--green-mark); }
 .commit .hint { display: block; font-size: 13px; color: var(--ink-3); margin-top: 8px; }
 .commit .check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 20px; }
 .commit .check input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; }
