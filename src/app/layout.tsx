@@ -38,6 +38,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   if (canReview) items.push({ href: "/upload", label: "Upload" });
   if (canReview) items.push({ href: "/review", label: "Review" });
   if (canReview) items.push({ href: "/publish", label: "Publish" });
+  items.push({ href: "/companies", label: "Companies" });
   items.push({ href: "/dashboard", label: "Dashboard" });
   if (user?.role === "admin") items.push({ href: "/access", label: "Access" });
 

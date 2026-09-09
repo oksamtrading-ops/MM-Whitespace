@@ -234,6 +234,28 @@ async function journeys() {
         adminPublish.html.includes("Publish an amendment") &&
         adminPublish.html.includes('name="amendmentReason"'));
 
+  // 8. Journey two: a partner opens a company before a pursuit conversation.
+  console.log("\n8. a company profile");
+  const index = await get("/companies", viewer.cookie);
+  check("a Viewer may look up companies", index.html.includes("Companies") &&
+        !index.html.includes("Not permitted"));
+  const idMatch = index.html.match(/\/companies\/([0-9a-f]{32})/);
+  check("the index links to profiles", Boolean(idMatch));
+  const profile = await get(`/companies/${idMatch?.[1]}`, viewer.cookie);
+  check("the profile answers the tier and the audit relationship",
+        /Tier \d|Unclassified/.test(profile.html) &&
+        /Deloitte|auditor is/.test(profile.html));
+  check("the rule that produced the tier is shown, not just the tier",
+        profile.html.includes("Why this tier") && profile.html.includes("Rule set"));
+  check("every value carries where it came from",
+        profile.html.includes("Every value, and where it came from") &&
+        profile.html.includes("From the workbook"));
+  check("a first period says so rather than drawing an empty comparison",
+        profile.html.includes("first published period"));
+  const missing = await get(`/companies/${"f".repeat(32)}`, viewer.cookie);
+  check("a company that is not in the population is refused plainly",
+        missing.html.includes("No such company"));
+
   // 5. The cron endpoint is closed to everything but the right secret.
   console.log("\n5. the cron endpoint");
   const noHeader = await fetch(`${BASE}/api/cron/tick`, { method: "POST" });
@@ -261,6 +283,8 @@ async function journeys() {
     [`/upload/{id} (analyst)`, `/upload/${parse.id}`, analyst.cookie],
     ["/publish (admin)", "/publish", admin.cookie],
     ["/publish (viewer, refused)", "/publish", viewer.cookie],
+    ["/companies (viewer)", "/companies", viewer.cookie],
+    [`/companies/{id} (viewer)`, `/companies/${idMatch?.[1]}`, viewer.cookie],
   ];
   for (const [name, path, cookie] of routes) {
     const { html } = await get(path, cookie);
