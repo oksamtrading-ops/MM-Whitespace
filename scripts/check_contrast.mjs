@@ -35,7 +35,8 @@ export function contrast(a, b) {
 
 /** Pull a token's value out of the light-mode `:root` block. */
 function lightToken(css, name) {
-  const root = css.slice(css.indexOf(":root {"), css.indexOf("@media"));
+  const start = css.indexOf(":root {");
+  const root = css.slice(start, css.indexOf("}", start));
   const match = root.match(new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`));
   if (!match) throw new Error(`token --${name} not found in the light palette`);
   return match[1];
@@ -59,6 +60,12 @@ const CHECKS = [
   { label: "body ink on surface", fg: t("ink"), bg: t("surface"), floor: TEXT_FLOOR },
   { label: "secondary ink on surface", fg: t("ink-2"), bg: t("surface"), floor: TEXT_FLOOR },
   { label: "de-emphasis grey on surface", fg: t("demote"), bg: t("surface"), floor: TEXT_FLOOR },
+  { label: "caption ink on surface", fg: t("ink-3"), bg: t("surface"), floor: TEXT_FLOOR },
+  { label: "caption ink on the raised surface", fg: t("ink-3"), bg: t("surface-2"), floor: TEXT_FLOOR },
+  { label: "deep green text on the soft green", fg: t("green-deep"), bg: t("green-soft"), floor: TEXT_FLOOR },
+  { label: "green text on the soft green is NOT legal", fg: t("green-text"), bg: t("green-soft"), floor: null,
+    note: "below 4.5:1 -- text on the soft green uses --green-deep, never --green-text." },
+  { label: "body ink on the soft green (marks)", fg: t("ink"), bg: t("green-soft"), floor: TEXT_FLOOR },
 
   { label: "alert text on its soft ground", fg: t("alert"), bg: t("alert-soft"), floor: TEXT_FLOOR },
   { label: "warning text on its soft ground", fg: t("warn"), bg: t("warn-soft"), floor: TEXT_FLOOR },

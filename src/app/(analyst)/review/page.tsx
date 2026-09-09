@@ -1,28 +1,29 @@
 import Link from "next/link";
+import type { Metadata, Route } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { evaluateGate } from "../../../lib/publish/gate.ts";
 import { queueBuckets, reviewableFields } from "../../../lib/review/queue.ts";
+import Gauge from "../../_ui/Gauge.tsx";
+import Refusal from "../../_ui/Refusal.tsx";
+import Section from "../../_ui/Section.tsx";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Review" };
 
 export default async function ReviewBoard() {
   let ctx;
   try {
     // A Viewer must not reach the review workspace. This is the boundary; the
-    // rail not rendering a link is not.
+    // nav not rendering a link is not.
     ctx = await requireRole(["analyst", "admin"]);
   } catch (err) {
-    return (
-      <>
-        <h1>{err instanceof Forbidden ? "Not permitted" : "Sign in"}</h1>
-        <div className="empty">
-          <p>{err instanceof Forbidden
-            ? "Review is for Analysts and Admins. Your account is a Viewer."
-            : (err as Unauthenticated).message}</p>
-        </div>
-      </>
-    );
+    return err instanceof Forbidden
+      ? <Refusal title="Not permitted"
+                 body="Review is for Analysts and Admins. Your account is a Viewer, which opens the published dashboard."
+                 action={{ href: "/dashboard", label: "Go to the dashboard" }} />
+      : <Refusal title="Sign in" body={(err as Unauthenticated).message}
+                 action={{ href: "/signin", label: "Sign in" }} />;
   }
 
   const period = ctx.db.prepare(
@@ -30,107 +31,102 @@ export default async function ReviewBoard() {
   ).get() as { id: string; label: string; status: string } | undefined;
 
   if (!period) {
-    return (<><h1>Review</h1>
-      <div className="empty"><p>No period has been committed yet.</p></div></>);
+    return <Refusal title="Review" body="No period has been committed yet. Ingest a workbook and commit it first." />;
   }
 
   const gate = evaluateGate(ctx.db, period.id);
   const fields = reviewableFields(ctx.db, period.id);
   const buckets = queueBuckets(ctx.db, period.id);
   const totalValues = buckets.reduce((a, b) => a + b.count, 0);
+  const firstField = fields[0]?.fieldKey;
 
   return (
-    <>
-      <h1>Review — {period.label}</h1>
-      <p className="sub">
-        {period.status} · {gate.population} companies · signed in as {ctx.user.email}
+    <div className="reading">
+      <p className="meta rise">
+        {period.label} · {period.status} · <span className="fig-sm">{gate.population}</span> companies
+        {totalValues > 0 && <> · <span className="fig-sm">{totalValues}</span> proposals</>}
       </p>
+      <h1 className="rise">Review</h1>
 
-      <h2>Enrichment coverage</h2>
-      <p className="sub">Coverage is the only view with real data on day one, which is why it leads.</p>
-      <table>
-        <thead><tr><th>Field</th><th style={{ width: 200 }}>Coverage</th><th>Resolved</th></tr></thead>
-        <tbody>
-          {gate.coverage.map((c) => (
-            <tr key={c.chart}>
-              <td>{c.label}</td>
-              <td><div className={`bar${c.meetsFloor ? "" : " muted"}`}
-                       style={{ width: `${Math.max(2, c.actualPct)}%` }}
-                       role="img" aria-label={`${c.actualPct} percent`} /></td>
-              <td className="n">{c.resolved}/{c.population} ({c.actualPct}%)</td>
-            </tr>
+      <Section id="coverage" title="Enrichment coverage" index={1}
+               caption="How much of each field has been researched, against the floor its chart needs.">
+        <div className="gauges">
+          {gate.coverage.map((c, i) => (
+            <Gauge key={c.chart} label={c.label} resolved={c.resolved} population={c.population}
+                   floorPct={c.floorPct} index={i} compact />
           ))}
-        </tbody>
-      </table>
+        </div>
+      </Section>
 
-      <h2>Your queue <span className="sub">{totalValues} values</span></h2>
-      {totalValues === 0 ? (
-        <div className="empty">
-          <p><b>Nothing to review.</b> No enrichment has run against this period.</p>
-          <p className="sub">
-            Enrichment is replay-only in this build: live mode needs credentials and
-            spike S3. Seed a synthetic queue with{" "}
+      <Section id="queue" title="Your queue" index={2}
+               caption={totalValues > 0 ? "Pick a batch. Each count opens the grid filtered to it." : undefined}>
+        {totalValues === 0 ? (
+          <p className="empty">
+            <b>Nothing to review.</b> No enrichment has run against this period. Enrichment is
+            replay-only in this build; seed a synthetic queue with{" "}
             <code>node scripts/seed_review_fixture.mjs ./period.db</code>.
           </p>
-        </div>
-      ) : (
-        <table>
-          <tbody>
-            {buckets.map((b) => (
-              <tr key={b.key}>
-                <td className="n">{b.count}</td>
-                <td>
-                  {/* Every number is a link that opens the grid pre-filtered.
-                      The Analyst chooses a batch; they never face 2,590
-                      undifferentiated cells. */}
-                  {fields.length > 0
-                    ? <Link href={`/review/${fields[0].fieldKey}?bucket=${b.key}`}>{b.label}</Link>
-                    : b.label}
-                  {b.startHere && <span className="tag warn"> start here</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+        ) : (
+          <ul className="queue">
+            {buckets.map((b) => {
+              const href = firstField ? `/review/${firstField}?bucket=${b.key}` : null;
+              const inner = (
+                <>
+                  <span className="fig-lg">{b.count}</span>
+                  <span className="lab">{b.label}</span>
+                  {b.startHere && <span className="start"><span className="dot" aria-hidden="true" />start here</span>}
+                </>
+              );
+              return (
+                <li key={b.key} className={b.startHere ? "here" : ""}>
+                  {href ? <Link href={href as Route} prefetch={false}>{inner}</Link> : inner}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Section>
 
       {fields.length > 0 && (
-        <>
-          <h2>Fields</h2>
-          <p className="sub">
-            Reviewed one field down a column, not one company across a row: judging one
-            field reuses a single mental model, which is the difference between a
-            two-hour review and a two-day one.
-          </p>
+        <Section id="fields" title="Fields" index={3}
+                 caption="Reviewed one field down the column, not one company across the row.">
           <table>
-            <thead><tr><th>Field</th><th>Proposals</th><th>Decided</th><th></th></tr></thead>
+            <thead>
+              <tr><th>Field</th><th className="n">Proposals</th><th className="n">Decided</th><th>Bulk accept</th></tr>
+            </thead>
             <tbody>
               {fields.map((f) => (
                 <tr key={f.fieldKey}>
-                  <td><Link href={`/review/${f.fieldKey}`}>{f.label}</Link></td>
+                  <td><Link href={`/review/${f.fieldKey}` as Route} prefetch={false}>{f.label}</Link></td>
                   <td className="n">{f.proposals}</td>
                   <td className="n">{f.decided}</td>
                   <td>{f.bulkAcceptable
-                    ? <span className="pill ok">bulk-acceptable</span>
-                    : <span className="pill no">never bulk</span>}</td>
+                    ? <span className="pill ok">allowed above threshold</span>
+                    : <span className="pill no">never</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </>
+        </Section>
       )}
 
-      <h2>Publish gate</h2>
-      {gate.blockers.length === 0
-        ? <p><span className="pill ok">open</span> This period may be published.</p>
-        : (
-          <div className="banner" role="status">
-            <b>Publish is blocked</b>
-            {gate.blockers.map((b) => b.detail).join("; ")}.
-            {" "}An Admin may override with a reason, which is then printed on the
-            dashboard header.
-          </div>
-        )}
-    </>
+      <Section id="gate" title="Publish gate" index={4}>
+        {gate.blockers.length === 0
+          ? <p className="gateline ok"><span className="mark" aria-hidden="true">✓</span> Open. This period may be published.</p>
+          : (
+            <>
+              <ul className="gatelist">
+                {gate.blockers.map((b, i) => (
+                  <li key={i} className="gateline no"><span className="mark" aria-hidden="true">✗</span> {b.detail}</li>
+                ))}
+              </ul>
+              <p className="note">
+                An Admin may publish through a blocked gate with a reason, which is then
+                printed on the dashboard header.
+              </p>
+            </>
+          )}
+      </Section>
+    </div>
   );
 }
