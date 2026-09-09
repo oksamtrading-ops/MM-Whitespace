@@ -124,6 +124,11 @@ the wrong data into the right field.
 
 ### Diagnose
 
+An Analyst sees this on **/upload**: the workbook is parsed, the report names the
+finding, and the commit is refused until it is resolved. Nothing is written, and the
+workbook is deleted as soon as it has been read. To get the same report on the
+command line, with the column letters:
+
 ```bash
 python3 -m mmparser.cli "reference/<workbook>.xlsx" --verbose
 ```

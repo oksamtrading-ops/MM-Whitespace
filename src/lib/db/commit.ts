@@ -44,24 +44,31 @@ function normName(name: string): string {
 }
 
 /** A period whose as-of date is already published must not be re-committed. */
-function assertPeriodAdmissible(db: DatabaseSync, asOf: string): void {
+/**
+ * Why this period may not be committed, or null. Exported so the validation
+ * report can say so BEFORE the Analyst fills in a commit form, rather than
+ * letting them find out by pressing the button.
+ */
+export function periodAdmissibility(db: DatabaseSync, asOf: string): string | null {
   const clash = db.prepare(
     "select label, status from periods where market_cap_as_of = ? and status = 'published'",
   ).get(asOf) as { label: string } | undefined;
   if (clash) {
-    throw new Error(
-      `period ${asOf} is already published as "${clash.label}". ` +
-      `A published period is immutable; corrections are amendments that bump the revision.`,
-    );
+    return `period ${asOf} is already published as "${clash.label}". ` +
+      `A published period is immutable; corrections are amendments that bump the revision.`;
   }
   const later = db.prepare(
     "select label, market_cap_as_of from periods where status = 'published' and market_cap_as_of > ?",
   ).get(asOf) as { label: string; market_cap_as_of: string } | undefined;
   if (later) {
-    throw new Error(
-      `period ${asOf} predates the published period "${later.label}" (${later.market_cap_as_of}).`,
-    );
+    return `period ${asOf} predates the published period "${later.label}" (${later.market_cap_as_of}).`;
   }
+  return null;
+}
+
+function assertPeriodAdmissible(db: DatabaseSync, asOf: string): void {
+  const why = periodAdmissibility(db, asOf);
+  if (why) throw new Error(why);
 }
 
 export function commitPeriod(

@@ -13,6 +13,7 @@
  */
 import { appendFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { quarantineDir, sweepQuarantine } from "../src/lib/ingest/quarantine.ts";
 
 const UNOWNED = "UNASSIGNED";
 
@@ -38,8 +39,16 @@ export const RULES = [
     transferable: true,
     // Nothing to delete: uploads are parsed and the bytes dropped rather than
     // stored. The rule is listed so its absence is a stated fact, not a gap.
-    apply: () => ({ examined: 0, deleted: 0,
-                    note: "no durable upload store exists; bytes are dropped after parsing" }),
+    apply: (_db, apply) => {
+      // The workbook itself is deleted inside the request that parsed it, so
+      // there is no store of a licensed extract. What outlives that request is
+      // the PARSED PAYLOAD, held for an hour because the validation report has
+      // to precede the commit -- and swept here when it is not committed.
+      const { examined, deleted } = sweepQuarantine(Date.now(), { dryRun: !apply });
+      return { examined, deleted,
+               note: `parsed payloads past their hour in ${quarantineDir()}; ` +
+                     "the workbook itself is never stored" };
+    },
   },
   {
     key: "document_text",

@@ -35,6 +35,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const canReview = user?.role === "analyst" || user?.role === "admin";
 
   const items: NavItem[] = [];
+  if (canReview) items.push({ href: "/upload", label: "Upload" });
   if (canReview) items.push({ href: "/review", label: "Review" });
   items.push({ href: "/dashboard", label: "Dashboard" });
   if (user?.role === "admin") items.push({ href: "/access", label: "Access" });

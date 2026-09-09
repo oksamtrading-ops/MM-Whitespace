@@ -8,6 +8,10 @@ const config: NextConfig = {
   // The home directory contains a stray package-lock.json; without this
   // Turbopack walks up and adopts it as the workspace root.
   turbopack: { root: import.meta.dirname },
+  // The real workbook is 1.01 MB; a server action's default body limit is 1 MB,
+  // and the upload is a server action so the validation report can precede the
+  // commit without a second round trip.
+  experimental: { serverActions: { bodySizeLimit: "25mb" } },
   poweredByHeader: false,
   async headers() {
     return [{

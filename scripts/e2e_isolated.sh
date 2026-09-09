@@ -22,6 +22,7 @@ git -C "$ROOT" worktree add -q --detach "$WT" HEAD
 # what you have edited, not what you last committed.
 rsync -a --exclude node_modules --exclude .next --exclude .git \
       "$ROOT/src" "$ROOT/tests" "$ROOT/scripts" "$ROOT/mmparser" "$WT/"
+cp "$ROOT/next.config.ts" "$ROOT/package.json" "$ROOT/tsconfig.json" "$WT/"
 
 # Turbopack refuses a symlinked node_modules ("points out of the filesystem
 # root"), so clone it. -c is copy-on-write on APFS: about a second, no disk.

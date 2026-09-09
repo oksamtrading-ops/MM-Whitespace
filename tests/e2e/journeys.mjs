@@ -15,6 +15,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -179,6 +180,32 @@ async function journeys() {
   check("an Admin cannot deactivate themselves",
         /disabled=""[^>]*>\s*Deactivate|Deactivate\s*<\/button>/.test(access.html));
 
+  // 6. The validation report precedes the commit, and a re-upload of an
+  //    already-published period is refused by name.
+  console.log("\n6. the validation report precedes the commit");
+  const viewerOnUpload = await get("/upload", viewer.cookie);
+  check("a Viewer is refused the upload screen", viewerOnUpload.html.includes("Not permitted"));
+
+  const { parseUpload } = await import("../../src/lib/ingest/quarantine.ts");
+  const parse = await parseUpload(
+    new Uint8Array(readFileSync(join(ROOT, "tests", "fixtures", "synthetic_whitespace.xlsx"))),
+    "synthetic_whitespace.xlsx");
+  const report = await get(`/upload/${parse.id}`, analyst.cookie);
+  check("the report names the workbook and its company count",
+        report.html.includes("synthetic_whitespace.xlsx") &&
+        report.html.includes(String(parse.payload.companies.length)));
+  check("proof totals are shown as ties or failures",
+        report.html.includes("Proof totals") && /class="gateline (ok|no)"/.test(report.html));
+  // docs/design/04: a wrong-period upload blocks, naming the conflict.
+  check("re-uploading a published period is refused, naming the conflict",
+        report.html.includes("Cannot be committed") && report.html.includes("already published"),
+        report.html.includes("Ready to commit") ? "it offered to commit instead" : "");
+  check("no commit control is offered while it is refused",
+        !/name="label"/.test(report.html));
+  const gone = await get("/upload/0123456789abcdef0123456789abcdef", analyst.cookie);
+  check("an unknown parse is not a page that half-works",
+        gone.html.includes("That report has gone"));
+
   // 5. The cron endpoint is closed to everything but the right secret.
   console.log("\n5. the cron endpoint");
   const noHeader = await fetch(`${BASE}/api/cron/tick`, { method: "POST" });
@@ -202,6 +229,8 @@ async function journeys() {
     ["/review/auditor (analyst)", "/review/auditor", analyst.cookie],
     ["/review (viewer, refused)", "/review", viewer.cookie],
     ["/access (admin)", "/access", admin.cookie],
+    ["/upload (analyst)", "/upload", analyst.cookie],
+    [`/upload/{id} (analyst)`, `/upload/${parse.id}`, analyst.cookie],
   ];
   for (const [name, path, cookie] of routes) {
     const { html } = await get(path, cookie);
