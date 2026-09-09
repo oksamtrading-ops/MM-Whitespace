@@ -4,6 +4,7 @@ import { Archivo, Open_Sans } from "next/font/google";
 import { authContext } from "../lib/auth/context.ts";
 import { resolveUser } from "../lib/auth/session.ts";
 import Nav, { type NavItem } from "./_ui/Nav.tsx";
+import { periodName } from "./_ui/format.ts";
 
 /* Open Sans is the brand face and carries everything you read. Archivo carries
    every figure that measures something -- its width axis lets the hero and
@@ -60,7 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {showPeriod && (
               <span className="chip">
                 <span className={`dot${period.revision === null ? " draft" : ""}`} aria-hidden="true" />
-                <span className="fig-sm">{period.label}</span>
+                <span className="fig-sm">{periodName(period.label).name}</span>
                 <span>{period.revision === null ? "draft" : `rev ${period.revision}`}</span>
               </span>
             )}

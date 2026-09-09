@@ -7,6 +7,8 @@ import { queueBuckets, reviewableFields } from "../../../lib/review/queue.ts";
 import Gauge from "../../_ui/Gauge.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
+import Facts from "../../_ui/Facts.tsx";
+import { fmtDate, periodName } from "../../_ui/format.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Review" };
@@ -39,14 +41,18 @@ export default async function ReviewBoard() {
   const buckets = queueBuckets(ctx.db, period.id);
   const totalValues = buckets.reduce((a, b) => a + b.count, 0);
   const firstField = fields[0]?.fieldKey;
+  const { name: periodTitle, asOf } = periodName(period.label);
 
   return (
     <div className="reading">
-      <p className="meta rise">
-        {period.label} · {period.status} · <span className="fig-sm">{gate.population}</span> companies
-        {totalValues > 0 && <> · <span className="fig-sm">{totalValues}</span> proposals</>}
-      </p>
       <h1 className="rise">Review</h1>
+      <Facts className="rise" items={[
+        { label: "Period", value: periodTitle, figure: true },
+        ...(asOf ? [{ label: "Market cap as of", value: fmtDate(asOf) }] : []),
+        { label: "Status", value: <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>{period.status}</span> },
+        { label: "Companies", value: gate.population, figure: true },
+        ...(totalValues > 0 ? [{ label: "Proposals", value: totalValues, figure: true }] : []),
+      ]} />
 
       <Section id="coverage" title="Enrichment coverage" index={1}
                caption="How much of each field has been researched, against the floor its chart needs.">

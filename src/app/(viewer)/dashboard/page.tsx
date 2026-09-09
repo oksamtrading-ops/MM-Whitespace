@@ -15,7 +15,8 @@ import Gauge from "../../_ui/Gauge.tsx";
 import Ledger from "../../_ui/Ledger.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
-import { fmtDate, fmtInt } from "../../_ui/format.ts";
+import Facts from "../../_ui/Facts.tsx";
+import { fmtCompact, fmtDate, periodName } from "../../_ui/format.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Dashboard" };
@@ -122,17 +123,20 @@ export default async function Dashboard() {
   const migration = tierMigration(agg, Boolean(agg.migration));
 
   const publishedOn = fmtDate(snap.publication.published_at);
-  const threshold = `${period.threshold_currency} ${fmtInt(Number(period.threshold_amount))}`;
+  const { name: periodTitle } = periodName(period.label);
+  const threshold = `${period.threshold_currency} ${fmtCompact(Number(period.threshold_amount))}`;
 
   return (
     <div className="withindex">
       <Contents items={SECTIONS} />
       <div className="reading">
-        <p className="meta rise">
-          {period.label} · published revision {snap.publication.revision} on {publishedOn}
-          {publisher && <> by {publisher}</>} · {threshold} and above · ±{period.proximity_band_pct}% band
-        </p>
-        <h1 className="sr-only">{period.label} dashboard</h1>
+        <Facts className="rise" items={[
+          { label: "Period", value: periodTitle, figure: true },
+          { label: "Market cap as of", value: fmtDate(period.market_cap_as_of) },
+          { label: "Published", value: <>Revision {snap.publication.revision}<span className="sub">{publishedOn}{publisher && ` · ${publisher}`}</span></> },
+          { label: "Threshold", value: <>{threshold}<span className="sub">and above, ±{period.proximity_band_pct}%</span></>, figure: true },
+        ]} />
+        <h1 className="sr-only">{periodTitle} dashboard</h1>
 
         {snap.publication.override_reason && (
           <div className="notice rise" role="status" style={{ "--i": 1 } as React.CSSProperties}>

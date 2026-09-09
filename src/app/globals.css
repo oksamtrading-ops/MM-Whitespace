@@ -157,17 +157,32 @@ h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
 .sub { color: var(--ink-2); font-size: 14px; margin: 0 0 24px; max-width: 64ch; }
 .meta { color: var(--ink-3); font-size: 13px; }
 
+/* ------------------------------------------------------------ facts */
+
+.facts {
+  display: flex; flex-wrap: wrap; gap: 10px 40px; margin: 0 0 28px; padding: 0;
+  max-width: var(--measure);
+}
+.facts > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.facts dt { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.facts dd { margin: 0; font-size: 14px; color: var(--ink); white-space: nowrap; }
+.facts dd.fig { font-size: 15px; }
+.facts dd .sub { display: inline; font-size: 13px; color: var(--ink-2); margin: 0 0 0 6px; }
+
 /* -------------------------------------------------------- notices */
 
+/* A note carries its heading as a small label and the text in body ink: a
+   rule, not a fill, so it reads as part of the page rather than an alarm. */
 .notice {
-  display: grid; grid-template-columns: auto 1fr; gap: 0 14px; align-items: start;
-  border-left: 3px solid var(--warn); background: var(--warn-soft);
-  padding: 12px 16px 12px 14px; border-radius: 0 var(--radius) var(--radius) 0;
-  margin: 0 0 28px; font-size: 14px; max-width: var(--measure);
+  display: grid; grid-template-columns: 1fr; gap: 3px;
+  border-left: 2px solid var(--warn); padding: 2px 0 2px 16px;
+  margin: 0 0 32px; font-size: 14px; max-width: 64ch; color: var(--ink);
 }
-.notice b { grid-column: 1 / -1; }
-.notice.alert { border-color: var(--alert); background: var(--alert-soft); }
-.notice.ok { border-color: var(--green-mark); background: var(--green-soft); }
+.notice b { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--warn); }
+.notice.alert { border-color: var(--alert); }
+.notice.alert b { color: var(--alert); }
+.notice.ok { border-color: var(--green-mark); }
+.notice.ok b { color: var(--green-deep); }
 
 /* ------------------------------------------------------------ pages */
 
