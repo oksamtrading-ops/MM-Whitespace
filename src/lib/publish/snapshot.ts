@@ -184,6 +184,50 @@ export function publishPeriod(
       const firm = row.firm === "null" ? "unknown" : (JSON.parse(row.firm) ?? "unknown");
       count("auditor_by_tier", String(firm), row.band, row.n);
     }
+    // Market, with the foreign-HQ bucket counted rather than dropped: 53 of 259
+    // is a fifth of the population, and a partner reading five market bars
+    // would otherwise sum 206 with no way to know.
+    for (const row of db.prepare(
+      `select value b, count(*) n from published_period_values
+        where publication_id = ? and field_key = 'dtt_market' group by b`,
+    ).all(pub.id) as Array<{ b: string; n: number }>) {
+      const market = row.b === "null" ? null : (JSON.parse(row.b) as string | null);
+      count("market", market ?? "__foreign_hq__", "-", row.n);
+    }
+
+    // Property footprint by jurisdiction. Unnested here rather than in SQL,
+    // because the axis must be derived from a distinct query over the
+    // normalised values -- a hardcoded list silently drops a new jurisdiction.
+    const CANADA = "CANADA";
+    const regionRows = db.prepare(
+      `select value v from published_period_values
+        where publication_id = ? and field_key = 'property_regions'`,
+    ).all(pub.id) as Array<{ v: string }>;
+    const province = new Map<string, number>();
+    const foreign = new Map<string, number>();
+    for (const r of regionRows) {
+      let regions: Record<string, string[]>;
+      try { regions = JSON.parse(r.v) ?? {}; } catch { continue; }
+      for (const [group, values] of Object.entries(regions)) {
+        for (const value of values ?? []) {
+          const target = group === CANADA ? province : foreign;
+          target.set(value, (target.get(value) ?? 0) + 1);
+        }
+      }
+    }
+    for (const [k, n] of province) count("province_footprint", k, "-", n);
+    for (const [k, n] of foreign) count("jurisdiction_footprint", k, "-", n);
+
+    // Auditor share. "Unknown" is its own bucket and will be the longest bar --
+    // that is the actual finding, not a gap to hide.
+    for (const row of db.prepare(
+      `select value b, count(*) n from published_period_values
+        where publication_id = ? and field_key = 'auditor' group by b`,
+    ).all(pub.id) as Array<{ b: string; n: number }>) {
+      const firm = row.b === "null" ? null : (JSON.parse(row.b) as string | null);
+      count("auditor_share", firm ?? "__unknown__", "-", row.n);
+    }
+
     // The migration matrix, prior band to current band.
     if (priorPublication) {
       for (const row of db.prepare(

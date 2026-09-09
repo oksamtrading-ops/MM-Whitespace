@@ -29,6 +29,32 @@ KNOWN_EXCHANGES = {"TSX", "TSXV"}
 VALID_TIERS = {1, 2, 3, 4, 5, 6}
 
 
+# The market field is a constrained enum including an explicit foreign value,
+# never free text. Anything outside it fails into the override queue.
+DTT_MARKETS = {
+    "british columbia": "British Columbia",
+    "ontario": "Ontario",
+    "quebec & ncr": "Quebec & NCR",
+    "quebec and ncr": "Quebec & NCR",
+    "prairies region": "Prairies Region",
+    "prairie region": "Prairies Region",
+    "atlantic": "Atlantic",
+}
+
+
+def _market_value(value, company, findings):
+    if not value.present:
+        return None
+    key = clean_text(value.value).casefold()
+    if key in DTT_MARKETS:
+        return DTT_MARKETS[key]
+    findings.append(Finding(
+        "warning", "market_not_in_enum",
+        "%s: Deloitte market %r is not one of the five markets -- a country typed "
+        "into the market column is a data-entry error, not a market" % (company, value.value)))
+    return None
+
+
 def _norm_name(value: str) -> str:
     text = clean_text(value).casefold().replace("&", " and ")
     for suffix in (" corporation", " corp", " incorporated", " inc", " limited",
@@ -233,6 +259,7 @@ def parse_matrix(ws, header_row, findings):
             "stage_evidence": "complete" if stages else ("none" if stage_any_col_present else "none"),
             "regions": regions, "region_present": region_present,
             "footprint_workbook": cell(ws, r, cols.get("canada vs abroad")).value,
+            "dtt_market": cell(ws, r, cols.get("dtt market")),
             "auditor_big4": big4, "auditor_other": others,
             "website": cell(ws, r, cols.get("companys website")),
         }
@@ -404,6 +431,9 @@ def ingest(path):
             "venture_graduate": ext["venture_graduate"],
             "auditor": firm, "auditor_class": klass,
             "website": website_url,
+            # A country typed into the market column is a DATA-ENTRY ERROR, not
+            # a market. It is surfaced rather than coerced into the enum.
+            "dtt_market": _market_value(mrow["dtt_market"], cons["name"], findings),
             "tier_workbook": mrow["tier_workbook"],
             "footprint_workbook": mrow["footprint_workbook"],
         }

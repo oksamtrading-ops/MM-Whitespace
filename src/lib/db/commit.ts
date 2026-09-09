@@ -20,6 +20,7 @@ export type ParsedCompany = {
   commodities: string[]; venture_graduate: boolean;
   auditor: string | null; auditor_class: string | null;
   website?: string | null;
+  dtt_market?: string | null;
   entity_id?: string | null;
   tier_workbook: number | null; footprint_workbook: string | null;
 };
@@ -203,6 +204,10 @@ export function commitPeriod(
       // enrichment target, not a website.
       value("website", c.website ?? null, "extract",
             c.website ? "asserted" : "unknown");
+      // Internal but not client data: the firm's own label on a public company.
+      // Classified deloitte_internal and hidden from Viewers by policy.
+      value("dtt_market", c.dtt_market ?? null, "manual_entry",
+            c.dtt_market ? "asserted" : "unknown");
       value("stage_evidence_state", c.stage_evidence, "extract",
             c.stage_evidence === "none" ? "unknown" : "asserted");
       value("property_evidence_state", c.property_evidence, "derived", "asserted");

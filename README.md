@@ -510,3 +510,65 @@ node scripts/seed_review_fixture.mjs ./period.db
 Seeds a **synthetic** queue so the grid can be exercised — these are not model
 outputs, and every row carries `prompt_version = 'synthetic-fixture'` so it is
 distinguishable from a real proposal in a query.
+
+## Dashboard views
+
+Two rules shape all of them.
+
+**Refuse to draw a chart that would lie.** With stage blank for 242 of 259 the
+tier function returns one value for everyone and the chart renders a single
+full-width bar: confident, well-formed, entirely false. An empty chart gets
+ignored; a full one that is wrong gets believed. So a chart below its coverage
+floor renders a **meter in the same footprint** — no layout jump — reading
+*"Stage of operations: 17 of 259 researched (6.6%). This view unlocks at 95%."*
+with a link into the filtered review queue. On the real period the tier chart
+and the auditor chart are both meters today, and they are right to be.
+
+**Every population chart carries a proof line**, computed at query time as a
+passing or failing assertion:
+
+```
+121 + 61 + 12 + 7 + 5 + 53 = 259 ✓
+```
+
+This is the one genuinely good idea in the source workbook, and it is the thing
+that would have caught the 258-versus-259 discrepancy on its own screen.
+
+### Views that are named for what they compute
+
+`producing mines by province` is **not** rebuilt. Property location and stage are
+both recorded at company level with no link between them, so "producing mines in
+province X" cannot be derived at any confidence — a producing company with
+properties in three jurisdictions does not have a producing mine in all three.
+Rebuilding it as named would count every exploration-stage property owned by a
+producing company as a producing mine, and nothing on screen would say so. **The
+broken reference at least announced itself.** It ships as *"Companies with
+properties in each province or territory"*, which is computable today and true.
+
+### Three things the views get right that the workbook does not
+
+**The foreign-HQ bucket is visible.** 53 of 259 companies have no Deloitte market
+and are disproportionately the large interlisted names. They render as an
+explicit terminal bucket in the de-emphasis grey, always last, never sorted into
+the ranking — and labelled "no Deloitte market", not "Other", because the
+workbook already uses "Others" for three specific markets.
+
+**Auditor share is an emphasis encoding**, not a categorical palette. The story
+is not who audits what; it is how much of this market is not ours. *"Unknown"
+is its own bar and is the longest* — that is the finding, not a gap to tidy away.
+
+**Research completing is not migration.** A company moving from Unclassified to
+tiered has had research done, not migrated. Counting it as movement would show
+242 phantom upgrades on the view's debut. The first period renders an empty
+state rather than a blank grid.
+
+### Colour
+
+Direction in the migration matrix uses a **separate fixed polarity scale**, not
+the brand green: encoding direction as light-green against dark-green reads as
+*magnitude*, making "moved down three tiers" look like "moved a lot" rather than
+"moved the wrong way". It ships with an icon and a label always.
+
+A green fill on white obliges a **relief channel**, so every bar carries a
+visible direct value label. Chips are black on green, never white — white on the
+brand green is 2.27:1.

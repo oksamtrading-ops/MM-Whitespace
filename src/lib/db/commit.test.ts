@@ -47,17 +47,27 @@ test("the canonical Postgres migrations apply, and the policy file is skipped", 
   }
 });
 
-test("companies has no client column, and no value is stored against an internal field", () => {
+test("no CLIENT information is stored, and internal-but-not-client data is separated", () => {
   const db = fresh();
+  // Client information is out of scope entirely: there is no column for it.
   const cols = db.prepare("pragma table_info(companies)").all().map((c: any) => c.name);
   assert.ok(!cols.includes("deloitte_tax_client"),
     "the POC stores no Deloitte client information");
-  commitPeriod(db, payload([company()]));
-  const n = db.prepare(
-    `select count(*) n from company_period_field_values v
+
+  commitPeriod(db, payload([company({ dtt_market: "Ontario" })]));
+
+  // The Deloitte market IS stored. It is internal but not client data -- the
+  // firm's own geographic label on a public company, identifying no client --
+  // so it is classified deloitte_internal and hidden from Viewers by policy.
+  // That leaves the classification mechanism exercised by a live row rather
+  // than by none, which is what a due-diligence review needs to inspect.
+  const internal = db.prepare(
+    `select distinct v.field_key from company_period_field_values v
        join field_catalog f on f.key = v.field_key
-      where f.classification = 'deloitte_internal'`).get() as { n: number };
-  assert.equal(n.n, 0);
+      where f.classification = 'deloitte_internal'
+        and v.value is not null and v.value != 'null'`).all() as Array<{ field_key: string }>;
+  assert.deepEqual(internal.map((r) => r.field_key), ["dtt_market"],
+    "dtt_market is the ONLY internal field carrying values; anything else is a leak");
 });
 
 test("committing twice is idempotent", () => {
