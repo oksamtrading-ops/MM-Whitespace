@@ -8,6 +8,7 @@
  */
 import { DatabaseSync } from "node:sqlite";
 import { classify, deriveFootprint, RULE_SET_VERSION, type Evidence, type Stage } from "../tiering/index.ts";
+import { getNumber, getSetting } from "../settings/index.ts";
 
 const ABROAD = ["AFRICA", "ASIA", "AUS/NZ/PNG", "LATIN AMERICA", "OTHER", "UK/EUROPE", "USA"];
 
@@ -88,12 +89,21 @@ export function commitPeriod(
 
   db.exec("begin");
   try {
+    // The Admin's defaults are copied ONTO the period at creation and belong
+    // to it from then on: a re-commit must not move the threshold a period
+    // was published against.
     db.prepare(
-      `insert into periods (label, market_cap_as_of, source_file_sha256, rule_set_version)
-       values (?, ?, ?, ?)
+      `insert into periods (label, market_cap_as_of, source_file_sha256, rule_set_version,
+                            threshold_amount, threshold_operator, threshold_currency,
+                            proximity_band_pct)
+       values (?, ?, ?, ?, ?, ?, ?, ?)
        on conflict (label) do update set source_file_sha256 = excluded.source_file_sha256,
                                           rule_set_version  = excluded.rule_set_version`,
-    ).run(label, asOf, opts.sourceSha256 ?? null, RULE_SET_VERSION);
+    ).run(label, asOf, opts.sourceSha256 ?? null, RULE_SET_VERSION,
+          getNumber(db, "default_threshold_amount", 200_000_000),
+          getSetting(db, "default_threshold_operator") ?? "gte",
+          getSetting(db, "default_threshold_currency") ?? "CAD",
+          getNumber(db, "default_proximity_band_pct", 2));
     const period = db.prepare("select id from periods where label = ?").get(label) as { id: string };
     result.periodId = period.id;
 

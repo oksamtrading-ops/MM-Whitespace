@@ -300,6 +300,29 @@ async function journeys(dbPath) {
   check("spend is shown against its cap", /\$21\.40/.test(runs.html) && /\$25\.00/.test(runs.html));
   execFileSync("node", ["scripts/seed_stalled_run.mjs", dbPath, "--remove"], { cwd: ROOT, stdio: "ignore" });
 
+  // 10. Settings: what an Admin may decide, and what the design will not let
+  //     anyone move quietly.
+  console.log("\n10. settings");
+  for (const [who, cookie] of [["a Viewer", viewer.cookie], ["an Analyst", analyst.cookie]]) {
+    const refused = await get("/settings", cookie);
+    check(`${who} is refused settings`, refused.html.includes("Not permitted"));
+  }
+  const settings = await get("/settings", admin.cookie);
+  check("the defaults an Admin owns are editable",
+        settings.html.includes('name="default_threshold_amount"') &&
+        settings.html.includes('name="default_run_budget_usd"'));
+  check("the period already committed is shown, and not as a form",
+        settings.html.includes("as committed") &&
+        !settings.html.includes('name="threshold_amount"'));
+  // The way past a floor is a recorded override, not a quieter floor.
+  check("coverage floors are shown and are not editable",
+        settings.html.includes("Coverage floors") &&
+        settings.html.includes("nobody named against it") &&
+        !settings.html.includes('name="floor_pct"'));
+  check("the fabrication ceiling is stated with what it excludes",
+        settings.html.includes("Fabrication ceiling") &&
+        settings.html.includes("An abstention is not a fabrication"));
+
   // 5. The cron endpoint is closed to everything but the right secret.
   console.log("\n5. the cron endpoint");
   const noHeader = await fetch(`${BASE}/api/cron/tick`, { method: "POST" });
@@ -329,6 +352,7 @@ async function journeys(dbPath) {
     ["/publish (viewer, refused)", "/publish", viewer.cookie],
     ["/companies (viewer)", "/companies", viewer.cookie],
     ["/runs (analyst)", "/runs", analyst.cookie],
+    ["/settings (admin)", "/settings", admin.cookie],
     [`/companies/{id} (viewer)`, `/companies/${idMatch?.[1]}`, viewer.cookie],
   ];
   for (const [name, path, cookie] of routes) {

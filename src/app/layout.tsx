@@ -42,6 +42,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   items.push({ href: "/companies", label: "Companies" });
   items.push({ href: "/dashboard", label: "Dashboard" });
   if (user?.role === "admin") items.push({ href: "/access", label: "Access" });
+  if (user?.role === "admin") items.push({ href: "/settings", label: "Settings" });
 
   // The period chip. A Viewer is shown a period only once it is published;
   // draft state is the workstation's business.

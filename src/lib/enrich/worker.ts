@@ -20,6 +20,7 @@ import {
   type PublicCompanyRow, type Route,
 } from "./prompt.ts";
 import { buildAllowlist, type FetchedDocument } from "./fetch.ts";
+import { getNumber } from "../settings/index.ts";
 
 export const SCHEMA_HASH = "findings-v1";
 export const DEFAULT_MODEL = "claude-sonnet-5";
@@ -77,7 +78,8 @@ export type ResearchOutcome = {
 export function createRun(
   db: DatabaseSync, periodId: string, companyIds: string[], opts: RunOptions,
 ): { runId: string; jobIds: string[] } {
-  const budget = opts.budgetUsd ?? 5;
+  // The Admin's default, so the settings screen is not decorative.
+  const budget = opts.budgetUsd ?? getNumber(db, "default_run_budget_usd", 5);
   if (!(budget > 0)) throw new Error("a run cannot be created without a budget");
   db.prepare(
     `insert into enrichment_runs (period_id, budget_usd, model, prompt_version, mode)

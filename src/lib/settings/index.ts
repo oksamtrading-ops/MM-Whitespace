@@ -1,0 +1,140 @@
+/**
+ * Settings an Admin owns, and the only place they are validated.
+ *
+ * Every setting here has an effect: the period defaults are copied onto the
+ * next period a commit creates, and the run budget is what startRun uses when
+ * nobody names one. A setting that changes nothing is worse than no setting,
+ * because it teaches people the screen is decorative.
+ */
+import type { DatabaseSync } from "node:sqlite";
+
+export type SettingKey =
+  | "default_threshold_amount" | "default_threshold_currency"
+  | "default_threshold_operator" | "default_proximity_band_pct"
+  | "default_run_budget_usd";
+
+export type Setting = {
+  key: SettingKey;
+  label: string;
+  help: string;
+  kind: "money" | "currency" | "operator" | "percent" | "usd";
+  value: string;
+  updatedBy: string | null;
+  updatedAt: string | null;
+};
+
+const DEFINITIONS: Array<Pick<Setting, "key" | "label" | "help" | "kind">> = [
+  { key: "default_threshold_amount", label: "Market-cap threshold", kind: "money",
+    help: "The line a company must reach to be in the population. The workbook is " +
+          "filtered at ingest, so changing this does not add or remove companies " +
+          "from a period already committed — it sets the line for the next one." },
+  { key: "default_threshold_currency", label: "Currency", kind: "currency",
+    help: "Three letters. The workbook reports in Canadian dollars." },
+  { key: "default_threshold_operator", label: "Operator", kind: "operator",
+    help: "Decision 9 settled this at “at or above”. Two companies sit less than " +
+          "1% above the line, so the comparison is not academic." },
+  { key: "default_proximity_band_pct", label: "Proximity band", kind: "percent",
+    help: "How close to the threshold a company must be to be marked near it. An " +
+          "ordinary market move crosses the line without anything having happened." },
+  { key: "default_run_budget_usd", label: "Default run budget", kind: "usd",
+    help: "What a run gets when nobody names a budget. It warns at 80% and halts " +
+          "at 100%; a run cannot exist without one." },
+];
+
+export class InvalidSetting extends Error {}
+
+/** Validation lives here, not in the form: the form is not the boundary. */
+export function validate(key: SettingKey, raw: string): string {
+  const value = raw.trim();
+  switch (key) {
+    case "default_threshold_amount": {
+      const n = Number(value.replace(/[,_\s]/g, ""));
+      if (!Number.isFinite(n) || n <= 0) throw new InvalidSetting("The threshold must be a positive amount.");
+      if (n > 1e13) throw new InvalidSetting("That threshold is larger than any market.");
+      return String(Math.round(n));
+    }
+    case "default_threshold_currency": {
+      if (!/^[A-Za-z]{3}$/.test(value)) throw new InvalidSetting("A currency is three letters, such as CAD.");
+      return value.toUpperCase();
+    }
+    case "default_threshold_operator": {
+      if (value !== "gt" && value !== "gte") throw new InvalidSetting("The operator is above, or at or above.");
+      return value;
+    }
+    case "default_proximity_band_pct": {
+      const n = Number(value.replace(/%/g, ""));
+      if (!Number.isFinite(n) || n < 0) throw new InvalidSetting("The band cannot be negative.");
+      if (n > 50) throw new InvalidSetting("A band above 50% marks most of the market as near the line.");
+      return String(n);
+    }
+    case "default_run_budget_usd": {
+      const n = Number(value.replace(/[$,\s]/g, ""));
+      if (!Number.isFinite(n) || n <= 0) throw new InvalidSetting("A run cannot be created without a budget.");
+      if (n > 10_000) throw new InvalidSetting("That budget is high enough to want a second pair of eyes. Raise it in the database if you mean it.");
+      return String(n);
+    }
+  }
+}
+
+export function readSettings(db: DatabaseSync): Setting[] {
+  const rows = db.prepare(
+    `select s.key, s.value, s.updated_at, u.email as updated_by
+       from app_settings s left join app_users u on u.id = s.updated_by`,
+  ).all() as Array<{ key: string; value: string; updated_at: string | null; updated_by: string | null }>;
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  return DEFINITIONS.map((d) => {
+    const row = byKey.get(d.key);
+    return {
+      ...d,
+      value: row?.value ?? "",
+      updatedBy: row?.updated_by ?? null,
+      updatedAt: row?.updated_at ?? null,
+    };
+  });
+}
+
+/**
+ * Absent on a database that has not had 0007 yet, which is every database made
+ * before it existed. A setting read is optional by nature, so a missing table
+ * reads as "not set" and the caller uses its fallback -- rather than a commit
+ * failing because a defaults table it never needed is not there yet.
+ * scripts/migrate.mjs is the actual fix; this is what keeps the lag survivable.
+ */
+export function getSetting(db: DatabaseSync, key: SettingKey): string | null {
+  try {
+    const row = db.prepare("select value from app_settings where key = ?").get(key) as
+      { value: string } | undefined;
+    return row?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function getNumber(db: DatabaseSync, key: SettingKey, fallback: number): number {
+  const raw = getSetting(db, key);
+  const n = raw === null ? NaN : Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Returns what changed, so the caller can write one audit line per change. */
+export function putSettings(
+  db: DatabaseSync, values: Partial<Record<SettingKey, string>>, actorId: string | null,
+): Array<{ key: SettingKey; from: string | null; to: string }> {
+  const changes: Array<{ key: SettingKey; from: string | null; to: string }> = [];
+  for (const d of DEFINITIONS) {
+    const raw = values[d.key];
+    if (raw === undefined) continue;
+    const clean = validate(d.key, raw);
+    const before = getSetting(db, d.key);
+    if (before === clean) continue;
+    db.prepare(
+      `insert into app_settings (key, value, updated_by, updated_at)
+       values (?, ?, ?, datetime('now'))
+       on conflict (key) do update
+         set value = excluded.value, updated_by = excluded.updated_by,
+             updated_at = excluded.updated_at`,
+    ).run(d.key, clean, actorId);
+    changes.push({ key: d.key, from: before, to: clean });
+  }
+  return changes;
+}

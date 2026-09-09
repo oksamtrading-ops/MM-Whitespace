@@ -626,6 +626,22 @@ table.provenance .pill { margin-left: 8px; }
 }
 .commit input:focus, .commit textarea:focus { border-color: var(--green-mark); }
 .commit .hint { display: block; font-size: 13px; color: var(--ink-3); margin-top: 8px; }
+.commit select {
+  font: inherit; font-size: 15px; width: 100%; min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink);
+}
+.commit .withunit { display: flex; align-items: center; gap: 0; }
+.commit .withunit .unit {
+  min-height: 44px; display: inline-flex; align-items: center; padding: 0 10px;
+  border: 1px solid var(--rule); background: var(--surface-2); color: var(--ink-2); font-size: 15px;
+}
+.commit .withunit .unit:first-child { border-right: 0; border-radius: var(--radius) 0 0 var(--radius); }
+.commit .withunit .unit:last-child { border-left: 0; border-radius: 0 var(--radius) var(--radius) 0; }
+.commit .withunit input { border-radius: 0; }
+.commit .withunit .unit:first-child + input { border-radius: 0 var(--radius) var(--radius) 0; }
+.commit .withunit input:only-child { border-radius: var(--radius); }
+.settings .field { margin-bottom: 28px; }
 .commit .check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 20px; }
 .commit .check input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; }
 .commit .check label { margin: 0; font-weight: 400; }
@@ -675,7 +691,7 @@ form.inline { display: inline; }
 
 /* ------------------------------------------------------------ narrow */
 
-@media (max-width: 1040px) {
+@media (max-width: 1240px) {
   .topbar { gap: 20px; }
   .who .email { display: none; }
 }

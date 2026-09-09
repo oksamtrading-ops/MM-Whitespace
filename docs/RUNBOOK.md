@@ -180,6 +180,22 @@ wrong for a third of the columns.
 
 ---
 
+## A database is a migration behind
+
+A migration added later reaches new databases only: the schema is applied when
+a database is created and never again. A read of an optional setting degrades
+to its fallback rather than failing, so the symptom is usually a screen that is
+missing rather than an error — **/settings** is the one that says so loudest.
+
+```bash
+node scripts/migrate.mjs ./period.db
+```
+
+It applies what is missing and records it. Run twice, the second is a no-op.
+A database made before the ledger existed is adopted rather than replayed:
+migrations run in order, so what it has had is the prefix ending at the last
+migration whose first table is present.
+
 ## Standing checks
 
 ```bash

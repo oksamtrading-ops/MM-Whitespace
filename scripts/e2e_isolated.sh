@@ -21,7 +21,7 @@ git -C "$ROOT" worktree add -q --detach "$WT" HEAD
 # The worktree is at HEAD, so lay the working tree over it: what runs should be
 # what you have edited, not what you last committed.
 rsync -a --exclude node_modules --exclude .next --exclude .git \
-      "$ROOT/src" "$ROOT/tests" "$ROOT/scripts" "$ROOT/mmparser" "$WT/"
+      "$ROOT/src" "$ROOT/tests" "$ROOT/scripts" "$ROOT/mmparser" "$ROOT/supabase" "$WT/"
 cp "$ROOT/next.config.ts" "$ROOT/package.json" "$ROOT/tsconfig.json" "$WT/"
 
 # Turbopack refuses a symlinked node_modules ("points out of the filesystem
