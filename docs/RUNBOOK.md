@@ -9,9 +9,11 @@ Every command assumes the repository root and a period database at `./period.db`
 
 ## 1. A run has stalled
 
-**What you will see.** A run sits at `running` and the job counts stop moving.
-The cron tick keeps returning `invokedWorker: false`, or returns `true` and
-nothing changes.
+**What you will see.** **/runs** says `Stalled` — a run the database still
+records as `running`, with nothing moved for three minutes and work left. The
+screen names the expired leases and the abandoned jobs; the queries below say
+why. The cron tick keeps returning `invokedWorker: false`, or returns `true`
+and nothing changes.
 
 ### Diagnose
 

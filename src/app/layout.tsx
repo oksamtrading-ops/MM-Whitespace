@@ -36,6 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   const items: NavItem[] = [];
   if (canReview) items.push({ href: "/upload", label: "Upload" });
+  if (canReview) items.push({ href: "/runs", label: "Runs" });
   if (canReview) items.push({ href: "/review", label: "Review" });
   if (canReview) items.push({ href: "/publish", label: "Publish" });
   items.push({ href: "/companies", label: "Companies" });

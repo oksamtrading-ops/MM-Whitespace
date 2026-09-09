@@ -76,6 +76,10 @@ function buildDatabase(dir) {
   execFileSync("node", ["--input-type=module", "-e", `
     import { DatabaseSync } from "node:sqlite";
     const db = new DatabaseSync(${JSON.stringify(db)});
+    // The fixture's own run finished an hour ago, so a run seeded later reads
+    // as the current one and the timeline stays coherent.
+    db.prepare("update enrichment_runs set created_at = ?")
+      .run(new Date(Date.now() - 3600000).toISOString().replace("T", " ").slice(0, 19));
     const ins = db.prepare("insert into app_users (email, role) values (?, ?)");
     ins.run("analyst@example.invalid", "analyst");
     ins.run("viewer@example.invalid", "viewer");
@@ -105,7 +109,7 @@ async function waitForServer(timeoutMs = 90_000) {
 
 /* ------------------------------------------------------------ journeys */
 
-async function journeys() {
+async function journeys(dbPath) {
   // 1. A Viewer signs in and reads the published dashboard.
   console.log("\n1. a Viewer signs in and reads the dashboard");
   const anon = await get("/dashboard");
@@ -275,6 +279,27 @@ async function journeys() {
   check("a company that is not in the population is refused plainly",
         missing.html.includes("No such company"));
 
+  // 9. docs/design/03: run state is explicit and user-visible, and NEVER a
+  //    bare spinner. Two of the seven states are derived, not stored.
+  console.log("\n9. the run screen");
+  const viewerOnRuns = await get("/runs", viewer.cookie);
+  check("a Viewer is refused the run screen", viewerOnRuns.html.includes("Not permitted"));
+
+  execFileSync("node", ["scripts/seed_stalled_run.mjs", dbPath], { cwd: ROOT, stdio: "ignore" });
+  const runs = await get("/runs", analyst.cookie);
+  check("a run whose worker died is reported as stalled, not as running",
+        runs.html.includes("Stalled") && runs.html.includes("Nothing has moved for three minutes"),
+        "the database still says 'running'; the screen must not");
+  check("the state of every job is named, never left to a bar",
+        runs.html.includes("Researching") && runs.html.includes("Queued") &&
+        runs.html.includes("waiting for a worker"));
+  check("expired leases are counted and their remedy stated",
+        runs.html.includes("Leases that ran out") && runs.html.includes("charges no attempt"));
+  check("abandoned jobs are named with the error that abandoned them",
+        runs.html.includes("Abandoned") && runs.html.includes("429 from the vendor"));
+  check("spend is shown against its cap", /\$21\.40/.test(runs.html) && /\$25\.00/.test(runs.html));
+  execFileSync("node", ["scripts/seed_stalled_run.mjs", dbPath, "--remove"], { cwd: ROOT, stdio: "ignore" });
+
   // 5. The cron endpoint is closed to everything but the right secret.
   console.log("\n5. the cron endpoint");
   const noHeader = await fetch(`${BASE}/api/cron/tick`, { method: "POST" });
@@ -303,6 +328,7 @@ async function journeys() {
     ["/publish (admin)", "/publish", admin.cookie],
     ["/publish (viewer, refused)", "/publish", viewer.cookie],
     ["/companies (viewer)", "/companies", viewer.cookie],
+    ["/runs (analyst)", "/runs", analyst.cookie],
     [`/companies/{id} (viewer)`, `/companies/${idMatch?.[1]}`, viewer.cookie],
   ];
   for (const [name, path, cookie] of routes) {
@@ -341,7 +367,7 @@ try {
 
   if (!await waitForServer()) throw new Error("the server did not start");
   console.log(`server up on ${BASE}\n`);
-  await journeys();
+  await journeys(db);
 } finally {
   server?.kill("SIGTERM");
   rmSync(dir, { recursive: true, force: true });

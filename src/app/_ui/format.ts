@@ -32,6 +32,20 @@ export function agoLabel(days: number): string {
   return days === 0 ? "today" : days === 1 ? "yesterday" : `${days}d ago`;
 }
 
+/**
+ * Money as one string.
+ *
+ * Written as {"$"}{n} in JSX it becomes two text nodes with a comment marker
+ * between them, so the page reads "$<!-- -->21.40" to anything looking at the
+ * markup. One expression, one node.
+ */
+const MONEY = new Intl.NumberFormat("en-CA", {
+  style: "currency", currency: "USD", currencyDisplay: "narrowSymbol",
+});
+export function fmtMoney(n: number): string {
+  return MONEY.format(n);
+}
+
 export function fmtInt(n: number): string {
   return new Intl.NumberFormat("en-CA").format(n);
 }

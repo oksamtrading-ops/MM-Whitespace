@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agoLabel, daysSince, fmtCompact, parseStamp, periodName } from "./format.ts";
+import { agoLabel, daysSince, fmtCompact, fmtMoney, parseStamp, periodName } from "./format.ts";
 
 /* A stored stamp is a UTC instant with no zone written on it. Read as local
    time it lands in the future anywhere west of Greenwich, which is how the
@@ -38,4 +38,13 @@ test("period labels and thresholds are shortened for display", () => {
   assert.equal(fmtCompact(1_500_000), "1.5M");
   assert.equal(fmtCompact(950_000), "950K");
   assert.equal(fmtCompact(750), "750");
+});
+
+test("money is one string, not a symbol beside a number", () => {
+  // React splits {"$"}{n} into two text nodes with a comment marker between
+  // them, so the markup reads "$<!-- -->21.40" and nothing can match on it.
+  assert.equal(fmtMoney(21.4), "$21.40");
+  assert.equal(fmtMoney(25), "$25.00");
+  assert.equal(fmtMoney(0), "$0.00");
+  assert.equal(fmtMoney(1234.5), "$1,234.50");
 });

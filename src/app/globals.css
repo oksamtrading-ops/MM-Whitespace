@@ -293,6 +293,10 @@ h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
 .gauge .track { position: relative; height: 10px; background: var(--surface-2); border-radius: 5px; }
 .gauge .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--green-line); min-width: 2px; }
 .gauge.below .fill { background: var(--demote); }
+/* Coverage below a floor is a shortfall and reads grey. Spend past its warning
+   is the opposite problem, and must not borrow the same colour. */
+.gauge.warn .fill { background: var(--warn); }
+.gauge.over .fill { background: var(--alert); }
 .gauge .floor { position: absolute; top: -5px; bottom: -5px; width: 1px; background: var(--ink); }
 .gauge .floor span {
   position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
@@ -513,6 +517,17 @@ dialog input[type="text"] {
 dialog table { font-size: 13px; }
 dialog td { padding: 8px 6px; }
 dialog td:first-child { width: 112px; }
+
+/* ----------------------------------------------------------------- runs */
+
+.statebar { display: flex; gap: 2px; height: 14px; margin: 0 0 20px; }
+.statebar .seg { display: block; border-radius: 2px; min-width: 3px; background: var(--demote); }
+.statebar .seg.completed { background: var(--brand-fill); }
+.statebar .seg.persisting, .statebar .seg.researching, .statebar .seg.claimed { background: var(--green-line); }
+.statebar .seg.awaiting_batch { background: var(--warn); }
+.statebar .seg.queued { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--rule); }
+.statebar .seg.halted { background: var(--alert); }
+.statebar .seg.dead_letter { background: var(--alert); }
 
 /* ------------------------------------------------------------- company */
 
