@@ -387,7 +387,7 @@ table caption { caption-side: bottom; text-align: left; font-size: 13px; color: 
 .crumb a { color: var(--ink-3); text-decoration: none; }
 .crumb a:hover { color: var(--ink); }
 .titlerow { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 18px; }
-.titlerow .count { font-size: 14px; color: var(--ink-2); }
+.titlerow .facts { margin: 0; gap: 6px 28px; }
 
 .filters { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 14px; }
 .filters a {
@@ -416,7 +416,9 @@ table caption { caption-side: bottom; text-align: left; font-size: 13px; color: 
 .statusline .btn { min-height: 32px; padding: 0 10px; }
 
 .workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 28px; align-items: start; }
-@media (max-width: 900px) { .workbench { grid-template-columns: minmax(0, 1fr); } }
+/* Below this the grid can no longer show all four columns beside the pane, and
+   a chopped grid is worse than a stacked one. */
+@media (max-width: 1099px) { .workbench { grid-template-columns: minmax(0, 1fr); } }
 
 .grid {
   border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface);
@@ -458,7 +460,10 @@ table caption { caption-side: bottom; text-align: left; font-size: 13px; color: 
 .tag.done { background: var(--surface-2); color: var(--ink-2); }
 
 .evidence { position: sticky; top: calc(var(--header-h) + 24px); padding-left: 28px; border-left: 1px solid var(--rule); min-height: 240px; min-width: 0; overflow-wrap: anywhere; }
-@media (max-width: 900px) { .evidence { position: static; padding-left: 0; border-left: 0; border-top: 1px solid var(--rule); padding-top: 20px; } }
+/* Stacked, the evidence sits under the grid, so the grid gives up height to
+   keep it within one short scroll of the cursor. */
+@media (max-width: 1099px) { .grid { max-height: 55vh; } }
+@media (max-width: 1099px) { .evidence { position: static; padding-left: 0; border-left: 0; border-top: 1px solid var(--rule); padding-top: 20px; margin-top: 20px; } }
 .evidence .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); margin: 0 0 4px; }
 .evidence h3 { font-size: 17px; letter-spacing: -.01em; margin: 0 0 16px; }
 .evidence .body { transition: opacity .12s var(--ease); }
@@ -536,6 +541,7 @@ form.inline { display: inline; }
 .notices { display: none; }
 @media print {
   .topbar, .skip, .contents, .chip { display: none !important; }
+  .rise, .fadein { animation: none !important; opacity: 1 !important; transform: none !important; }
   main { padding: 0; }
   .withrail { display: block; }
   .rail { position: static; }

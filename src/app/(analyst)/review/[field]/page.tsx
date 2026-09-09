@@ -6,6 +6,7 @@ import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import { isStageField } from "../../../../lib/review/decide.ts";
 import { cellLabel, fieldRows, formatValue, tierConsequence } from "../../../../lib/review/queue.ts";
 import Refusal from "../../../_ui/Refusal.tsx";
+import Facts from "../../../_ui/Facts.tsx";
 import { periodName } from "../../../_ui/format.ts";
 import Grid, { type GridRow } from "./Grid.tsx";
 
@@ -80,7 +81,10 @@ export default async function FieldReview(
       <p className="crumb rise"><Link href="/review" prefetch={false}>← Review</Link></p>
       <div className="titlerow rise">
         <h1>{catalogue.label}</h1>
-        <span className="count">{periodName(period.label).name} · sorted by evidence, weakest first</span>
+        <Facts items={[
+          { label: "Period", value: periodName(period.label).name, figure: true },
+          { label: "Sorted by", value: "Evidence, weakest first" },
+        ]} />
       </div>
 
       <nav className="filters rise" aria-label="Filter" style={{ "--i": 1 } as React.CSSProperties}>
