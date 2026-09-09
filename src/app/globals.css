@@ -642,6 +642,16 @@ table.provenance .pill { margin-left: 8px; }
 .commit .withunit .unit:first-child + input { border-radius: 0 var(--radius) var(--radius) 0; }
 .commit .withunit input:only-child { border-radius: var(--radius); }
 .settings .field { margin-bottom: 28px; }
+.direction { border: 0; padding: 0; margin: 0 0 16px; }
+.direction legend { font-size: 13px; font-weight: 500; padding: 0; margin-bottom: 10px; }
+.direction label {
+  display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--rule); border-radius: var(--radius); margin-bottom: 8px;
+  cursor: pointer; font-weight: 400;
+}
+.direction label:hover { border-color: var(--green-mark); }
+.direction label.on { border-color: var(--green-mark); background: var(--green-soft); }
+.direction input { width: 18px; height: 18px; }
 .commit .check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 20px; }
 .commit .check input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; }
 .commit .check label { margin: 0; font-weight: 400; }

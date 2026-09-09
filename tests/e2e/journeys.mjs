@@ -323,6 +323,36 @@ async function journeys(dbPath) {
         settings.html.includes("Fabrication ceiling") &&
         settings.html.includes("An abstention is not a fabrication"));
 
+  // 11. Identity: two rows, one company. The workbook carries no rename
+  //     history, so this is how a renamed company keeps its past.
+  console.log("\n11. possible duplicates");
+  execFileSync("node", ["scripts/seed_duplicate.mjs", dbPath], { cwd: ROOT, stdio: "ignore" });
+
+  const viewerOnMerge = await get("/companies/merge", viewer.cookie);
+  check("a Viewer is refused the merge screen", viewerOnMerge.html.includes("Not permitted"));
+
+  const list = await get("/companies/merge", analyst.cookie);
+  check("a pair sharing an identifier is found, and rated on its evidence",
+        list.html.includes("They carry the same identifier") && list.html.includes(">strong<"));
+  const look = list.html.match(/\/companies\/merge\?a=([0-9a-f]{32})&amp;b=([0-9a-f]{32})/);
+  check("each candidate links to what merging it would do", Boolean(look));
+
+  const pairUrl = `/companies/merge?a=${look?.[1]}&b=${look?.[2]}`;
+  const asAnalyst = await get(pairUrl, analyst.cookie);
+  check("an Analyst may say they are one company but not perform the merge",
+        asAnalyst.html.includes("An Admin performs the merge") &&
+        !asAnalyst.html.includes("Which name survives"));
+
+  const asAdmin = await get(pairUrl, admin.cookie);
+  check("an Admin chooses which name survives, with nothing pre-selected",
+        asAdmin.html.includes("Which name survives") &&
+        !/type="radio"[^>]*checked/.test(asAdmin.html));
+  check("the preview counts what moves and what is left frozen",
+        asAdmin.html.includes("company_period_facts") &&
+        asAdmin.html.includes("left exactly as published"));
+
+  execFileSync("node", ["scripts/seed_duplicate.mjs", dbPath, "--remove"], { cwd: ROOT, stdio: "ignore" });
+
   // 5. The cron endpoint is closed to everything but the right secret.
   console.log("\n5. the cron endpoint");
   const noHeader = await fetch(`${BASE}/api/cron/tick`, { method: "POST" });
@@ -353,6 +383,7 @@ async function journeys(dbPath) {
     ["/companies (viewer)", "/companies", viewer.cookie],
     ["/runs (analyst)", "/runs", analyst.cookie],
     ["/settings (admin)", "/settings", admin.cookie],
+    ["/companies/merge (analyst)", "/companies/merge", analyst.cookie],
     [`/companies/{id} (viewer)`, `/companies/${idMatch?.[1]}`, viewer.cookie],
   ];
   for (const [name, path, cookie] of routes) {

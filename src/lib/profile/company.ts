@@ -10,6 +10,7 @@
  * may look at the draft, and is told that is what they are looking at.
  */
 import type { DatabaseSync } from "node:sqlite";
+import { resolveCompanyId } from "../identity/merge.ts";
 
 export type Provenance =
   | "extract" | "ai_accepted" | "manual_override" | "manual_entry" | "derived" | "inherited";
@@ -100,8 +101,10 @@ function parseJson(text: unknown): unknown {
  * not been published, and the page says so on their behalf.
  */
 export function readCompanyProfile(
-  db: DatabaseSync, companyId: string, opts: { allowDraft: boolean },
+  db: DatabaseSync, rawCompanyId: string, opts: { allowDraft: boolean },
 ): CompanyProfile | null {
+  // A link made before a merge still lands on the company it was about.
+  const companyId = resolveCompanyId(db, rawCompanyId);
   const company = db.prepare(
     "select id, canonical_name from companies where id = ?").get(companyId) as
     { id: string; canonical_name: string } | undefined;
@@ -247,7 +250,7 @@ export function listCompanies(db: DatabaseSync, opts: { allowDraft: boolean }): 
            join companies c on c.id = t.company_id
            left join published_period_values v
                   on v.publication_id = t.publication_id and v.company_id = t.company_id
-          where t.publication_id = ?
+          where t.publication_id = ? and c.status != 'merged'
           group by c.id, c.canonical_name, t.tier, t.status
           order by c.canonical_name`).all(pub.id)
     : db.prepare(
@@ -260,7 +263,7 @@ export function listCompanies(db: DatabaseSync, opts: { allowDraft: boolean }): 
            join companies c on c.id = t.company_id
            left join company_period_field_values v
                   on v.period_id = t.period_id and v.company_id = t.company_id
-          where t.period_id = ?
+          where t.period_id = ? and c.status != 'merged'
           group by c.id, c.canonical_name, t.tier, t.status
           order by c.canonical_name`).all(period.id);
 
