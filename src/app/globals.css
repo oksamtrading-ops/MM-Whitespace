@@ -192,13 +192,17 @@ h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
    the index. One column of secondary things, to the right of the finding.
    Under 1100px it folds into a facts row above the reading column. */
 .withrail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-items: start; }
-.rail { order: -1; min-width: 0; }
+/* The rail comes FIRST in the markup, so with no styles at all it reads as a
+   heading block above the page rather than stranded at the bottom. Desktop
+   places it in column two explicitly; nothing depends on source order. */
+.rail { min-width: 0; }
 .rail .facts { margin-bottom: 20px; }
 .rail .notice { margin: 0 0 24px; }
 .contents { display: none; }
 @media (min-width: 1100px) {
   .withrail { grid-template-columns: minmax(0, var(--measure)) 232px; gap: 64px; }
-  .rail { order: 0; position: sticky; top: calc(var(--header-h) + 36px); padding-top: 6px; }
+  .withrail > .reading { grid-column: 1; grid-row: 1; }
+  .rail { grid-column: 2; grid-row: 1; position: sticky; top: calc(var(--header-h) + 36px); padding-top: 6px; }
   .rail .facts { flex-direction: column; gap: 16px; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--rule); }
   .rail .facts dd { white-space: normal; }
   .rail .facts dd .sub { display: block; margin: 2px 0 0; }

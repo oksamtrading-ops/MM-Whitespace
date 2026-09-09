@@ -128,8 +128,30 @@ export default async function Dashboard() {
 
   return (
     <div className="withrail">
+      <h1 className="sr-only">{periodTitle} dashboard</h1>
+      <aside className="rail rise" aria-label="About this period">
+        <p className="k">This period</p>
+        <Facts items={[
+          { label: "Period", value: periodTitle, figure: true },
+          { label: "Market cap as of", value: fmtDate(period.market_cap_as_of) },
+          { label: "Threshold", value: <>{threshold}<span className="sub">and above, ±{period.proximity_band_pct}% band</span></>, figure: true },
+          { label: "Published", value: (
+              <>
+                Revision {snap.publication.revision}
+                {snap.publication.override_reason && <> <span className="pill warn">through a blocked gate</span></>}
+                <span className="sub">{publishedOn}{publisher && ` · ${publisher}`}</span>
+              </>
+            ) },
+        ]} />
+        {snap.publication.override_reason && (
+          <div className="notice" role="status">
+            <b>Published through a blocked gate</b>
+            <span>{snap.publication.override_reason}</span>
+          </div>
+        )}
+        <Contents items={SECTIONS} />
+      </aside>
       <div className="reading">
-        <h1 className="sr-only">{periodTitle} dashboard</h1>
 
         <p className="hero rise" style={{ "--i": 1 } as React.CSSProperties}>
           Deloitte audits <span className="fig-xl">{deloitte}</span> of{" "}
@@ -248,29 +270,6 @@ export default async function Dashboard() {
           <p>{VENDOR_NOTICE}</p>
         </footer>
       </div>
-
-      <aside className="rail rise" aria-label="About this period">
-        <p className="k">This period</p>
-        <Facts items={[
-          { label: "Period", value: periodTitle, figure: true },
-          { label: "Market cap as of", value: fmtDate(period.market_cap_as_of) },
-          { label: "Threshold", value: <>{threshold}<span className="sub">and above, ±{period.proximity_band_pct}% band</span></>, figure: true },
-          { label: "Published", value: (
-              <>
-                Revision {snap.publication.revision}
-                {snap.publication.override_reason && <> <span className="pill warn">through a blocked gate</span></>}
-                <span className="sub">{publishedOn}{publisher && ` · ${publisher}`}</span>
-              </>
-            ) },
-        ]} />
-        {snap.publication.override_reason && (
-          <div className="notice" role="status">
-            <b>Published through a blocked gate</b>
-            <span>{snap.publication.override_reason}</span>
-          </div>
-        )}
-        <Contents items={SECTIONS} />
-      </aside>
     </div>
   );
 }

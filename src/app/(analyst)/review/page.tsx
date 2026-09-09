@@ -53,6 +53,20 @@ export default async function ReviewBoard() {
 
   return (
     <div className="withrail">
+    <aside className="rail rise" aria-label="About this period">
+      <p className="k">This period</p>
+      <Facts items={[
+        { label: "Period", value: periodTitle, figure: true },
+        ...(asOf ? [{ label: "Market cap as of", value: fmtDate(asOf) }] : []),
+        { label: "Status", value: <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>{period.status}</span> },
+        { label: "Companies", value: gate.population, figure: true },
+        ...(totalValues > 0 ? [{ label: "Proposals", value: totalValues, figure: true }] : []),
+        { label: "Publish gate", value: gate.blockers.length === 0
+            ? <span className="pill ok">open</span>
+            : <><span className="pill no">blocked</span><span className="sub"><a href="#gate">{gate.blockers.length} reason{gate.blockers.length === 1 ? "" : "s"}</a></span></> },
+      ]} />
+      <Contents items={BOARD_SECTIONS} />
+    </aside>
     <div className="reading">
       <h1 className="rise">Review</h1>
 
@@ -137,20 +151,6 @@ export default async function ReviewBoard() {
       </Section>
     </div>
 
-    <aside className="rail rise" aria-label="About this period">
-      <p className="k">This period</p>
-      <Facts items={[
-        { label: "Period", value: periodTitle, figure: true },
-        ...(asOf ? [{ label: "Market cap as of", value: fmtDate(asOf) }] : []),
-        { label: "Status", value: <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>{period.status}</span> },
-        { label: "Companies", value: gate.population, figure: true },
-        ...(totalValues > 0 ? [{ label: "Proposals", value: totalValues, figure: true }] : []),
-        { label: "Publish gate", value: gate.blockers.length === 0
-            ? <span className="pill ok">open</span>
-            : <><span className="pill no">blocked</span><span className="sub"><a href="#gate">{gate.blockers.length} reason{gate.blockers.length === 1 ? "" : "s"}</a></span></> },
-      ]} />
-      <Contents items={BOARD_SECTIONS} />
-    </aside>
     </div>
   );
 }
