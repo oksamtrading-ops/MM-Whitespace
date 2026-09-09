@@ -23,6 +23,7 @@
     "seed:review": "node scripts/seed_review_fixture.mjs",
     "check:contrast": "node scripts/check_contrast.mjs",
     "e2e": "node tests/e2e/journeys.mjs",
+    "e2e:isolated": "bash scripts/e2e_isolated.sh",
     "retention": "node scripts/retention.mjs"
   },
   "engines": {

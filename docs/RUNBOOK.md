@@ -178,10 +178,16 @@ wrong for a third of the columns.
 ```bash
 npm test                                   # library suites and the auth gate
 node scripts/check_contrast.mjs            # every colour token against its floor
-node tests/e2e/journeys.mjs                # five journeys, six routes
+npm run e2e:isolated                       # five journeys, six routes
 node scripts/retention.mjs ./period.db     # dry run; --apply to act
 python3 scripts/verify_ground_truth.py --reference-dir reference
 ```
+
+`e2e:isolated` runs the journeys in a detached worktree on its own port.
+`npm run e2e` is the same suite, but Next allows one dev server per project
+directory, so it must take down whatever is serving the demo for the length of
+the run — **a page reloaded during that window comes back half-loaded and looks
+like a broken interface**. Use the isolated form whenever someone is watching.
 
 `retention.mjs` **exits non-zero while any rule has no named owner.** That is
 deliberate: an unowned retention rule is one nobody will notice failing.

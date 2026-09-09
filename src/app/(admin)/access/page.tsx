@@ -84,7 +84,9 @@ export default async function AccessReview() {
                   <td>
                     {u.last_sign_in_at
                       ? <>{fmtDate(u.last_sign_in_at)}{" "}
-                          <span className="meta">({agoLabel(days as number)})</span></>
+                          {/* One expression, so React does not split the parens off into their
+                              own text nodes with comment markers between them. */}
+                          <span className="meta">{`(${agoLabel(days as number)})`}</span></>
                       : <span className="meta">never</span>}
                     {isStale && <> <span className="pill warn">review</span></>}
                   </td>

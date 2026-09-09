@@ -40,6 +40,19 @@ async function signIn(email) {
   return { status: res.status, cookie, body: await res.json().catch(() => ({})) };
 }
 
+/**
+ * One account's row, so an assertion is about that account and not the page.
+ * Scoped to the table: the signed-in Admin's address is also in the top bar.
+ */
+function accountRow(html, email) {
+  const table = html.slice(html.indexOf('<table class="accounts"'), html.indexOf("</table>"));
+  const at = table.indexOf(email);
+  if (at < 0) return "";
+  const start = table.lastIndexOf("<tr", at);
+  const end = table.indexOf("</tr>", at);
+  return start < 0 || end < 0 ? "" : table.slice(start, end);
+}
+
 const get = (path, cookie) =>
   fetch(`${BASE}${path}`, { headers: cookie ? { cookie } : {} })
     .then(async (r) => ({ status: r.status, html: await r.text() }));
@@ -66,6 +79,13 @@ function buildDatabase(dir) {
     ins.run("analyst@example.invalid", "analyst");
     ins.run("viewer@example.invalid", "viewer");
     ins.run("admin@example.invalid", "admin");
+    // The two accounts an access review exists to find. Without them the
+    // review has nothing to flag and its central number is 0 either way.
+    ins.run("never@example.invalid", "viewer");
+    const dormant = new Date(Date.now() - 200 * 86400000)
+      .toISOString().replace("T", " ").slice(0, 19);
+    db.prepare("insert into app_users (email, role, last_sign_in_at) values (?, ?, ?)")
+      .run("dormant@example.invalid", "viewer", dormant);
   `], q);
   return db;
 }
@@ -134,8 +154,28 @@ async function journeys() {
   const admin = await signIn("admin@example.invalid");
   const access = await get("/access", admin.cookie);
   check("an Admin sees the access review", access.html.includes("Access review"));
-  check("last sign-in is recorded", !access.html.includes("never</span></td><td>")
-        || access.html.includes("d ago)"));
+  // These were one assertion written as an OR whose first operand is true
+  // whenever the "never" markup is absent -- which it always is -- so it could
+  // not fail. Each account the review is meant to sort is now checked on its
+  // own row.
+  const adminRow = accountRow(access.html, "admin@example.invalid");
+  check("the sign-in that just happened is recorded as today",
+        /\(today\)/.test(adminRow), adminRow.replace(/\s+/g, " ").slice(0, 160));
+  const dormantRow = accountRow(access.html, "dormant@example.invalid");
+  check("a dormant account is counted in days and flagged for review",
+        /\(\d+d ago\)/.test(dormantRow) && /pill warn">review/.test(dormantRow),
+        dormantRow.replace(/\s+/g, " ").slice(0, 160));
+  const neverRow = accountRow(access.html, "never@example.invalid");
+  check("an account that has never signed in says so, and is flagged",
+        /never<\/span>/.test(neverRow) && /pill warn">review/.test(neverRow),
+        neverRow.replace(/\s+/g, " ").slice(0, 160));
+  // Stamps are stored as UTC without a zone; read as local time they land in
+  // the future, which is how every same-day sign-in once read "-1d ago".
+  check("no sign-in is reported as being in the future",
+        !/\(-\d+d ago\)/.test(access.html));
+  const staleTile = access.html.match(/(\d+)<\/dd><dt class="k">Not seen in 90 days<\/dt>/);
+  check("the count of accounts to review is the number actually flagged",
+        staleTile?.[1] === "2", `tile reads ${staleTile?.[1] ?? "nothing"}, expected 2`);
   check("an Admin cannot deactivate themselves",
         /disabled=""[^>]*>\s*Deactivate|Deactivate\s*<\/button>/.test(access.html));
 
