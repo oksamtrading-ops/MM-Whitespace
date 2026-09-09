@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applySchema, migrationFiles } from "./schema.ts";
+import { applySchema, MIGRATIONS_DIR, migrationFiles } from "./schema.ts";
+import { isPostgresOnly } from "./dialect.ts";
 
 /* A migration added later reaches new databases only. That is how a settings
    table ships and the settings screen throws on the one database in use. */
@@ -49,6 +50,8 @@ test("the ledger records what was applied", () => {
   applySchema(db);
   const recorded = (db.prepare("select file from schema_migrations order by file").all() as
     Array<{ file: string }>).map((r) => r.file);
-  const expected = migrationFiles().filter((f) => f !== "0003_roles_and_policies.sql");
+  const expected = migrationFiles().filter(
+    (f) => !isPostgresOnly(readFileSync(join(MIGRATIONS_DIR, f), "utf8")));
   assert.deepEqual(recorded, expected, "Postgres-only migrations are skipped, not recorded");
+  assert.ok(expected.length < migrationFiles().length, "and some of them are");
 });

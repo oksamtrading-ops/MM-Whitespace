@@ -196,6 +196,28 @@ A database made before the ledger existed is adopted rather than replayed:
 migrations run in order, so what it has had is the prefix ending at the last
 migration whose first table is present.
 
+## Moving to Postgres
+
+The schema is canonical Postgres and the local runtime is SQLite, so the roles
+and policies in `0003` and `0008` are skipped locally and only run where there
+is a real database.
+
+```bash
+node scripts/pg_export.mjs ./period.db > period.sql   # a committed period, as SQL
+psql "$DATABASE_URL" -f period.sql
+psql "$DATABASE_URL" -f scripts/s5_access_model.sql   # prove the access model
+```
+
+The export is a file rather than an API call on purpose: the extract is
+licensed for internal use and not for redistribution, and a file goes from this
+machine to the practice's own database through nothing else.
+
+`s5_access_model.sql` seeds, probes every role, prints PASS/FAIL and deletes its
+own rows. **Run it after any change to grants or policies.** What it guards is
+in `docs/decisions/S5-ACCESS-MODEL.md`; the short version is that a policy
+grants nothing, and enabling row-level security on a table whose role holds a
+grant but no policy silently takes that grant away.
+
 ## Standing checks
 
 ```bash

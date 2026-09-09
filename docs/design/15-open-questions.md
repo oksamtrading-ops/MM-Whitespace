@@ -1,5 +1,14 @@
 # Nine of the sixteen open questions block Phase 1, and one blocks everything
 
+
+> **S5 closed, 9 September 2026.** The access model has been run on a real
+> Postgres. It was sound in design and not deployable as written: a policy
+> grants nothing, row-level security on `periods` with no policy defeats every
+> policy that reads it, and Supabase's data API served twenty-five unprotected
+> tables to the browser key. Fixed in `0008_close_the_data_api.sql`, evidence in
+> `docs/decisions/S5-ACCESS-MODEL.md`.
+
+
 Each is tagged with an owner and whether it blocks Phase 1. Questions are ordered by the cost of answering them late.
 
 | # | Question | Owner | Blocks Phase 1? |

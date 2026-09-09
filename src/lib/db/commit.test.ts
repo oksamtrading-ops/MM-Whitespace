@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { applySchema } from "./schema.ts";
+import { applySchema, MIGRATIONS_DIR, migrationFiles } from "./schema.ts";
 import { commitPeriod, type ParsedCompany, type Payload } from "./commit.ts";
 import { isPostgresOnly, statements, toSqlite } from "./dialect.ts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 function company(over: Partial<ParsedCompany> = {}): ParsedCompany {
   return {
@@ -35,8 +37,13 @@ test("the canonical Postgres migrations apply, and the policy file is skipped", 
   // be applied and should not fail this test.
   assert.ok(r.applied.includes("0001_m1_core.sql"));
   assert.ok(r.applied.includes("0002_seed_catalog.sql"));
-  assert.deepEqual(r.skipped, ["0003_roles_and_policies.sql"],
+  // Derived, not listed: roles and policies are Postgres-only and there is
+  // more than one file of them now.
+  const pgOnly = migrationFiles().filter(
+    (f) => isPostgresOnly(readFileSync(join(MIGRATIONS_DIR, f), "utf8")));
+  assert.deepEqual(r.skipped, pgOnly,
     "every Postgres-only migration must be skipped locally");
+  assert.ok(pgOnly.includes("0003_roles_and_policies.sql"));
   assert.ok(!r.applied.some((f) => r.skipped.includes(f)));
   const tables = db.prepare(
     "select name from sqlite_master where type='table'").all().map((t: any) => t.name);
