@@ -8,6 +8,7 @@ import Gauge from "../../_ui/Gauge.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
 import Facts from "../../_ui/Facts.tsx";
+import Contents from "../../_ui/Contents.tsx";
 import { fmtDate, periodName } from "../../_ui/format.ts";
 
 export const dynamic = "force-dynamic";
@@ -43,16 +44,17 @@ export default async function ReviewBoard() {
   const firstField = fields[0]?.fieldKey;
   const { name: periodTitle, asOf } = periodName(period.label);
 
+  const BOARD_SECTIONS = [
+    { id: "coverage", label: "Enrichment coverage" },
+    { id: "queue", label: "Your queue" },
+    ...(fields.length > 0 ? [{ id: "fields", label: "Fields" }] : []),
+    { id: "gate", label: "Publish gate" },
+  ];
+
   return (
+    <div className="withrail">
     <div className="reading">
       <h1 className="rise">Review</h1>
-      <Facts className="rise" items={[
-        { label: "Period", value: periodTitle, figure: true },
-        ...(asOf ? [{ label: "Market cap as of", value: fmtDate(asOf) }] : []),
-        { label: "Status", value: <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>{period.status}</span> },
-        { label: "Companies", value: gate.population, figure: true },
-        ...(totalValues > 0 ? [{ label: "Proposals", value: totalValues, figure: true }] : []),
-      ]} />
 
       <Section id="coverage" title="Enrichment coverage" index={1}
                caption="How much of each field has been researched, against the floor its chart needs.">
@@ -133,6 +135,22 @@ export default async function ReviewBoard() {
             </>
           )}
       </Section>
+    </div>
+
+    <aside className="rail rise" aria-label="About this period">
+      <p className="k">This period</p>
+      <Facts items={[
+        { label: "Period", value: periodTitle, figure: true },
+        ...(asOf ? [{ label: "Market cap as of", value: fmtDate(asOf) }] : []),
+        { label: "Status", value: <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>{period.status}</span> },
+        { label: "Companies", value: gate.population, figure: true },
+        ...(totalValues > 0 ? [{ label: "Proposals", value: totalValues, figure: true }] : []),
+        { label: "Publish gate", value: gate.blockers.length === 0
+            ? <span className="pill ok">open</span>
+            : <><span className="pill no">blocked</span><span className="sub"><a href="#gate">{gate.blockers.length} reason{gate.blockers.length === 1 ? "" : "s"}</a></span></> },
+      ]} />
+      <Contents items={BOARD_SECTIONS} />
+    </aside>
     </div>
   );
 }

@@ -187,12 +187,26 @@ h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
 /* ------------------------------------------------------------ pages */
 
 .reading { max-width: var(--measure); }
-.withindex { display: grid; grid-template-columns: 1fr; gap: 0; }
+
+/* The rail: what the page is ABOUT -- identity, parameters, provenance -- and
+   the index. One column of secondary things, to the right of the finding.
+   Under 1100px it folds into a facts row above the reading column. */
+.withrail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-items: start; }
+.rail { order: -1; min-width: 0; }
+.rail .facts { margin-bottom: 20px; }
+.rail .notice { margin: 0 0 24px; }
 .contents { display: none; }
 @media (min-width: 1100px) {
-  .withindex { grid-template-columns: 168px minmax(0, var(--measure)); gap: 56px; align-items: start; }
-  .contents { display: block; position: sticky; top: calc(var(--header-h) + 36px); }
+  .withrail { grid-template-columns: minmax(0, var(--measure)) 232px; gap: 64px; }
+  .rail { order: 0; position: sticky; top: calc(var(--header-h) + 36px); padding-top: 6px; }
+  .rail .facts { flex-direction: column; gap: 16px; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--rule); }
+  .rail .facts dd { white-space: normal; }
+  .rail .facts dd .sub { display: block; margin: 2px 0 0; }
+  .rail .notice { margin: -8px 0 24px; padding-bottom: 24px; border-bottom: 1px solid var(--rule); border-left: 0; padding-left: 0; }
+  .rail .notice b { color: var(--warn); }
+  .contents { display: block; }
 }
+.rail .k { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; }
 .contents ol { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--rule); }
 .contents a {
   display: block; padding: 6px 0 6px 14px; margin-left: -1px; font-size: 13px;
@@ -201,7 +215,7 @@ h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
 }
 .contents a:hover { color: var(--ink); }
 .contents a[aria-current="true"] { color: var(--ink); border-left-color: var(--ink); }
-.contents .k { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); margin: 0 0 10px 14px; }
+.contents .k { margin-left: 14px; }
 
 /* hero */
 .hero { margin: 8px 0 0; font-weight: 300; font-size: 40px; line-height: 1.1; letter-spacing: -.02em; }
@@ -519,7 +533,8 @@ form.inline { display: inline; }
 @media print {
   .topbar, .skip, .contents, .chip { display: none !important; }
   main { padding: 0; }
-  .withindex { display: block; }
+  .withrail { display: block; }
+  .rail { position: static; }
   .section { break-inside: avoid; }
   .notices { display: block; margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--ink); font-size: 10px; color: var(--ink-2); }
 }

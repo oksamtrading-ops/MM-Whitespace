@@ -127,23 +127,9 @@ export default async function Dashboard() {
   const threshold = `${period.threshold_currency} ${fmtCompact(Number(period.threshold_amount))}`;
 
   return (
-    <div className="withindex">
-      <Contents items={SECTIONS} />
+    <div className="withrail">
       <div className="reading">
-        <Facts className="rise" items={[
-          { label: "Period", value: periodTitle, figure: true },
-          { label: "Market cap as of", value: fmtDate(period.market_cap_as_of) },
-          { label: "Published", value: <>Revision {snap.publication.revision}<span className="sub">{publishedOn}{publisher && ` · ${publisher}`}</span></> },
-          { label: "Threshold", value: <>{threshold}<span className="sub">and above, ±{period.proximity_band_pct}%</span></>, figure: true },
-        ]} />
         <h1 className="sr-only">{periodTitle} dashboard</h1>
-
-        {snap.publication.override_reason && (
-          <div className="notice rise" role="status" style={{ "--i": 1 } as React.CSSProperties}>
-            <b>Published through a blocked gate</b>
-            <span>{snap.publication.override_reason}</span>
-          </div>
-        )}
 
         <p className="hero rise" style={{ "--i": 1 } as React.CSSProperties}>
           Deloitte audits <span className="fig-xl">{deloitte}</span> of{" "}
@@ -262,6 +248,29 @@ export default async function Dashboard() {
           <p>{VENDOR_NOTICE}</p>
         </footer>
       </div>
+
+      <aside className="rail rise" aria-label="About this period">
+        <p className="k">This period</p>
+        <Facts items={[
+          { label: "Period", value: periodTitle, figure: true },
+          { label: "Market cap as of", value: fmtDate(period.market_cap_as_of) },
+          { label: "Threshold", value: <>{threshold}<span className="sub">and above, ±{period.proximity_band_pct}% band</span></>, figure: true },
+          { label: "Published", value: (
+              <>
+                Revision {snap.publication.revision}
+                {snap.publication.override_reason && <> <span className="pill warn">through a blocked gate</span></>}
+                <span className="sub">{publishedOn}{publisher && ` · ${publisher}`}</span>
+              </>
+            ) },
+        ]} />
+        {snap.publication.override_reason && (
+          <div className="notice" role="status">
+            <b>Published through a blocked gate</b>
+            <span>{snap.publication.override_reason}</span>
+          </div>
+        )}
+        <Contents items={SECTIONS} />
+      </aside>
     </div>
   );
 }
