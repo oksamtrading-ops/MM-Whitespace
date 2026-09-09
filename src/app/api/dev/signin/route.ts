@@ -38,6 +38,14 @@ export async function POST(request: Request) {
       { error: "no active application user for that address (invite-only)" }, { status: 403 });
   }
 
+  // Without this the access review has nothing to review.
+  db().prepare(
+    "update app_users set last_sign_in_at = ? where lower(email) = lower(?)",
+  ).run(new Date().toISOString().replace("T", " ").slice(0, 19), email);
+  db().prepare(
+    "insert into audit_log (event, detail) values ('sign_in', ?)",
+  ).run(JSON.stringify({ email }));
+
   const response = NextResponse.json({ ok: true, email });
   response.cookies.set("mm_dev_session", signDevSession(email, secret), {
     httpOnly: true, sameSite: "lax", path: "/",

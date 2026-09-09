@@ -572,3 +572,63 @@ the brand green: encoding direction as light-green against dark-green reads as
 A green fill on white obliges a **relief channel**, so every bar carries a
 visible direct value label. Chips are black on green, never white — white on the
 brand green is 2.27:1.
+
+## Hardening
+
+### Colour is verified, not reviewed
+
+The brand green measures 2.27:1 on white, and **the failure is invisible to
+eye-checking** because large green fills look perfectly fine. So every token is
+checked arithmetically against the floor it claims to clear:
+
+```bash
+npm run check:contrast
+```
+
+It also asserts the *forbidden* combinations still fail — white on the brand
+green, and the brand green as text — so a well-meaning token change cannot
+quietly make them legal. It found a real error on its first run: the design's own
+token table listed the de-emphasis grey `#75787B` at "4.44:1 ✓", but 4.44 is
+below the 4.5 text floor. Corrected to `#74777A` at 4.50:1, in the CSS and in the
+design document.
+
+### Five journeys, six routes
+
+```bash
+npm run e2e
+```
+
+Boots a real server against a database built by the real pipeline — parse,
+commit, seed, publish — and behaves like a person: a Viewer signs in and reads
+the dashboard, is refused the review workspace, an Analyst opens the grid, an
+Analyst is refused the access review, and the cron endpoint rejects a missing
+header, a wrong token and accepts the right one. It then asserts the named
+accessibility obligations on six routes. 30 checks.
+
+### Access review
+
+There is **no leaver process** for an application outside Deloitte's own estate,
+so `/access` shows every account with its last sign-in, flags anything unseen for
+90 days or never used, and deactivates in one click. An Admin cannot deactivate
+themselves — it is the single action that could lock every Admin out of the
+screen at once. Every change is audited with actor and target.
+
+### Retention
+
+```bash
+npm run retention -- ./period.db          # dry run
+npm run retention -- ./period.db --apply --export-audit ./audit.jsonl
+```
+
+**It exits non-zero while any rule has no named owner**, because an unowned
+retention rule is one nobody will notice failing. Two rules refuse outright
+rather than doing damage: the audit log will not be trimmed without an export
+path, since it is the one artifact that answers who published what; and expired
+document *text* is cleared while the row is kept, because deleting the row would
+orphan a finding's anchor and make an accepted value unverifiable after the fact.
+
+### Runbook
+
+[`docs/RUNBOOK.md`](docs/RUNBOOK.md) covers a stalled run, a spend halt, and a
+changed source column — each with a diagnosis to run, a fix to apply, and a
+"what not to do" that is the plausible wrong move.

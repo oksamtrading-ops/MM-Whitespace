@@ -108,8 +108,10 @@ The Deloitte signature green measures **2.27:1 on white** and **9.23:1 on black*
 | Focus ring, borders (non-text, 3:1 floor) | `#5E841A` | 4.38:1 ✓ | `#86BC25` | 7.66:1 ✓ |
 | **Green text** (4.5:1 floor) | **`#567C18`** | **4.89:1 ✓** | `#86BC25` | 7.66:1 ✓ |
 | Label on a green chip | `#000000` on `#86BC25` | 9.23:1 ✓ | — | — |
-| De-emphasis | `#75787B` | 4.44:1 ✓ | — | — |
+| De-emphasis | ~~`#75787B`~~ **`#74777A`** | ~~4.44:1~~ **4.50:1 ✓** | — | — |
 | Gridlines (recessive, exempt) | `#BBBCBC` | 1.90:1 | — | — |
+
+**Correction, 9 September 2026.** The de-emphasis grey was recorded here as `#75787B` at "4.44:1 ✓". 4.44 is **below** the 4.5 text floor, so that row marked a failing value as passing — the same class of error this table's own note describes catching. De-emphasis is used for text (muted labels, the terminal buckets), so it takes the text floor: `#74777A` at 4.50:1. `scripts/check_contrast.mjs` now verifies every token arithmetically and fails the build, rather than the table being reviewed by eye.
 
 Note that **text and non-text have different floors**, and one token cannot serve both: the focus-ring green clears the 3:1 non-text floor comfortably but falls short of the 4.5:1 text floor, so green text needs its own darker token. An earlier draft of this table used one value for both and was caught by the verification script in section 12.
 

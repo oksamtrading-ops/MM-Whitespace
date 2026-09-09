@@ -13,7 +13,8 @@
   --green-line:  #6B961E;   /* 3.50:1 -- lines, markers, small marks */
   --green-mark:  #5E841A;   /* 4.38:1 -- focus rings, borders */
   --green-text:  #567C18;   /* 4.89:1 -- the only green legal for text */
-  --demote:      #75787B;   /* 4.44:1 -- de-emphasis */
+  --demote:      #74777A;   /* 4.50:1 -- de-emphasis. NOT #75787B, which is
+                               4.44:1 and fails the 4.5 text floor. */
   --gridline:    #BBBCBC;   /* 1.90:1 -- recessive, exempt */
   /* Polarity for tier migration. A separate fixed scale, NOT an invented brand
      colour: encoding direction as light-green vs dark-green would read as
@@ -21,7 +22,7 @@
      than "moved the wrong way". Ships with icon and label always. */
   --up:          #1F6F43;
   --down:        #8C3A14;
-  --neutral:     #75787B;
+  --neutral:     #74777A;
 
   --ground:      #F6F7F2;
   --surface:     #FFFFFF;
@@ -307,3 +308,11 @@ table.help caption { text-align: left; font-size: .8rem; color: var(--ink-3); pa
   /* Black on green, never white: white on the brand green is 2.27:1. */
   background: var(--brand-fill); color: #000;
 }
+
+.linkbtn {
+  font: inherit; font-size: .8rem; background: none; border: 1px solid var(--rule);
+  border-radius: 3px; color: var(--green-text); cursor: pointer;
+  min-height: 44px; padding: 0 .7rem;
+}
+.linkbtn:disabled { color: var(--ink-3); cursor: default; border-color: var(--rule); }
+.linkbtn:hover:not(:disabled) { border-color: var(--green-mark); }

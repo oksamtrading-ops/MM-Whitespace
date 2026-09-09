@@ -20,7 +20,10 @@
     "build": "next build",
     "start": "next start",
     "check:auth": "node scripts/check_role_assertions.mjs",
-    "seed:review": "node scripts/seed_review_fixture.mjs"
+    "seed:review": "node scripts/seed_review_fixture.mjs",
+    "check:contrast": "node scripts/check_contrast.mjs",
+    "e2e": "node tests/e2e/journeys.mjs",
+    "retention": "node scripts/retention.mjs"
   },
   "engines": {
     "node": ">=24"
