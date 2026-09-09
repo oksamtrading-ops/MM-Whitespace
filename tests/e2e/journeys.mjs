@@ -353,6 +353,30 @@ async function journeys(dbPath) {
 
   execFileSync("node", ["scripts/seed_duplicate.mjs", dbPath, "--remove"], { cwd: ROOT, stdio: "ignore" });
 
+  // 12. docs/design/08 keeps company-major for the pursuit-preparation
+  //     journey. Both axes read the same values; only the axis differs.
+  console.log("\n12. the same proposals, one company across the row");
+  const viewerByCompany = await get("/review/by-company", viewer.cookie);
+  check("a Viewer is refused it too", viewerByCompany.html.includes("Not permitted"));
+
+  const byCompany = await get("/review/by-company", analyst.cookie);
+  check("the grid has a column per reviewable field",
+        byCompany.html.includes('role="grid"') &&
+        /aria-colcount="([2-9]|\d\d)"/.test(byCompany.html));
+  const stops = (byCompany.html.match(/tabindex="0"/g) ?? []).length;
+  check("two axes, still ONE tab stop", stops === 1, `found ${stops}`);
+  check("the company cell is still the row header",
+        byCompany.html.includes('role="rowheader"'));
+  check("every cell names its field, value, band and state",
+        /aria-label="[^"]+, evidence [a-z ]+, [a-z]+"/.test(byCompany.html));
+  check("a cell with nothing proposed says so rather than being blank",
+        byCompany.html.includes("nothing proposed") ||
+        !byCompany.html.includes('aria-label=""'));
+  // The default is field-major, and this screen says why.
+  check("it points back to the field view as the place the queue lives",
+        byCompany.html.includes("field view") &&
+        byCompany.html.includes("reuses a single mental model"));
+
   // 5. The cron endpoint is closed to everything but the right secret.
   console.log("\n5. the cron endpoint");
   const noHeader = await fetch(`${BASE}/api/cron/tick`, { method: "POST" });
@@ -384,6 +408,7 @@ async function journeys(dbPath) {
     ["/runs (analyst)", "/runs", analyst.cookie],
     ["/settings (admin)", "/settings", admin.cookie],
     ["/companies/merge (analyst)", "/companies/merge", analyst.cookie],
+    ["/review/by-company (analyst)", "/review/by-company", analyst.cookie],
     [`/companies/{id} (viewer)`, `/companies/${idMatch?.[1]}`, viewer.cookie],
   ];
   for (const [name, path, cookie] of routes) {

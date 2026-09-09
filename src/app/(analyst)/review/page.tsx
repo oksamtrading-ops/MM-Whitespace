@@ -114,7 +114,8 @@ export default async function ReviewBoard() {
 
       {fields.length > 0 && (
         <Section id="fields" title="Fields" index={3}
-                 caption="Reviewed one field down the column, not one company across the row.">
+                 caption={<>Reviewed one field down the column, not one company across the row.{" "}
+                   <Link href="/review/by-company" prefetch={false}>Look by company instead →</Link></>}>
           <table>
             <thead>
               <tr><th>Field</th><th className="n">Proposals</th><th className="n">Decided</th><th>Bulk accept</th></tr>

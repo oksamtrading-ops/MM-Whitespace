@@ -452,6 +452,16 @@ table caption { caption-side: bottom; text-align: left; font-size: 13px; color: 
 .ev .strip { display: inline-flex; gap: 2px; }
 .ev .strip i { display: block; width: 5px; height: 12px; border-radius: 1px; background: var(--rule); }
 .ev .strip i.on { background: var(--green-mark); }
+/* Company-major: a cell carries a value and its band together, so the strip
+   sits beside the value rather than in a column of its own. */
+.grow .val.cell { gap: 8px; flex-wrap: wrap; font-size: 13px; min-width: 0; }
+.grow .val.cell .v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grow .val.cell .strip { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+.grow .val.cell .strip i { display: block; width: 4px; height: 10px; border-radius: 1px; background: var(--rule); }
+.grow .val.cell .strip i.on { background: var(--green-mark); }
+.grow .val.cell .strip.b-low i.on { background: var(--alert); }
+.grow .val.cell .strip.b-medium i.on { background: var(--warn); }
+.grow .val.cell.done .v { color: var(--ink-3); }
 .ev .strip.b-low i.on { background: var(--alert); }
 .ev .strip.b-medium i.on { background: var(--warn); }
 .ev .num { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-weight: 500; }

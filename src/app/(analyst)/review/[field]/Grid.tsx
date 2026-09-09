@@ -20,11 +20,11 @@
  *   - single unmodified letters are suppressed while focus sits in a text input
  */
 import {
-  startTransition, useCallback, useEffect, useMemo, useOptimistic, useRef, useState,
+  useCallback, useEffect, useMemo, useOptimistic, useRef, useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
-import { bulkAccept, confirmationText, decide, undo } from "./actions.ts";
+import { bulkAccept, confirmationText } from "./actions.ts";
+import { useDecide } from "../useDecide.ts";
 import BulkDialog from "./BulkDialog.tsx";
 import ShortcutsDialog from "./ShortcutsDialog.tsx";
 
@@ -69,29 +69,26 @@ const ANCHOR_WORD: Record<string, string> = {
   none: "not anchored",
 };
 
-type Patch = { companyId: string; decision: string } | { undoLast: true };
+type Patch = { companyId: string; decision: string };
 
 export default function Grid(props: Props) {
   const { rows, fieldKey, fieldLabel, periodId, threshold, isStageField } = props;
-  const router = useRouter();
+  const { busy, announcement, announce, record, keepExtract: keep, undoLast, run } =
+    useDecide(periodId);
 
   // Decisions land on screen at the keypress; the server's rows replace them
   // when the refresh completes.
-  const [optRows, applyPatch] = useOptimistic(rows, (state: GridRow[], patch: Patch) => {
-    if ("undoLast" in patch) return state;
-    return state.map((r) => r.companyId === patch.companyId
+  const [optRows, applyPatch] = useOptimistic(rows, (state: GridRow[], patch: Patch) =>
+    state.map((r) => r.companyId === patch.companyId
       ? { ...r, decided: true, decision: patch.decision,
           cellLabel: r.cellLabel.replace(/, [a-z]+$/, `, ${patch.decision}`) }
-      : r);
-  });
+      : r));
 
   const [query, setQuery] = useState(props.initialQuery ?? "");
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(true);
   const [editing, setEditing] = useState(false);
   const [flagging, setFlagging] = useState(false);
-  const [announcement, setAnnouncement] = useState("");
-  const [busy, setBusy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [bulk, setBulk] = useState<{ open: boolean; text: string | null }>({ open: false, text: null });
   const submitRef = useRef<((d: string, extra?: Record<string, string>) => void) | null>(null);
@@ -120,55 +117,42 @@ export default function Grid(props: Props) {
     window.history.replaceState(null, "", url);
   }, [query]);
 
-  const announce = useCallback((text: string) => setAnnouncement(text), []);
-
-  const run = useCallback((fn: () => Promise<{ ok: boolean; message: string }>,
-                           patch?: Patch, consequence?: string) => {
-    setBusy(true);
-    startTransition(async () => {
-      try {
-        if (patch) applyPatch(patch);
-        const result = await fn();
-        // The announcement carries the decision AND its consequence -- this is
-        // how a non-sighted Analyst receives the feedback a sighted one gets
-        // from the row changing.
-        // An undo may or may not touch this view, so it carries no count.
-        const left = patch && !("undoLast" in patch) ? ` ${Math.max(0, remaining - 1)} remaining.` : "";
-        announce(`${result.message}${left}` + (consequence ? ` ${consequence}` : ""));
-        router.refresh();
-      } finally {
-        setBusy(false);
-      }
-    });
-  }, [announce, applyPatch, remaining, router]);
-
-  const keepExtract = useCallback(() => {
-    if (!row) return;
-    submitRef.current?.("override", { overrideSource: "extract" });
-  }, [row]);
-
-  const submit = useCallback((decision: string, extra: Record<string, string> = {}) => {
-    if (!row) return;
-    const form = new FormData();
-    form.set("periodId", periodId);
-    form.set("companyId", row.companyId);
-    form.set("fieldKey", fieldKey);
-    form.set("decision", decision);
-    if (row.findingId) form.set("findingId", row.findingId);
-    if (row.findingAttempt !== null) form.set("findingAttempt", String(row.findingAttempt));
-    for (const [k, v] of Object.entries(extra)) form.set(k, v);
-    run(() => decide(form), { companyId: row.companyId, decision }, row.tierNote ?? undefined);
+  const advance = useCallback(() => {
     // Move on to the next undecided row, if there is one below.
     const next = visible.findIndex((r, i) => i > index && !r.decided);
     if (next >= 0) setIndex(next);
-  }, [row, periodId, fieldKey, run, visible, index]);
+  }, [visible, index]);
+
+  const target = useCallback(() => row && ({
+    companyId: row.companyId, fieldKey,
+    findingId: row.findingId, findingAttempt: row.findingAttempt,
+  }), [row, fieldKey]);
+
+  const submit = useCallback((decision: string, extra: Record<string, string> = {}) => {
+    const t = target();
+    if (!t || !row) return;
+    record(t, decision, {
+      extra,
+      optimistic: () => applyPatch({ companyId: row.companyId, decision }),
+      consequence: row.tierNote,
+      remainingAfter: Math.max(0, remaining - 1),
+    });
+    advance();
+  }, [target, row, record, applyPatch, remaining, advance]);
   submitRef.current = submit;
 
-  const doUndo = useCallback(() => {
-    const form = new FormData();
-    form.set("periodId", periodId); form.set("fieldKey", fieldKey);
-    run(() => undo(form), { undoLast: true });
-  }, [periodId, fieldKey, run]);
+  const keepExtract = useCallback(() => {
+    const t = target();
+    if (!t || !row) return;
+    keep(t, {
+      optimistic: () => applyPatch({ companyId: row.companyId, decision: "override" }),
+      consequence: row.tierNote,
+      remainingAfter: Math.max(0, remaining - 1),
+    });
+    advance();
+  }, [target, row, keep, applyPatch, remaining, advance]);
+
+  const doUndo = useCallback(() => undoLast(fieldKey), [undoLast, fieldKey]);
 
   const openBulk = useCallback(async () => {
     setBulk({ open: true, text: null });

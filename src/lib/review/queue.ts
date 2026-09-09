@@ -199,6 +199,45 @@ export function fieldRows(
   return predicate ? undecided.filter((r) => predicate(r, threshold)) : undecided;
 }
 
+export type CompanyRow = {
+  companyId: string;
+  companyName: string;
+  /** One per field, in the order the fields are given. null = nothing proposed. */
+  cells: Array<Row | null>;
+};
+
+/**
+ * The same proposals, pivoted.
+ *
+ * docs/design/08: "Both read the same resolved values; only the axis differs."
+ * So this is built from fieldRows rather than from its own query — a second
+ * query would be a second definition of what is reviewable, and the two would
+ * disagree the first time either changed.
+ */
+export function companyRows(
+  db: DatabaseSync, periodId: string, threshold = 0.8,
+): { fields: FieldSummary[]; rows: CompanyRow[] } {
+  const fields = reviewableFields(db, periodId);
+  const byCompany = new Map<string, CompanyRow>();
+
+  fields.forEach((field, column) => {
+    for (const row of fieldRows(db, periodId, field.fieldKey, "all", threshold)) {
+      let entry = byCompany.get(row.companyId);
+      if (!entry) {
+        entry = {
+          companyId: row.companyId, companyName: row.companyName,
+          cells: new Array(fields.length).fill(null),
+        };
+        byCompany.set(row.companyId, entry);
+      }
+      entry.cells[column] = row;
+    }
+  });
+
+  const rows = [...byCompany.values()].sort((a, b) => a.companyName.localeCompare(b.companyName));
+  return { fields, rows };
+}
+
 /**
  * The accessible name for one cell: value, evidence band and review state.
  * "Auditor, PwC, evidence high, unreviewed" -- rather than leaving state to a

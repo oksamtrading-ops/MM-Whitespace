@@ -6,7 +6,7 @@ import {
   bulkConfirmation, effectiveDecision, evidenceBand, extractedFact, isConflict,
   partitionForBulkAccept, recordDecision, undoLast, type Candidate,
 } from "./decide.ts";
-import { cellLabel, formatValue, IN_BUCKET } from "./queue.ts";
+import { cellLabel, companyRows, fieldRows, formatValue, IN_BUCKET } from "./queue.ts";
 
 function candidate(over: Partial<Candidate> = {}): Candidate {
   return {
@@ -361,4 +361,42 @@ test("a conflict is only ever in the conflict bucket", () => {
     "a conflict opened from 'need review' would be resolved without its diff");
   assert.ok(!IN_BUCKET.bulkable(conflicted, 0.8),
     "and bulk accept must never sweep one up");
+});
+
+/* ------------------------------------- the same values, a different axis */
+
+test("company-major and field-major show the same proposals", () => {
+  const { db, periodId, companyId } = seeded();
+  db.prepare(
+    `insert into enrichment_runs (period_id, budget_usd, model, prompt_version)
+     values (?, 5, 'm', 'v1')`).run(periodId);
+  const run = db.prepare("select id from enrichment_runs").get() as { id: string };
+  for (const field of ["auditor", "website"]) {
+    db.prepare(
+      `insert into enrichment_jobs (run_id, company_id, field_group) values (?, ?, ?)`,
+    ).run(run.id, companyId, field);
+    const job = db.prepare(
+      "select id from enrichment_jobs order by rowid desc limit 1").get() as { id: string };
+    db.prepare(
+      `insert into enrichment_findings
+         (run_id, job_id, company_id, field_key, attempt, proposed_value, evidence_strength,
+          anchor_mode, state, model, prompt_version)
+       values (?, ?, ?, ?, 1, ?, 0.9, 'exact_normalized', 'proposed', 'm', 'v1')`,
+    ).run(run.id, job.id, companyId, field,
+          JSON.stringify(field === "auditor" ? "KPMG" : "x.example"));
+  }
+
+  const { fields, rows } = companyRows(db, periodId);
+  assert.equal(rows.length, 1, "one company, one row");
+  assert.equal(rows[0].cells.length, fields.length, "one cell per field, present or not");
+
+  // Every cell is the row the field view would have shown for that pairing.
+  fields.forEach((field, column) => {
+    const down = fieldRows(db, periodId, field.fieldKey, "all")
+      .find((r) => r.companyId === companyId) ?? null;
+    const across = rows[0].cells[column];
+    assert.equal(across?.findingId ?? null, down?.findingId ?? null,
+      `${field.fieldKey} differs between the two axes`);
+    assert.equal(across?.band ?? null, down?.band ?? null);
+  });
 });
