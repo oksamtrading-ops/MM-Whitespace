@@ -1,39 +1,42 @@
 import Link from "next/link";
+import type { Metadata, Route } from "next";
 import { notFound } from "next/navigation";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import { isStageField } from "../../../../lib/review/decide.ts";
 import { cellLabel, fieldRows, formatValue, tierConsequence } from "../../../../lib/review/queue.ts";
+import Refusal from "../../../_ui/Refusal.tsx";
 import Grid, { type GridRow } from "./Grid.tsx";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Review" };
 
 const THRESHOLD = 0.8;
+
+const BUCKETS: Array<[string, string]> = [
+  ["all", "All"], ["conflict", "Conflict"], ["need_review", "Need review"],
+  ["bulkable", "Bulk-acceptable"], ["no_evidence", "No evidence"], ["quarantined", "Quarantined"],
+];
 
 export default async function FieldReview(
   { params, searchParams }: {
     params: Promise<{ field: string }>;
-    searchParams: Promise<{ bucket?: string }>;
+    searchParams: Promise<{ bucket?: string; q?: string }>;
   },
 ) {
   let ctx;
   try {
     ctx = await requireRole(["analyst", "admin"]);
   } catch (err) {
-    return (
-      <>
-        <h1>{err instanceof Forbidden ? "Not permitted" : "Sign in"}</h1>
-        <div className="empty">
-          <p>{err instanceof Forbidden
-            ? "Review is for Analysts and Admins."
-            : (err as Unauthenticated).message}</p>
-        </div>
-      </>
-    );
+    return err instanceof Forbidden
+      ? <Refusal title="Not permitted" body="Review is for Analysts and Admins."
+                 action={{ href: "/dashboard", label: "Go to the dashboard" }} />
+      : <Refusal title="Sign in" body={(err as Unauthenticated).message}
+                 action={{ href: "/signin", label: "Sign in" }} />;
   }
 
   const { field } = await params;
-  const { bucket = "all" } = await searchParams;
+  const { bucket = "all", q = "" } = await searchParams;
 
   const period = ctx.db.prepare(
     "select id, label from periods order by market_cap_as_of desc limit 1",
@@ -67,22 +70,23 @@ export default async function FieldReview(
     tierNote: tierConsequence(ctx.db, period.id, r),
   }));
 
-  const buckets = ["all", "conflict", "need_review", "bulkable", "no_evidence", "quarantined"];
+  // A count on every filter, so the choice of batch is made before the click.
+  const counts = Object.fromEntries(BUCKETS.map(([key]) =>
+    [key, key === bucket ? raw.length : fieldRows(ctx.db, period.id, field, key, THRESHOLD).length]));
 
   return (
     <>
-      <p className="crumb"><Link href="/review">← Review</Link></p>
-      <h1>{catalogue.label}</h1>
-      <p className="sub">
-        {period.label} · {rows.length} companies · sorted by evidence ascending, so the
-        worst work comes first
-      </p>
+      <p className="crumb rise"><Link href="/review" prefetch={false}>← Review</Link></p>
+      <div className="titlerow rise">
+        <h1>{catalogue.label}</h1>
+        <span className="count">{period.label} · sorted by evidence, weakest first</span>
+      </div>
 
-      <nav className="filters" aria-label="Filter">
-        {buckets.map((b) => (
-          <Link key={b} href={`/review/${field}?bucket=${b}`}
-                aria-current={b === bucket ? "page" : undefined}>
-            {b.replace(/_/g, " ")}
+      <nav className="filters rise" aria-label="Filter" style={{ "--i": 1 } as React.CSSProperties}>
+        {BUCKETS.map(([key, label]) => (
+          <Link key={key} href={`/review/${field}?bucket=${key}${q ? `&q=${encodeURIComponent(q)}` : ""}` as Route}
+                prefetch={false} aria-current={key === bucket ? "page" : undefined}>
+            {label} <span className="fig-sm">{counts[key]}</span>
           </Link>
         ))}
       </nav>
@@ -95,6 +99,7 @@ export default async function FieldReview(
         threshold={THRESHOLD}
         isStageField={isStageField(field)}
         rows={rows}
+        initialQuery={q}
       />
     </>
   );

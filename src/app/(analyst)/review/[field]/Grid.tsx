@@ -13,14 +13,20 @@
  *   - the company cell is the ROW HEADER, so every announcement is anchored to
  *     a company
  *   - each cell's accessible name carries value, evidence band and review state
- *   - a POLITE LIVE REGION announces each decision and its consequence
+ *   - a POLITE LIVE REGION announces each decision and its consequence, and the
+ *     same text is visible in the toolbar so a sighted Analyst gets it too
  *   - the evidence panel is a labelled region referenced from the cell, NOT a
  *     tooltip: tooltips are unreachable by keyboard and must never gate a value
  *   - single unmodified letters are suppressed while focus sits in a text input
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition, useCallback, useEffect, useMemo, useOptimistic, useRef, useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
-import { bulkAccept, decide, undo } from "./actions.ts";
+import { bulkAccept, confirmationText, decide, undo } from "./actions.ts";
+import BulkDialog from "./BulkDialog.tsx";
+import ShortcutsDialog from "./ShortcutsDialog.tsx";
 
 export type GridRow = {
   companyId: string;
@@ -51,15 +57,35 @@ type Props = {
   threshold: number;
   isStageField: boolean;
   rows: GridRow[];
+  initialQuery?: string;
 };
 
-const BAND_MARK: Record<string, string> = {
-  low: "▁", medium: "▃", high: "▆", "very high": "█",
+const BAND_CELLS: Record<string, number> = { low: 1, medium: 2, high: 3, "very high": 4 };
+
+const ANCHOR_WORD: Record<string, string> = {
+  exact_normalized: "exact match in the source",
+  proximity: "found near its label",
+  label_only: "label found, value not anchored",
+  none: "not anchored",
 };
+
+type Patch = { companyId: string; decision: string } | { undoLast: true };
 
 export default function Grid(props: Props) {
   const { rows, fieldKey, fieldLabel, periodId, threshold, isStageField } = props;
   const router = useRouter();
+
+  // Decisions land on screen at the keypress; the server's rows replace them
+  // when the refresh completes.
+  const [optRows, applyPatch] = useOptimistic(rows, (state: GridRow[], patch: Patch) => {
+    if ("undoLast" in patch) return state;
+    return state.map((r) => r.companyId === patch.companyId
+      ? { ...r, decided: true, decision: patch.decision,
+          cellLabel: r.cellLabel.replace(/, [a-z]+$/, `, ${patch.decision}`) }
+      : r);
+  });
+
+  const [query, setQuery] = useState(props.initialQuery ?? "");
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -67,37 +93,53 @@ export default function Grid(props: Props) {
   const [announcement, setAnnouncement] = useState("");
   const [busy, setBusy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [bulk, setBulk] = useState<{ open: boolean; text: string | null }>({ open: false, text: null });
   const cellRefs = useRef<Array<HTMLDivElement | null>>([]);
   const editorRef = useRef<HTMLInputElement | null>(null);
   const flagRef = useRef<HTMLInputElement | null>(null);
+  const findRef = useRef<HTMLInputElement | null>(null);
 
-  const row = rows[index];
-  const remaining = useMemo(() => rows.filter((r) => !r.decided).length, [rows]);
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? optRows.filter((r) => r.companyName.toLowerCase().includes(q)) : optRows;
+  }, [optRows, query]);
+  const row = visible[Math.min(index, Math.max(0, visible.length - 1))];
+  const remaining = useMemo(() => optRows.filter((r) => !r.decided).length, [optRows]);
 
   useEffect(() => {
-    if (!editing && !flagging) cellRefs.current[index]?.focus();
-  }, [index, editing, flagging]);
-
+    if (!editing && !flagging && !bulk.open && !showHelp) cellRefs.current[index]?.focus();
+  }, [index, editing, flagging, bulk.open, showHelp]);
   useEffect(() => { if (editing) editorRef.current?.select(); }, [editing]);
   useEffect(() => { if (flagging) flagRef.current?.focus(); }, [flagging]);
 
+  // The find text lives in the URL so a view can be handed to a colleague.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (query) url.searchParams.set("q", query); else url.searchParams.delete("q");
+    window.history.replaceState(null, "", url);
+  }, [query]);
+
   const announce = useCallback((text: string) => setAnnouncement(text), []);
 
-  const run = useCallback(async (fn: () => Promise<{ ok: boolean; message: string }>,
-                                consequence?: string) => {
+  const run = useCallback((fn: () => Promise<{ ok: boolean; message: string }>,
+                           patch?: Patch, consequence?: string) => {
     setBusy(true);
-    try {
-      const result = await fn();
-      // The announcement carries the decision AND its consequence -- this is how
-      // a non-sighted Analyst receives the feedback a sighted one gets from the
-      // row changing.
-      announce(`${result.message} ${Math.max(0, remaining - 1)} remaining.` +
-               (consequence ? ` ${consequence}` : ""));
-      router.refresh();
-    } finally {
-      setBusy(false);
-    }
-  }, [announce, remaining, router]);
+    startTransition(async () => {
+      try {
+        if (patch) applyPatch(patch);
+        const result = await fn();
+        // The announcement carries the decision AND its consequence -- this is
+        // how a non-sighted Analyst receives the feedback a sighted one gets
+        // from the row changing.
+        // An undo may or may not touch this view, so it carries no count.
+        const left = patch && !("undoLast" in patch) ? ` ${Math.max(0, remaining - 1)} remaining.` : "";
+        announce(`${result.message}${left}` + (consequence ? ` ${consequence}` : ""));
+        router.refresh();
+      } finally {
+        setBusy(false);
+      }
+    });
+  }, [announce, applyPatch, remaining, router]);
 
   const submit = useCallback((decision: string, extra: Record<string, string> = {}) => {
     if (!row) return;
@@ -109,8 +151,34 @@ export default function Grid(props: Props) {
     if (row.findingId) form.set("findingId", row.findingId);
     if (row.findingAttempt !== null) form.set("findingAttempt", String(row.findingAttempt));
     for (const [k, v] of Object.entries(extra)) form.set(k, v);
-    return run(() => decide(form), row.tierNote ?? undefined);
-  }, [row, periodId, fieldKey, run]);
+    run(() => decide(form), { companyId: row.companyId, decision }, row.tierNote ?? undefined);
+    // Move on to the next undecided row, if there is one below.
+    const next = visible.findIndex((r, i) => i > index && !r.decided);
+    if (next >= 0) setIndex(next);
+  }, [row, periodId, fieldKey, run, visible, index]);
+
+  const doUndo = useCallback(() => {
+    const form = new FormData();
+    form.set("periodId", periodId); form.set("fieldKey", fieldKey);
+    run(() => undo(form), { undoLast: true });
+  }, [periodId, fieldKey, run]);
+
+  const openBulk = useCallback(async () => {
+    setBulk({ open: true, text: null });
+    const text = await confirmationText(periodId, fieldKey, fieldLabel, props.bucket, threshold);
+    setBulk({ open: true, text });
+  }, [periodId, fieldKey, fieldLabel, props.bucket, threshold]);
+
+  const confirmBulk = useCallback((stageOptIn: string) => {
+    setBulk({ open: false, text: null });
+    const form = new FormData();
+    form.set("periodId", periodId);
+    form.set("fieldKey", fieldKey);
+    form.set("bucket", props.bucket);
+    form.set("threshold", String(threshold));
+    form.set("stageOptIn", stageOptIn);
+    run(() => bulkAccept(form));
+  }, [periodId, fieldKey, props.bucket, threshold, run]);
 
   const onKeyDown = useCallback((event: React.KeyboardEvent) => {
     const target = event.target as HTMLElement;
@@ -124,32 +192,25 @@ export default function Grid(props: Props) {
     if (busy) return;
 
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
-      event.preventDefault();
-      const form = new FormData();
-      form.set("periodId", periodId);
-      form.set("fieldKey", fieldKey);
-      void run(() => undo(form));
-      return;
+      event.preventDefault(); doUndo(); return;
     }
     if (event.shiftKey && event.key.toLowerCase() === "a") {
-      event.preventDefault();
-      void onBulk();
-      return;
+      event.preventDefault(); void openBulk(); return;
     }
 
     switch (event.key) {
       case "ArrowDown":
-        event.preventDefault(); setIndex((i) => Math.min(rows.length - 1, i + 1)); break;
+        event.preventDefault(); setIndex((i) => Math.min(visible.length - 1, i + 1)); break;
       case "ArrowUp":
         event.preventDefault(); setIndex((i) => Math.max(0, i - 1)); break;
       case "Home":
         event.preventDefault(); setIndex(0); break;
       case "End":
-        event.preventDefault(); setIndex(rows.length - 1); break;
+        event.preventDefault(); setIndex(visible.length - 1); break;
       case " ":
         event.preventDefault(); setExpanded((v) => !v); break;
       case "a": case "A":
-        event.preventDefault(); void submit("accept"); break;
+        event.preventDefault(); submit("accept"); break;
       case "o": case "O":
         event.preventDefault(); setEditing(true); break;
       case "f": case "F":
@@ -157,214 +218,227 @@ export default function Grid(props: Props) {
       case "e": case "E":
         if (row?.sourceUrl) window.open(row.sourceUrl, "_blank", "noopener,noreferrer");
         break;
+      case "/":
+        event.preventDefault(); findRef.current?.focus(); break;
       case "?":
         event.preventDefault(); setShowHelp((v) => !v); break;
       case "Escape":
         setShowHelp(false); break;
     }
-  }, [busy, rows.length, row, submit, run, periodId, fieldKey]);
-
-  async function onBulk() {
-    let stageOptIn = "";
-    if (isStageField) {
-      // Stage determines tier and tier is the deliverable, so the opt-in is
-      // typed rather than clicked.
-      stageOptIn = window.prompt(
-        "Stage determines the tier. Type STAGE to confirm bulk accept for this field.") ?? "";
-      if (stageOptIn.trim().toUpperCase() !== "STAGE") {
-        announce("Bulk accept cancelled.");
-        return;
-      }
-    }
-    const eligible = rows.filter((r) => !r.decided).length;
-    // The confirmation is the ONLY path. There is no suppress-this-dialog option.
-    const ok = window.confirm(
-      `Accept ${fieldLabel} values at evidence ${threshold} or above, from the ` +
-      `${eligible} undecided in this view? Values that are quarantined, conflicting, ` +
-      `already overridden or without sources are excluded and stay for individual ` +
-      `review. This is undoable.`);
-    if (!ok) { announce("Bulk accept cancelled."); return; }
-
-    const form = new FormData();
-    form.set("periodId", periodId);
-    form.set("fieldKey", fieldKey);
-    form.set("bucket", props.bucket);
-    form.set("threshold", String(threshold));
-    form.set("stageOptIn", stageOptIn);
-    await run(() => bulkAccept(form));
-  }
+  }, [busy, visible.length, row, submit, doUndo, openBulk]);
 
   if (rows.length === 0) {
-    return <div className="empty"><p>Nothing in this view.</p></div>;
+    return (
+      <p className="empty rise">
+        <b>Nothing in this view.</b> Choose another filter above, or go back to the review board.
+      </p>
+    );
   }
 
   return (
     <>
-      {/* A polite live region: it announces each decision and its consequence. */}
-      <div aria-live="polite" aria-atomic="true" className="sr-only" role="status">
-        {announcement}
-      </div>
-
-      <div className="gridtools">
-        <button type="button" onClick={onBulk} disabled={busy}>
-          Bulk accept above {threshold} <kbd>⇧A</kbd>
-        </button>
-        <button type="button" disabled={busy} onClick={() => {
-          const form = new FormData();
-          form.set("periodId", periodId); form.set("fieldKey", fieldKey);
-          void run(() => undo(form));
-        }}>Undo <kbd>⌘Z</kbd></button>
-        <button type="button" onClick={() => setShowHelp((v) => !v)} aria-expanded={showHelp}>
-          Shortcuts <kbd>?</kbd>
-        </button>
-        <span className="count">{remaining} of {rows.length} undecided</span>
-      </div>
-
-      {showHelp && (
-        <table className="help">
-          <caption>Keyboard shortcuts</caption>
-          <thead><tr><th>Key</th><th>Action</th></tr></thead>
-          <tbody>
-            {[["↓ ↑", "Move row; the evidence panel follows"],
-              ["A", "Accept"], ["O", "Override"], ["F", "Flag (needs a reason)"],
-              ["Space", "Expand or collapse evidence"], ["E", "Open the cited source"],
-              ["⇧A", "Bulk accept the remainder in this column"],
-              ["⌘Z / Ctrl+Z", "Undo the last decision"],
-              ["Esc", "Editor → cell; cell → toolbar"]].map(([k, a]) => (
-                <tr key={k}><td><kbd>{k}</kbd></td><td>{a}</td></tr>
-              ))}
-          </tbody>
-        </table>
-      )}
-
-      <div
-        role="grid"
-        aria-label={`${fieldLabel} review`}
-        aria-rowcount={rows.length + 1}
-        aria-colcount={4}
-        className="grid"
-        onKeyDown={onKeyDown}
-      >
-        <div role="row" aria-rowindex={1} className="grow ghead">
-          <span role="columnheader" aria-colindex={1}>Company</span>
-          <span role="columnheader" aria-colindex={2}>Proposed</span>
-          <span role="columnheader" aria-colindex={3}>Evidence</span>
-          <span role="columnheader" aria-colindex={4}>State</span>
+      <div className="tools rise" style={{ "--i": 2 } as React.CSSProperties}>
+        <div className="find">
+          <input ref={findRef} type="search" name="q" placeholder="Find a company…" aria-label="Find a company"
+                 value={query} autoComplete="off" spellCheck={false}
+                 onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
+                 onKeyDown={(e) => {
+                   if (e.key === "Escape" || e.key === "Enter") {
+                     e.preventDefault(); cellRefs.current[index]?.focus();
+                   }
+                 }} />
+          {!query && <kbd aria-hidden="true">/</kbd>}
         </div>
-
-        {rows.map((r, i) => (
-          <div
-            key={r.companyId}
-            role="row"
-            /* Explicit, because virtualisation makes the DOM count lie. */
-            aria-rowindex={i + 2}
-            aria-selected={i === index}
-            className={`grow${i === index ? " sel" : ""}${r.decided ? " done" : ""}`}
-          >
-            {/* The company cell is the ROW HEADER, so every announcement is
-                anchored to a company. */}
-            <span role="rowheader" aria-colindex={1} className="co">{r.companyName}</span>
-            <div
-              role="gridcell"
-              aria-colindex={2}
-              ref={(el) => { cellRefs.current[i] = el; }}
-              /* One tab stop with a roving index. */
-              tabIndex={i === index ? 0 : -1}
-              aria-label={r.cellLabel}
-              aria-describedby={i === index && expanded ? "evidence-panel" : undefined}
-              onFocus={() => setIndex(i)}
-              className="val"
-            >
-              {r.value}
-              {r.conflict && <span className="tag conflict"> conflict</span>}
-            </div>
-            {/* Evidence is never colour alone: numeral, band mark and band word. */}
-            <span role="gridcell" aria-colindex={3} className="ev">
-              <span aria-hidden="true" className={`mark b-${r.band.replace(" ", "-")}`}>
-                {BAND_MARK[r.band]}
-              </span>
-              <span className="num">{r.strength === null ? "—" : r.strength.toFixed(2)}</span>
-              <span className="bandword">{r.band}</span>
-            </span>
-            <span role="gridcell" aria-colindex={4} className="st">
-              {r.decided
-                ? <span className="tag done">{r.decision}</span>
-                : r.sourceCount === 0
-                  ? <span className="tag warn">no sources</span>
-                  : r.anchorMode === "label_only" || r.anchorMode === "none"
-                    ? <span className="tag warn">not anchored</span>
-                    : <span className="tag ok">{r.sourceCount} source{r.sourceCount === 1 ? "" : "s"}</span>}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* A labelled REGION referenced from the focused cell -- not a tooltip.
-          Tooltips are unreachable by keyboard and must never gate a value. */}
-      <section
-        id="evidence-panel"
-        aria-label={`Evidence for ${row?.companyName ?? ""}`}
-        className="evidence"
-        hidden={!expanded}
-      >
-        <h3>Evidence</h3>
-        {row?.conflict && (
-          <div className="diff">
-            <div>
-              <b>Extract</b>
-              <p>{row.extractValue ?? "(empty)"}</p>
-              <span className="sub">source workbook</span>
-            </div>
-            <div>
-              <b>AI proposal</b>
-              <p>{row.value}</p>
-              <span className="sub">{row.anchorMode} · {row.sourceCount} source(s)</span>
-            </div>
-          </div>
-        )}
-        {row?.excerpt
-          ? <blockquote>{row.excerpt}</blockquote>
-          : <p className="sub">No excerpt was recorded for this proposal.</p>}
-        <p className="sub">
-          anchor: {row?.anchorMode ?? "—"}
-          {row?.sourceUrl && (
-            <> · <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer">
-              open source ↗</a></>
+        <button type="button" className="btn" onClick={() => void openBulk()} disabled={busy}>
+          Accept ≥ {threshold.toFixed(2)} in bulk <kbd>⇧A</kbd>
+        </button>
+        <button type="button" className="btn" disabled={busy} onClick={doUndo}>
+          Undo <kbd>⌘Z</kbd>
+        </button>
+        <button type="button" className="btn" onClick={() => setShowHelp(true)} aria-expanded={showHelp}>
+          Keys <kbd>?</kbd>
+        </button>
+        <span className="spacer" />
+        <span className="statusline">
+          {/* A polite live region: it announces each decision and its consequence. */}
+          <span aria-live="polite" aria-atomic="true" role="status">{announcement}</span>
+          {!announcement && (
+            <span className="meta"><span className="fig-sm">{remaining}</span> of <span className="fig-sm">{rows.length}</span> undecided</span>
           )}
-        </p>
-        {row?.tierNote && <p className="tiernote">{row.tierNote}</p>}
-      </section>
+        </span>
+      </div>
 
-      {editing && row && (
-        <div className="editor">
-          <label htmlFor="override-input">Override {fieldLabel} for {row.companyName}</label>
-          <input id="override-input" ref={editorRef} defaultValue={row.value}
-                 onKeyDown={(e) => {
-                   if (e.key === "Enter") {
-                     e.preventDefault();
-                     void submit("override", { overrideValue: e.currentTarget.value });
-                     setEditing(false);
-                   }
-                 }} />
-          <p className="sub">Enter commits · Esc restores focus to the cell</p>
-        </div>
-      )}
+      <div className="workbench rise" style={{ "--i": 3 } as React.CSSProperties}>
+        <div
+          role="grid"
+          aria-label={`${fieldLabel} review`}
+          aria-rowcount={visible.length + 1}
+          aria-colcount={4}
+          className="grid"
+          onKeyDown={onKeyDown}
+        >
+          <div role="row" aria-rowindex={1} className="grow ghead">
+            <span role="columnheader" aria-colindex={1}>Company</span>
+            <span role="columnheader" aria-colindex={2}>Proposed</span>
+            <span role="columnheader" aria-colindex={3}>Evidence</span>
+            <span role="columnheader" aria-colindex={4}>State</span>
+          </div>
 
-      {flagging && row && (
-        <div className="editor">
-          <label htmlFor="flag-input">Flag {row.companyName} — a reason is required</label>
-          <input id="flag-input" ref={flagRef} placeholder="Why is this flagged?"
-                 onKeyDown={(e) => {
-                   if (e.key === "Enter") {
-                     e.preventDefault();
-                     const reason = e.currentTarget.value.trim();
-                     if (!reason) { announce("A flag needs a reason."); return; }
-                     void submit("flag", { reason });
-                     setFlagging(false);
-                   }
-                 }} />
+          {visible.length === 0 && (
+            <div className="grow"><span className="meta">No company matches “{query}”.</span></div>
+          )}
+
+          {visible.map((r, i) => (
+            <div
+              key={r.companyId}
+              role="row"
+              /* Explicit, because virtualisation makes the DOM count lie. */
+              aria-rowindex={i + 2}
+              aria-selected={i === index}
+              className={`grow${i === index ? " sel" : ""}${r.decided ? " done" : ""}`}
+            >
+              {/* The company cell is the ROW HEADER, so every announcement is
+                  anchored to a company. */}
+              <span role="rowheader" aria-colindex={1} className="co">{r.companyName}</span>
+              <div
+                role="gridcell"
+                aria-colindex={2}
+                ref={(el) => { cellRefs.current[i] = el; }}
+                /* One tab stop with a roving index. */
+                tabIndex={i === index ? 0 : -1}
+                aria-label={r.cellLabel}
+                aria-describedby={i === index && expanded ? "evidence-panel" : undefined}
+                onFocus={() => setIndex(i)}
+                onClick={() => setIndex(i)}
+                className="val"
+              >
+                {r.value}
+                {r.conflict && <span className="tag conflict">conflict</span>}
+              </div>
+              {/* Evidence is never colour alone: strip, numeral and band word. */}
+              <span role="gridcell" aria-colindex={3} className="ev">
+                <span aria-hidden="true" className={`strip b-${r.band.replace(" ", "-")}`}>
+                  {[1, 2, 3, 4].map((c) => <i key={c} className={c <= (BAND_CELLS[r.band] ?? 0) ? "on" : ""} />)}
+                </span>
+                <span className="num">{r.strength === null ? "—" : r.strength.toFixed(2)}</span>
+                <span className="bandword">{r.band}</span>
+              </span>
+              <span role="gridcell" aria-colindex={4} className="st">
+                {r.decided
+                  ? <span className="tag done">{r.decision}</span>
+                  : r.sourceCount === 0
+                    ? <span className="tag warn">no sources</span>
+                    : r.anchorMode === "label_only" || r.anchorMode === "none"
+                      ? <span className="tag warn">not anchored</span>
+                      : <span className="tag ok">{r.sourceCount} source{r.sourceCount === 1 ? "" : "s"}</span>}
+              </span>
+            </div>
+          ))}
         </div>
-      )}
+
+        {/* A labelled REGION referenced from the focused cell -- not a tooltip.
+            Tooltips are unreachable by keyboard and must never gate a value. */}
+        <section
+          id="evidence-panel"
+          aria-label={`Evidence for ${row?.companyName ?? ""}`}
+          className="evidence"
+          hidden={!expanded}
+        >
+          {row && (
+            <div className="body fadein" key={row.companyId}>
+              <p className="eyebrow">Evidence</p>
+              <h3>{row.companyName}</h3>
+              {row.conflict && (
+                <div className="diff">
+                  <div>
+                    <span className="k">Extract</span>
+                    <p className="v">{row.extractValue ?? "(empty)"}</p>
+                    <span className="s">source workbook</span>
+                  </div>
+                  <div>
+                    <span className="k">AI proposal</span>
+                    <p className="v">{row.value}</p>
+                    <span className="s">{row.sourceCount} source{row.sourceCount === 1 ? "" : "s"}</span>
+                  </div>
+                </div>
+              )}
+              {row.excerpt
+                ? <blockquote>{highlight(row.excerpt, row.value)}</blockquote>
+                : <p className="meta">No excerpt was recorded for this proposal.</p>}
+              <p className="anchor">
+                <span>{ANCHOR_WORD[row.anchorMode] ?? row.anchorMode}</span>
+                {row.sourceUrl && (
+                  <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer">open source ↗</a>
+                )}
+              </p>
+              {row.tierNote && <p className="tiernote">{row.tierNote}</p>}
+
+              {!row.decided && (
+                <div className="acts">
+                  <button type="button" className="btn primary" disabled={busy}
+                          onClick={() => submit("accept")}>Accept <kbd>A</kbd></button>
+                  <button type="button" className="btn" disabled={busy}
+                          onClick={() => setEditing(true)}>Override <kbd>O</kbd></button>
+                  <button type="button" className="btn" disabled={busy}
+                          onClick={() => setFlagging(true)}>Flag <kbd>F</kbd></button>
+                </div>
+              )}
+
+              {editing && (
+                <div className="editor" onKeyDown={(e) => { if (e.key === "Escape") setEditing(false); }}>
+                  <label htmlFor="override-input">Override {fieldLabel} for {row.companyName}</label>
+                  <input id="override-input" name="overrideValue" autoComplete="off" ref={editorRef} defaultValue={row.value}
+                         onKeyDown={(e) => {
+                           if (e.key === "Enter") {
+                             e.preventDefault();
+                             submit("override", { overrideValue: e.currentTarget.value });
+                             setEditing(false);
+                           }
+                         }} />
+                  <p className="hint">Enter commits · Esc returns to the cell</p>
+                </div>
+              )}
+
+              {flagging && (
+                <div className="editor" onKeyDown={(e) => { if (e.key === "Escape") setFlagging(false); }}>
+                  <label htmlFor="flag-input">Flag {row.companyName} — a reason is required</label>
+                  <input id="flag-input" name="reason" autoComplete="off" ref={flagRef} placeholder="Why is this flagged?"
+                         onKeyDown={(e) => {
+                           if (e.key === "Enter") {
+                             e.preventDefault();
+                             const reason = e.currentTarget.value.trim();
+                             if (!reason) { announce("A flag needs a reason."); return; }
+                             submit("flag", { reason });
+                             setFlagging(false);
+                           }
+                         }} />
+                  <p className="hint">Enter commits · Esc returns to the cell</p>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <BulkDialog open={bulk.open} text={bulk.text} needsStage={isStageField}
+                  onConfirm={confirmBulk}
+                  onCancel={() => { setBulk({ open: false, text: null }); announce("Bulk accept cancelled."); }} />
+      <ShortcutsDialog open={showHelp} onClose={() => setShowHelp(false)} />
+    </>
+  );
+}
+
+/** Mark the proposed value inside its excerpt. Never invents a match. */
+function highlight(excerpt: string, value: string): ReactNode {
+  const needle = value.trim();
+  if (needle.length < 2 || needle === "abstained" || needle === "no value") return excerpt;
+  const at = excerpt.toLowerCase().indexOf(needle.toLowerCase());
+  if (at < 0) return excerpt;
+  return (
+    <>
+      {excerpt.slice(0, at)}
+      <mark>{excerpt.slice(at, at + needle.length)}</mark>
+      {excerpt.slice(at + needle.length)}
     </>
   );
 }

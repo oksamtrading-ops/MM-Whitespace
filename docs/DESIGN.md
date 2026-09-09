@@ -38,6 +38,7 @@ Deloitte Canada's Mining & Metals practice maintains a workbook of every TSX and
 | [14](design/14-delivery-plan.md) | Delivery plan | Six spikes, seven milestones, repository shape, RAID |
 | [15](design/15-open-questions.md) | Open questions | Sixteen questions with owners and blocking status |
 | [16](design/16-least-confident-decisions.md) | Least-confident decisions | The five I would most like challenged |
+| [17](design/17-visual-system.md) | Visual system | Palette on white, the two faces, the footing, gauges, motion, print |
 
 ---
 

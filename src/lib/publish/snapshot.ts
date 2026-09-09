@@ -283,10 +283,10 @@ export function publishPeriod(
 /** What a dashboard reads. Never the live tables. */
 export function readPublished(db: DatabaseSync, periodId: string) {
   const pub = db.prepare(
-    `select id, revision, published_at, override_reason, unresolved_count
+    `select id, revision, published_at, published_by, override_reason, unresolved_count
        from period_publications where period_id = ? order by revision desc limit 1`,
   ).get(periodId) as {
-    id: string; revision: number; published_at: string;
+    id: string; revision: number; published_at: string; published_by: string | null;
     override_reason: string | null; unresolved_count: number;
   } | undefined;
   if (!pub) return null;
