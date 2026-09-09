@@ -27,7 +27,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <a href="/dashboard">Dashboard</a>
             {user?.role === "admin" && <a href="/access">Access review</a>}
             <div className="who">
-              {user ? `${user.email}\n${user.role}` : "not signed in"}
+              {user ? `${user.email}\n${user.role}` : <a href="/signin">sign in</a>}
             </div>
           </nav>
           <main>{children}</main>

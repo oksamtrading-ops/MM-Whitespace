@@ -18,7 +18,7 @@ export default async function AccessReview() {
         <div className="empty">
           <p>{err instanceof Forbidden
             ? "The access review is Admin only."
-            : "This application is invite-only."}</p>
+            : <>This application is invite-only. <a href="/signin">Sign in</a>.</>}</p>
         </div>
       </>
     );

@@ -29,7 +29,7 @@ export default async function Dashboard() {
         <div className="empty">
           <p>{err instanceof Forbidden
             ? "Your account does not have access to this view."
-            : "This application is invite-only."}</p>
+            : <>This application is invite-only. <a href="/signin">Sign in</a>.</>}</p>
           {err instanceof Unauthenticated && <p className="sub">{err.message}</p>}
         </div>
       </>
