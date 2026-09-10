@@ -72,6 +72,34 @@ export const RULES = [
     },
   },
   {
+    key: "auth_tokens",
+    label: "Sign-in links and sessions",
+    retention: "30 days past expiry",
+    owner: SOLUTION_OWNER,
+    transferable: true,
+    apply: (db, apply) => {
+      // Neither table holds a token -- both hold its SHA-256 -- so what is
+      // swept here is evidence rather than credentials: who asked for a link,
+      // from what address, and when a session ended. Kept a month past expiry
+      // because that is the window in which somebody asks why they were signed
+      // out, and dropped after it because a permanent record of every sign-in
+      // is a permanent record of a person's working hours.
+      const cutoff = isoDaysAgo(30);
+      const links = db.prepare(
+        "select id from auth_magic_links where expires_at < ?").all(cutoff);
+      const sessions = db.prepare(
+        "select id from auth_sessions where expires_at < ?").all(cutoff);
+      if (apply) {
+        db.prepare("delete from auth_magic_links where expires_at < ?").run(cutoff);
+        db.prepare("delete from auth_sessions where expires_at < ?").run(cutoff);
+      }
+      const n = links.length + sessions.length;
+      return { examined: n, deleted: n,
+               note: `${links.length} link(s) and ${sessions.length} session(s) ` +
+                     "past 30 days; the audit_log entry for each sign-in is kept" };
+    },
+  },
+  {
     key: "audit_log",
     label: "Audit log",
     retention: "24 months, with a periodic export first",

@@ -12,6 +12,7 @@
  *   node tests/e2e/journeys.mjs
  */
 import { spawn, execFileSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -52,6 +53,34 @@ function accountRow(html, email) {
   const start = table.lastIndexOf("<tr", at);
   const end = table.indexOf("</tr>", at);
   return start < 0 || end < 0 ? "" : table.slice(start, end);
+}
+
+/**
+ * A link, straight into the table. The mailbox is not the thing under test,
+ * and hashing here rather than calling into the app keeps this an independent
+ * check of what the route reads.
+ */
+function issueLinkDirectly(dbPath, email, { expired = false } = {}) {
+  const token = randomBytes(32).toString("base64url");
+  const hash = createHash("sha256").update(token, "utf8").digest("hex");
+  const expiresAt = new Date(Date.now() + (expired ? -60_000 : 15 * 60_000))
+    .toISOString().replace("T", " ").slice(0, 23) + "000";
+  execFileSync("node", ["--input-type=module", "-e", `
+    import { DatabaseSync } from "node:sqlite";
+    const db = new DatabaseSync(${JSON.stringify(dbPath)});
+    db.prepare("insert into auth_magic_links (email, token_hash, expires_at) values (?, ?, ?)")
+      .run(${JSON.stringify(email)}, ${JSON.stringify(hash)}, ${JSON.stringify(expiresAt)});
+  `], { cwd: ROOT, stdio: "ignore" });
+  return token;
+}
+
+function setActive(dbPath, email, active) {
+  execFileSync("node", ["--input-type=module", "-e", `
+    import { DatabaseSync } from "node:sqlite";
+    const db = new DatabaseSync(${JSON.stringify(dbPath)});
+    db.prepare("update app_users set is_active = ? where email = ?")
+      .run(${active ? 1 : 0}, ${JSON.stringify(email)});
+  `], { cwd: ROOT, stdio: "ignore" });
 }
 
 const get = (path, cookie) =>
@@ -390,6 +419,57 @@ async function journeys(dbPath) {
   const body = await right.json();
   check("the tick does no work itself", body.invokedWorker === false || "pending" in body);
 
+  // 6. Magic link, over HTTP. Redemption is a GET, because it is reached by
+  // clicking a link in a mail client, so it is the part of the flow a test can
+  // drive honestly. The link is issued straight into the database rather than
+  // read out of a mailbox -- doc 13 refuses to make every run wait on an inbox
+  // -- and what is under test is redemption, the session it mints, and the
+  // three ways it stops working. The sign-in form's own behaviour, including
+  // that it answers a stranger and a partner identically, is covered by
+  // src/lib/auth/magiclink.test.ts.
+  console.log("\n6. magic-link sign-in");
+
+  const token = issueLinkDirectly(dbPath, "analyst@example.invalid");
+  const redeemed = await fetch(`${BASE}/auth/verify?token=${encodeURIComponent(token)}`,
+                               { redirect: "manual" });
+  const setCookies = redeemed.headers.getSetCookie?.() ?? [];
+  const sessionCookie = setCookies.find((c) => c.startsWith("mm_session="))
+    ?.split(";")[0] ?? null;
+  check("a link redeems to a session", redeemed.status === 303 && Boolean(sessionCookie),
+        `status ${redeemed.status}`);
+  check("the session cookie is httpOnly",
+        setCookies.some((c) => c.startsWith("mm_session=") && /httponly/i.test(c)));
+
+  const withSession = await get("/review", sessionCookie);
+  check("the session opens the review board",
+        withSession.status === 200 && !withSession.html.includes("Not permitted"));
+
+  const replay = await fetch(`${BASE}/auth/verify?token=${encodeURIComponent(token)}`,
+                             { redirect: "manual" });
+  check("the same link cannot be used twice",
+        (replay.headers.get("location") ?? "").includes("link=invalid"));
+
+  const forged = await fetch(`${BASE}/auth/verify?token=not-a-real-token`,
+                             { redirect: "manual" });
+  check("a token nobody issued is refused",
+        (forged.headers.get("location") ?? "").includes("link=invalid"));
+
+  const expired = issueLinkDirectly(dbPath, "analyst@example.invalid", { expired: true });
+  const stale = await fetch(`${BASE}/auth/verify?token=${encodeURIComponent(expired)}`,
+                            { redirect: "manual" });
+  check("an expired link is refused",
+        (stale.headers.get("location") ?? "").includes("link=invalid"));
+
+  // Deactivation is the whole of offboarding for an application outside
+  // Deloitte's estate, so it has to end a session that is ALREADY RUNNING
+  // rather than only the next sign-in.
+  setActive(dbPath, "analyst@example.invalid", false);
+  const afterOff = await get("/review", sessionCookie);
+  check("DEACTIVATION ENDS A SESSION ALREADY RUNNING",
+        !afterOff.html.includes("Your queue"),
+        "the deactivated analyst still reached the review board");
+  setActive(dbPath, "analyst@example.invalid", true);
+
   /* ---------------------------------------- accessibility, six routes */
 
   console.log("\naccessibility obligations on six routes");
@@ -439,8 +519,11 @@ try {
 
   server = spawn("npx", ["next", "dev", "-p", String(PORT)], {
     cwd: ROOT,
+    // session+dev: journey 6 drives the real magic-link route, and the other
+    // five mint dev sessions rather than making every run wait on an inbox.
     env: { ...process.env, MM_DATABASE: db, MM_DEV_AUTH_SECRET: SECRET,
            MM_CRON_SECRET: CRON, MM_ALLOWED_DOMAINS: "example.invalid",
+           MM_AUTH: "session+dev", MM_MAIL: "log",
            NODE_ENV: "development" },
     stdio: "ignore",
   });

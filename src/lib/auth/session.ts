@@ -19,6 +19,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Sql } from "../db/sql.ts";
+import { SESSION_COOKIE, userForSession } from "./sessions.ts";
 
 export type Role = "admin" | "analyst" | "viewer";
 
@@ -95,6 +96,54 @@ export function devClaimSource(secret: string | undefined = process.env.MM_DEV_A
   };
 }
 
+/**
+ * The pilot's claim source: a session cookie backed by a row.
+ *
+ * It returns the email and nothing else, which is the whole portability
+ * argument -- assertRole resolves that against `app_users` and never learns
+ * where the claim came from. Deloitte SSO replaces this function and changes
+ * nothing else in the application.
+ *
+ * The second lookup assertRole then performs is deliberate. Returning the user
+ * from here would be one query cheaper and would put a provider's idea of a
+ * user into authorisation, which is exactly the coupling section 5 exists to
+ * prevent.
+ */
+export function sessionClaimSource(db: Sql): ClaimSource {
+  return {
+    name: "magic-link-session",
+    async emailClaim(cookieHeader) {
+      const token = readCookie(cookieHeader, SESSION_COOKIE);
+      if (!token) return null;
+      const user = await userForSession(db, token);
+      return user?.email ?? null;
+    },
+  };
+}
+
+/**
+ * Try each source in turn and take the first claim.
+ *
+ * This exists for ONE caller: the end-to-end suite, which drives the real
+ * magic-link route in one journey and mints dev sessions for the other four,
+ * because doc 13 refuses to make every run depend on an inbox. It is selected
+ * by the explicit value MM_AUTH=session+dev and never by default, so a
+ * deployed instance cannot fall into it -- and the dev source it composes
+ * refuses to run in production on its own account regardless.
+ */
+export function firstOf(...sources: ClaimSource[]): ClaimSource {
+  return {
+    name: sources.map((s) => s.name).join("+"),
+    async emailClaim(cookieHeader) {
+      for (const source of sources) {
+        const claim = await source.emailClaim(cookieHeader);
+        if (claim) return claim;
+      }
+      return null;
+    },
+  };
+}
+
 export function signDevSession(email: string, secret: string): string {
   return `${email}.${sign(email, secret)}`;
 }
@@ -166,7 +215,7 @@ export async function assertRole(
   if (!email) throw new Unauthenticated("no verified email claim");
   const user = await resolveUser(ctx.db, email);
   if (!user) throw new Unauthenticated("no active application user for that claim");
-  if (!hasRole(await user, required)) throw new Forbidden([...required],user.role);
+  if (!hasRole(user, required)) throw new Forbidden([...required], user.role);
   return user;
 }
 

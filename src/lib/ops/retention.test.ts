@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { SqliteSql } from "../db/sqlite.ts";
 import type { Sql } from "../db/sql.ts";
 import { memorySql } from "../db/open.ts";
+import { formatStamp } from "../db/stamp.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +14,8 @@ import { applySchema } from "../db/schema.ts";
 type Rule = {
   key: string; label: string; retention: string;
   owner: string; transferable?: boolean;
+  apply: (db: DatabaseSync, apply: boolean, opts: Record<string, unknown>) =>
+    { examined: number; deleted: number; note?: string };
 };
 
 test("EVERY retention rule has a named owner", async () => {
@@ -41,6 +44,35 @@ test("the retention schedule matches the design's table", async () => {
   assert.match(byKey.audit_log.retention, /24 months/);
   assert.match(byKey.findings_decisions_traces.retention, /life of the pilot/);
   assert.match(byKey.published_snapshots.retention, /life of the pilot/);
+  assert.match(byKey.auth_tokens.retention, /30 days/);
+});
+
+test("sign-in links and expired sessions are swept, live sessions are not", async () => {
+  const past = formatStamp(Date.now() - 60 * 86_400_000);
+  const future = formatStamp(Date.now() + 3_600_000);
+  const rule = (RULES as Rule[]).find((r) => r.key === "auth_tokens")!;
+  const handle = new DatabaseSync(":memory:");
+  applySchema(handle);
+  const sql = new SqliteSql(handle);
+  const u = await sql.get(
+    "insert into app_users (email, role) values (?, ?) returning id",
+    "a@example.invalid", "viewer") as { id: string };
+  await sql.run("insert into auth_magic_links (email, token_hash, expires_at) values (?, ?, ?)",
+                "a@example.invalid", "h1", past);
+  await sql.run("insert into auth_magic_links (email, token_hash, expires_at) values (?, ?, ?)",
+                "a@example.invalid", "h2", future);
+  await sql.run("insert into auth_sessions (user_id, token_hash, expires_at) values (?, ?, ?)",
+                u.id, "s1", past);
+  await sql.run("insert into auth_sessions (user_id, token_hash, expires_at) values (?, ?, ?)",
+                u.id, "s2", future);
+
+  const r = rule.apply(handle, true, {});
+  assert.equal(r.deleted, 2, "one stale link and one stale session");
+  assert.deepEqual(
+    (await sql.all("select token_hash from auth_magic_links")).map((x) => x.token_hash), ["h2"]);
+  assert.deepEqual(
+    (await sql.all("select token_hash from auth_sessions")).map((x) => x.token_hash), ["s2"]);
+  handle.close();
 });
 
 test("the audit log is not trimmed without an export path", async () => {

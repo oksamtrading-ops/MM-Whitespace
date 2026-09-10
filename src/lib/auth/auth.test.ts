@@ -11,7 +11,9 @@ import { applySchema } from "../db/schema.ts";
 import {
   assertRole, authoriseCron, constantTimeEquals, devClaimSource, Forbidden,
   hasRole, isAllowedDomain, readCookie, resolveUser, signDevSession, Unauthenticated,
+  sessionClaimSource,
 } from "./session.ts";
+import { createSession, revokeSession, SESSION_COOKIE } from "./sessions.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SECRET = "test-secret";
@@ -196,4 +198,46 @@ test("the auth check passes on the real application", async () => {
     "node", [join(ROOT, "scripts", "check_role_assertions.mjs")],
     { cwd: ROOT, encoding: "utf8" });
   assert.match(out, /every route handler and server action begins with an authorisation check/);
+});
+
+/* ------------------------------------------- the pilot's claim source */
+
+test("a real session satisfies assertRole, and revoking it stops doing so", async () => {
+  const db = await seeded();
+  const u = await db.get(
+    "select id from app_users where email = ?", "analyst@example.invalid") as { id: string };
+  const { token } = await createSession(db, u.id);
+  const ctx = {
+    db, claims: sessionClaimSource(db),
+    cookieHeader: `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+  };
+
+  const user = await assertRole(ctx, ["analyst"]);
+  assert.equal(user.email, "analyst@example.invalid");
+  await assert.rejects(assertRole(ctx, ["admin"]), Forbidden,
+    "a session says who you are, never what you may do");
+
+  await revokeSession(db, token);
+  await assert.rejects(assertRole(ctx, ["analyst"]), Unauthenticated);
+});
+
+test("the claim source hands back an email and nothing else", async () => {
+  // The whole portability argument: a provider cannot leak its user model into
+  // authorisation because the seam has nowhere to put it.
+  const db = await seeded();
+  const u = await db.get(
+    "select id from app_users where email = ?", "viewer@example.invalid") as { id: string };
+  const { token } = await createSession(db, u.id);
+  const claim = await sessionClaimSource(db)
+    .emailClaim(`${SESSION_COOKIE}=${encodeURIComponent(token)}`);
+  assert.equal(claim, "viewer@example.invalid");
+  assert.equal(typeof claim, "string");
+});
+
+test("no cookie is not a session, and neither is somebody else's junk", async () => {
+  const db = await seeded();
+  const src = sessionClaimSource(db);
+  assert.equal(await src.emailClaim(null), null);
+  assert.equal(await src.emailClaim("other=1"), null);
+  assert.equal(await src.emailClaim(`${SESSION_COOKIE}=nonsense`), null);
 });

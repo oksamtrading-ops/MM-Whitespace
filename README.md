@@ -479,6 +479,52 @@ Decision 8, applied: the brand green `#86BC25` appears only in large fills. Text
 uses `#567C18` and focus rings `#5E841A`, because 2.27:1 on white is below both
 the text and non-text floors and the failure is invisible to eye-checking.
 
+## Signing in
+
+Magic link, no passwords — doc 11, which removes credential stuffing, password
+reuse and reset flows in one decision, and maps onto the eventual identity
+provider because both are an external system asserting an email address.
+
+```bash
+MM_AUTH=session          # the default: magic link
+MM_MAIL=resend           # or `log`, which prints the link (development only)
+MM_RESEND_KEY=re_...     # the sending key
+MM_MAIL_FROM="Whitespace <no-reply@…>"
+MM_PUBLIC_URL=https://…  # the origin that goes into the link
+MM_ALLOWED_DOMAINS=deloitte.ca
+```
+
+**Neither table holds a credential.** `auth_magic_links` and `auth_sessions`
+store the SHA-256 of their token and never the token, so a backup, a support
+export or a leaked replica lets nobody sign in as anybody. Redemption is a
+lookup by hash rather than a comparison of secrets.
+
+**The form gives one answer, whoever asks.** A valid partner, an address that
+is not on the roster, a domain that is not allowed, a malformed string and a
+send that failed all return the same sentence. A sign-in form that
+distinguishes them is a way to ask "does this partner have access" and get an
+answer, and the roster is the client-adjacent thing this application most needs
+to keep. The differences go to `audit_log`, where an Admin can see them.
+
+**Sessions are rows, because doc 11 asks for revocable.** A signed stateless
+token cannot be withdrawn — the remedies are rotating a key, which logs out
+everybody, or keeping a denylist, which is a session table with extra steps.
+Two clocks: `expires_at` is the bound and cannot be extended by use;
+`last_seen_at` drives the idle timeout, so a laptop left open in a client's
+lobby stops being a way in.
+
+**Deactivation ends sessions that are already running.** There is no leaver
+process for an application outside Deloitte's estate, so the access review is
+the whole of offboarding. Without that revocation the screen would appear to
+offboard someone who stays signed in until their session lapses on its own,
+which is the opposite of what it promises. The end-to-end suite asserts it.
+
+**Portability is one function.** `sessionClaimSource` returns the email claim
+and nothing else; `assertRole` resolves that against `app_users` and never
+learns where it came from. Deloitte SSO replaces that function and changes
+nothing else. `MM_AUTH=dev` keeps the three development accounts reachable for
+local work, and the claim source behind them refuses to run in production.
+
 ## The review grid
 
 259 companies by roughly ten enriched fields is about **2,590 decisions per

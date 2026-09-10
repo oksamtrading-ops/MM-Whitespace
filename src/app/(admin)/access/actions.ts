@@ -3,6 +3,7 @@
 /** Access review actions. Admin only, asserted first. */
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/context.ts";
+import { revokeAllForUser } from "../../../lib/auth/sessions.ts";
 
 // Returns void: a form action's type is (formData) => void | Promise<void>,
 // and returning a result object does not type-check against it.
@@ -18,8 +19,17 @@ export async function setActive(form: FormData): Promise<void> {
     // server action is addressable whether or not its control renders.
     return;
   }
-  await db.run("update app_users set is_active = ? where id = ?", active ? 1 : 0, targetId);
+  await db.run("update app_users set is_active = ? where id = ?", active, targetId);
+
+  // Deactivation has to end the sessions that are already running, not merely
+  // stop the next sign-in. Without this the screen appears to offboard someone
+  // who stays signed in until their session lapses on its own -- which is the
+  // opposite of what a quarterly access review is for.
+  const revoked = active
+    ? 0
+    : await revokeAllForUser(db, targetId, user.id, "account deactivated");
+
   await db.run(`insert into audit_log (event, actor_id, detail) values (?, ?, ?)`, active ? "user_reactivated" : "user_deactivated", user.id,
-        JSON.stringify({ targetId, by: user.email }));
+        JSON.stringify({ targetId, by: user.email, sessionsRevoked: revoked }));
   revalidatePath("/access");
 }

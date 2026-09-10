@@ -233,6 +233,32 @@ could not become, because a refused `set role` reads as a refusal and a refusal
 is what most of the probes expect: a suite that cannot assume the role would
 otherwise print a column of PASSes proving nothing.
 
+## Sign-in
+
+```bash
+node scripts/migrate.mjs "$DATABASE_URL"   # 0009 and 0010 add the auth tables
+```
+
+Then invite people by inserting them: sign-in is invite-only and an address
+with no row is not a user, whatever the mail provider says.
+
+```sql
+insert into app_users (email, role) values ('someone@deloitte.ca', 'analyst');
+```
+
+Set `MM_RESEND_KEY`, `MM_MAIL_FROM` and `MM_PUBLIC_URL`, and verify the sending
+domain with Resend before expecting delivery to `deloitte.ca`. Without a key
+the sender falls back to printing the link to the server log, which refuses to
+run in production.
+
+**When somebody cannot sign in**, `audit_log` has the answer and the screen
+deliberately does not: `sign_in_refused` carries the reason (`domain`, `not on
+the roster`, `too many live links`, `malformed`), `sign_in_link_sent` says one
+went out, and `sign_in_mail_failed` names a provider error.
+
+**To end somebody's access now**, deactivate them on `/access`. That revokes
+every session they hold as well as stopping the next sign-in.
+
 ## Standing checks
 
 ```bash
