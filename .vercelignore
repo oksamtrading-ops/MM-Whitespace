@@ -1,0 +1,26 @@
+# WHAT MUST NOT LEAVE THIS MACHINE.
+#
+# The deploy uploads the working directory, and this directory holds two
+# workbooks that are licensed for internal use, not for redistribution, and
+# that carry personal data -- a named last modifier, cell comments by a named
+# employee, and a sheet of partners and client contacts. .gitignore keeps them
+# out of the repository; this keeps them out of a build artifact.
+reference/
+*.xlsx
+*.xlsb
+*.xlsm
+
+# Committed periods. Real company data, and useless to a server that reads
+# Postgres.
+*.db
+*.db-journal
+*.sqlite
+
+# Secrets belong in the platform's own store, never in an upload.
+.env
+.env.*
+!.env.example
+
+.next/
+node_modules/
+.git/

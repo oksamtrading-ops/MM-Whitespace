@@ -25,6 +25,15 @@ export function databaseUrl(): string | null {
  */
 export function openSql(url: string | null = databaseUrl()): Sql {
   if (url) return new PostgresSql({ connectionString: url });
+  if (process.env.NODE_ENV === "production") {
+    // Falling through to SQLite here would open a file on a read-only, empty
+    // serverless filesystem: the application would start, serve pages, and
+    // report an empty population as though that were the truth. Refusing to
+    // start is the difference between an outage and a lie.
+    throw new Error(
+      "MM_DATABASE_URL is not set. A production deployment reads Postgres; " +
+      "the SQLite path is for tests and the command line.");
+  }
   const handle = new DatabaseSync(DATABASE_PATH);
   handle.exec("pragma foreign_keys = on");
   const has = handle.prepare(
