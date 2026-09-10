@@ -24,18 +24,22 @@
     "check:contrast": "node scripts/check_contrast.mjs",
     "e2e": "node tests/e2e/journeys.mjs",
     "e2e:isolated": "bash scripts/e2e_isolated.sh",
-    "retention": "node scripts/retention.mjs"
+    "retention": "node scripts/retention.mjs",
+    "migrate": "node scripts/migrate.mjs",
+    "pg:smoke": "node scripts/pg_smoke.mjs"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
     "next": "^16.3.4",
+    "pg": "^8.23.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@types/node": "26.5.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "^19.2.7",
     "typescript": "7.0.2"
