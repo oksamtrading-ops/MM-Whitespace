@@ -138,3 +138,19 @@ psql "$DATABASE_URL" -f scripts/s5_access_model.sql
 
 Self-contained: it seeds, probes, prints PASS/FAIL, and deletes its own rows.
 Safe against a database holding real data.
+
+The connection must be able to `set role` to `app_viewer`, `app_analyst` and
+`enrichment_worker`. Supabase's `postgres` login holds admin option on all
+three, which was sufficient before PostgreSQL 16 and is not sufficient now, so
+the script checks every role before it seeds anything and stops with the roles
+it could not become. That check exists because the failure is otherwise
+invisible: a refused `set role` used to be recorded as `REFUSED`, which is the
+expected result of eleven of the eighteen probes, so a run that tested nothing
+reported eleven PASSes. A switch that fails now reads `NO ROLE: ...` and is
+verdict `HARNESS`, never `PASS`.
+
+```sql
+grant app_viewer, app_analyst, enrichment_worker to <login> with set true;
+-- run the script, then
+revoke app_viewer, app_analyst, enrichment_worker from <login>;
+```

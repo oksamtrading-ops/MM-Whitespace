@@ -218,6 +218,14 @@ in `docs/decisions/S5-ACCESS-MODEL.md`; the short version is that a policy
 grants nothing, and enabling row-level security on a table whose role holds a
 grant but no policy silently takes that grant away.
 
+Run it as a login that can `set role` to `app_viewer`, `app_analyst` and
+`enrichment_worker`. Admin option on a role stopped implying that at PostgreSQL
+16, so grant the three `with set true` for the run and revoke them after. The
+script checks all five roles before it seeds anything and stops with the ones it
+could not become, because a refused `set role` reads as a refusal and a refusal
+is what most of the probes expect: a suite that cannot assume the role would
+otherwise print a column of PASSes proving nothing.
+
 ## Standing checks
 
 ```bash

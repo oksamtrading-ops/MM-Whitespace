@@ -6,9 +6,11 @@
 -- PASS/FAIL, and removes its own rows. Safe to run against a database holding
 -- real data -- it only adds and then deletes rows labelled 'S5-%'.
 --
--- The probe treats a privilege error as a refusal, because from the caller's
--- side "permission denied for table" and "zero rows" are both a refusal; what
--- matters is that the data does not come back.
+-- The probe treats a privilege error on the query as a refusal, because from
+-- the caller's side "permission denied for table" and "zero rows" are both a
+-- refusal; what matters is that the data does not come back. A failure to
+-- become the role in the first place is not a refusal, and is reported as
+-- HARNESS -- see the note above s5_probe.
 
 begin;
 
@@ -18,13 +20,62 @@ create or replace function pg_temp.s5_probe(who text, q text) returns text
 language plpgsql as $$
 declare n text;
 begin
-  execute format('set local role %I', who);
-  execute q into n;
+  -- Becoming the role and running the query are two different failures and
+  -- must never be reported as the same one. Since PostgreSQL 16 a membership
+  -- carries SET separately from ADMIN, so a login that looks privileged can
+  -- still be refused `set role` -- and a single catch-all handler would record
+  -- that as 'REFUSED', which is exactly what every negative probe expects. The
+  -- suite would then print a column of PASSes having tested nothing at all.
+  begin
+    execute format('set local role %I', who);
+  exception when others then
+    reset role;
+    return 'NO ROLE: ' || sqlerrm;
+  end;
+
+  begin
+    execute q into n;
+  exception when others then
+    reset role;
+    return 'REFUSED';
+  end;
+
   reset role;
   return n;
+end $$;
+
+-- The same distinction, made before anything is seeded: if the connection
+-- cannot become a role, its probes cannot mean anything, so refuse to run
+-- rather than produce a table someone might believe.
+
+create or replace function pg_temp.s5_set_role_error(who text) returns text
+language plpgsql as $$
+begin
+  execute format('set local role %I', who);
+  reset role;
+  return null;
 exception when others then
   reset role;
-  return 'REFUSED';
+  return sqlstate || ' ' || sqlerrm;
+end $$;
+
+do $$
+declare broken text;
+begin
+  select string_agg(r || ' -- ' || e, E'\n  ' order by r) into broken
+  from unnest(array['anon', 'authenticated', 'app_viewer', 'app_analyst',
+                    'enrichment_worker']) as r,
+       lateral pg_temp.s5_set_role_error(r) as e
+  where e is not null;
+
+  if broken is not null then
+    raise exception E'S5 did not run. As % it cannot become:\n  %',
+      current_user, broken
+      using hint =
+        'Grant these roles to this login with set option for the duration of '
+        'the run, or connect as a login that already holds them. Note that '
+        'since PostgreSQL 16 admin option alone does not permit set role.';
+  end if;
 end $$;
 
 -- ---------------------------------------------------------------- seed
@@ -56,7 +107,9 @@ where p.label like 'S5-%' and c.name_normalized = 's5 northco mining corp';
 -- ---------------------------------------------------------------- probe
 
 select probe, result, expected,
-       case when result = expected then 'PASS' else 'FAIL' end as verdict
+       case when result like 'NO ROLE:%' then 'HARNESS'
+            when result = expected then 'PASS'
+            else 'FAIL' end as verdict
 from (
   -- The data API. Supabase serves every table in `public` over PostgREST as
   -- `anon`, which is the key that ships inside a browser.
@@ -113,7 +166,9 @@ from (
     pg_temp.s5_probe('enrichment_worker','select count(*)::text from company_period_field_values'), 'REFUSED'
   union all select 'worker: tiers',
     pg_temp.s5_probe('enrichment_worker','select count(*)::text from tiers'), 'REFUSED'
-) t order by verdict desc, probe;
+) t order by case when result like 'NO ROLE:%' then 0
+                  when result = expected then 2
+                  else 1 end, probe;
 
 -- --------------------------------------------------------------- clean up
 
