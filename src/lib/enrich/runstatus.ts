@@ -7,7 +7,7 @@
  * with errors` are derived, because the database records what the run was told
  * to be and neither of these is something anything tells it.
  */
-import type { DatabaseSync } from "node:sqlite";
+import type { Sql } from "../db/sql.ts";
 import { budgetState, type BudgetState } from "./ledger.ts";
 
 /** docs/design/03: a stall is visible within three minutes. */
@@ -78,48 +78,40 @@ function toMs(stamp: string | null): number | null {
 
 const FINISHED = new Set(["completed", "halted", "dead_letter"]);
 
-export function readRunStatus(
-  db: DatabaseSync, runId: string, now: number = Date.now(),
-): RunStatus | null {
-  const run = db.prepare(
-    `select r.id, r.status, r.mode, r.model, r.prompt_version, r.created_at,
+export async function readRunStatus(
+  db: Sql, runId: string, now: number = Date.now(),
+): Promise<RunStatus | null> {
+  const run = await db.get(`select r.id, r.status, r.mode, r.model, r.prompt_version, r.created_at,
             r.completed_at, r.halt_reason, u.email as created_by
        from enrichment_runs r left join app_users u on u.id = r.created_by
-      where r.id = ?`).get(runId) as {
+      where r.id = ?`, runId) as {
     id: string; status: string; mode: string; model: string; prompt_version: string;
     created_at: string; completed_at: string | null; halt_reason: string | null;
     created_by: string | null;
   } | undefined;
   if (!run) return null;
 
-  const counts = db.prepare(
-    "select state, count(*) n from enrichment_jobs where run_id = ? group by state order by n desc",
-  ).all(runId) as Array<{ state: string; n: number }>;
+  const counts = await db.all("select state, count(*) n from enrichment_jobs where run_id = ? group by state order by n desc", runId) as Array<{ state: string; n: number }>;
   const total = counts.reduce((n, c) => n + c.n, 0);
   const finished = counts.filter((c) => FINISHED.has(c.state)).reduce((n, c) => n + c.n, 0);
   const deadLetterCount = counts.find((c) => c.state === "dead_letter")?.n ?? 0;
 
-  const progress = db.prepare(
-    "select max(updated_at) t from enrichment_jobs where run_id = ?",
-  ).get(runId) as { t: string | null };
+  const progress = await db.get("select max(updated_at) t from enrichment_jobs where run_id = ?", runId) as { t: string | null };
   const lastMs = toMs(progress.t);
   const secondsSinceProgress = lastMs === null ? null : Math.max(0, Math.round((now - lastMs) / 1000));
 
   // A job still held by a worker whose lease has run out: the ordinary shape
   // of a stall, and the thing the next tick returns to the queue for free.
   const nowStamp = new Date(now).toISOString().replace("T", " ").slice(0, 19);
-  const expiredLeases = (db.prepare(
-    `select count(*) n from enrichment_jobs
+  const expiredLeases = (await db.get(`select count(*) n from enrichment_jobs
       where run_id = ? and state in ('claimed', 'researching')
-        and lease_expires_at is not null and lease_expires_at < ?`,
-  ).get(runId, nowStamp) as { n: number }).n;
+        and lease_expires_at is not null and lease_expires_at < ?`, runId, nowStamp) as { n: number }).n;
 
-  const deadLetters = deadLetterCount === 0 ? [] : db.prepare(
-    `select c.canonical_name as companyName, j.field_group as fieldGroup,
+  const deadLetters = deadLetterCount === 0 ? [] : await db.all(`select c.canonical_name as companyName, j.field_group as fieldGroup,
             j.attempts, j.last_error as lastError
        from enrichment_jobs j join companies c on c.id = j.company_id
       where j.run_id = ? and j.state = 'dead_letter'
-      order by c.canonical_name limit 50`).all(runId) as RunStatus["deadLetters"];
+      order by c.canonical_name limit 50`, runId) as RunStatus["deadLetters"];
 
   return {
     runId: run.id,
@@ -138,7 +130,7 @@ export function readRunStatus(
     deadLetters,
     expiredLeases,
     secondsSinceProgress,
-    budget: budgetState(db, runId),
+    budget: await budgetState(db, runId),
     haltReason: run.halt_reason,
   };
 }
@@ -169,9 +161,8 @@ export function derivePhase(
 }
 
 /** Every run for a period, most recent first. */
-export function listRuns(db: DatabaseSync, periodId: string, now: number = Date.now()): RunStatus[] {
-  const ids = db.prepare(
-    "select id from enrichment_runs where period_id = ? order by created_at desc",
-  ).all(periodId) as Array<{ id: string }>;
-  return ids.map((r) => readRunStatus(db, r.id, now)).filter((r): r is RunStatus => r !== null);
+export async function listRuns(db: Sql, periodId: string, now: number = Date.now()): Promise<RunStatus[]> {
+  const ids = await db.all("select id from enrichment_runs where period_id = ? order by created_at desc", periodId) as Array<{ id: string }>;
+  const statuses = await Promise.all(ids.map((r) => readRunStatus(db, r.id, now)));
+  return statuses.filter((r): r is RunStatus => r !== null);
 }

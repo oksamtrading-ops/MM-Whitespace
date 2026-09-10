@@ -18,10 +18,8 @@ export async function setActive(form: FormData): Promise<void> {
     // server action is addressable whether or not its control renders.
     return;
   }
-  db.prepare("update app_users set is_active = ? where id = ?").run(active ? 1 : 0, targetId);
-  db.prepare(
-    `insert into audit_log (event, actor_id, detail) values (?, ?, ?)`,
-  ).run(active ? "user_reactivated" : "user_deactivated", user.id,
+  await db.run("update app_users set is_active = ? where id = ?", active ? 1 : 0, targetId);
+  await db.run(`insert into audit_log (event, actor_id, detail) values (?, ?, ?)`, active ? "user_reactivated" : "user_deactivated", user.id,
         JSON.stringify({ targetId, by: user.email }));
   revalidatePath("/access");
 }

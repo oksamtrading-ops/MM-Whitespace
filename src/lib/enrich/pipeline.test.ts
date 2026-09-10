@@ -1,6 +1,6 @@
 import { test } from "node:test";
+import type { Sql } from "../db/sql.ts";
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -21,14 +21,14 @@ const CASSETTE_DIR = join(
 
 function seeded() {
   return seedFixtureDatabase() as {
-    db: DatabaseSync; periodId: string;
+    db: Sql; periodId: string;
     companies: Array<{ id: string; name: string; ticker: string }>;
   };
 }
 
 // ----------------------------------------------------------------- prompt
 
-test("the prompt builder cannot be handed an internal field", () => {
+test("the prompt builder cannot be handed an internal field", async () => {
   const internal: InternalCompanyRow = {
     companyId: "c1", canonicalName: "Northco Mining Corp.", aliases: [],
     rootTicker: "NRTH", exchange: "TSX", interlistedVenues: [],
@@ -49,7 +49,7 @@ test("the prompt builder cannot be handed an internal field", () => {
     "a comment must never reach a prompt");
 });
 
-test("the egress scan throws rather than redacting and sending", () => {
+test("the egress scan throws rather than redacting and sending", async () => {
   const restrictions = restrictionsFromCatalog([
     { key: "dtt_market", label: "Deloitte market", classification: "deloitte_internal" },
     { key: "auditor", label: "Auditor", classification: "public" },
@@ -65,19 +65,19 @@ test("the egress scan throws rather than redacting and sending", () => {
   egressScan({ content: "extract the auditor" }, restrictions);
 });
 
-test("the prompt prefix is byte-identical across companies on a route", () => {
+test("the prompt prefix is byte-identical across companies on a route", async () => {
   const row = (name: string) => ({
     companyId: name, canonicalName: name, aliases: [], rootTicker: "X", exchange: "TSX",
     interlistedVenues: [], headOfficeLocation: null, headOfficeRegion: null,
     knownRegions: {}, knownCommodities: [], knownWebsite: null, periodAsOf: PERIOD_AS_OF,
   });
-  const a = buildPrompt("extract_general", row("Alpha"));
-  const b = buildPrompt("extract_general", row("Beta"));
+  const a = await buildPrompt("extract_general", row("Alpha"));
+  const b = await buildPrompt("extract_general", row("Beta"));
   assert.equal(a.stablePrefix, b.stablePrefix, "a per-company value in the prefix kills the cache");
   assert.notEqual(a.userContent, b.userContent);
 });
 
-test("serialisation is deterministic, so an unordered query cannot invalidate the cache", () => {
+test("serialisation is deterministic, so an unordered query cannot invalidate the cache", async () => {
   const base = {
     companyId: "c", canonicalName: "C", aliases: ["Z Corp", "A Corp"], rootTicker: "C",
     exchange: "TSX", interlistedVenues: [], headOfficeLocation: null, headOfficeRegion: null,
@@ -93,7 +93,7 @@ test("serialisation is deterministic, so an unordered query cannot invalidate th
 
 // --------------------------------------------------------------- evidence
 
-test("evidence strength is a function of observable components, not self-report", () => {
+test("evidence strength is a async function of observable components, not self-report", async () => {
   const strong = evidenceStrength({
     sourceTier: 1, documentAgeDays: 30, expectedCadenceDays: 365,
     anchorMode: "exact_normalized", corroboratingSources: 3, extractionAgreement: true,
@@ -107,7 +107,7 @@ test("evidence strength is a function of observable components, not self-report"
   assert.equal(strong.version, "1.0.0");
 });
 
-test("an unanchored finding is never bulk-acceptable, whatever it scores", () => {
+test("an unanchored finding is never bulk-acceptable, whatever it scores", async () => {
   const calibrated = {
     field: "audit_fee", minStrength: 0.5,
     calibrationRunId: "run-1", measuredPrecision: 0.94,
@@ -130,92 +130,88 @@ test("an unanchored finding is never bulk-acceptable, whatever it scores", () =>
 
 // ---------------------------------------------------------------- ledger
 
-test("a worker with no free slot exits rather than exceeding concurrency", () => {
-  const { db } = seeded();
-  ensureSlots(db, 2);
-  assert.equal(claimSlot(db, "w1"), 1);
-  assert.equal(claimSlot(db, "w2"), 2);
-  assert.equal(claimSlot(db, "w3"), null, "the third worker must find no slot");
-  releaseSlot(db, 1);
-  assert.equal(claimSlot(db, "w3"), 1);
+test("a worker with no free slot exits rather than exceeding concurrency", async () => {
+  const { db } = await seeded();
+  await ensureSlots(db, 2);
+  assert.equal(await claimSlot(db, "w1"), 1);
+  assert.equal(await claimSlot(db, "w2"), 2);
+  assert.equal(await claimSlot(db, "w3"), null, "the third worker must find no slot");
+  await releaseSlot(db, 1);
+  assert.equal(await claimSlot(db, "w3"), 1);
 });
 
-test("an expired lease returns the job to queued and charges NO attempt", () => {
-  const { db, periodId, companies } = seeded();
-  const { runId } = createRun(db, periodId, [companies[0].id], { cassetteDir: CASSETTE_DIR });
-  ensureSlots(db, 1);
-  const [job] = claimJobs(db, runId, "w1", 1);
+test("an expired lease returns the job to queued and charges NO attempt", async () => {
+  const { db, periodId, companies } = await seeded();
+  const { runId } = await createRun(db, periodId, [companies[0].id], { cassetteDir: CASSETTE_DIR });
+  await ensureSlots(db, 1);
+  const [job] = await claimJobs(db, runId, "w1", 1);
   assert.ok(job);
 
   // Force the lease into the past, as a killed worker would leave it.
-  db.prepare("update enrichment_jobs set lease_expires_at = '2000-01-01 00:00:00' where id = ?")
-    .run(job.id);
-  const reaped = reapExpiredLeases(db);
+  await db.run("update enrichment_jobs set lease_expires_at = '2000-01-01 00:00:00' where id = ?", job.id);
+  const reaped = await reapExpiredLeases(db);
   assert.equal(reaped, 1);
 
-  const after = db.prepare("select state, attempts, leased_by from enrichment_jobs where id = ?")
-    .get(job.id) as { state: string; attempts: number; leased_by: string | null };
+  const after = await db.get("select state, attempts, leased_by from enrichment_jobs where id = ?", job.id) as { state: string; attempts: number; leased_by: string | null };
   assert.equal(after.state, "queued");
   assert.equal(after.attempts, 0, "a killed worker must not burn a retry");
-  assert.equal(after.leased_by, null);
+  assert.equal((await after).leased_by, null);
 });
 
-test("heartbeat extends the lease of held jobs only", () => {
-  const { db, periodId, companies } = seeded();
-  const { runId } = createRun(db, periodId, [companies[0].id], { cassetteDir: CASSETTE_DIR });
-  ensureSlots(db, 1);
-  claimJobs(db, runId, "w1", 1);
-  assert.equal(heartbeat(db, "w1"), 1);
-  assert.equal(heartbeat(db, "someone-else"), 0);
+test("heartbeat extends the lease of held jobs only", async () => {
+  const { db, periodId, companies } = await seeded();
+  const { runId } = await createRun(db, periodId, [companies[0].id], { cassetteDir: CASSETTE_DIR });
+  await ensureSlots(db, 1);
+  await claimJobs(db, runId, "w1", 1);
+  assert.equal(await heartbeat(db, "w1"), 1);
+  assert.equal(await heartbeat(db, "someone-else"), 0);
 });
 
-test("an illegal state transition throws instead of corrupting the ledger", () => {
-  const { db, periodId, companies } = seeded();
-  const { runId, jobIds } = createRun(db, periodId, [companies[0].id],
+test("an illegal state transition throws instead of corrupting the ledger", async () => {
+  const { db, periodId, companies } = await seeded();
+  const { runId, jobIds } = await createRun(db, periodId, [companies[0].id],
     { cassetteDir: CASSETTE_DIR });
-  assert.throws(() => transition(db, jobIds[0], "completed"), IllegalTransition);
-  transition(db, jobIds[0], "claimed");
-  transition(db, jobIds[0], "researching");
-  assert.throws(() => transition(db, jobIds[0], "completed"), IllegalTransition);
+  await assert.rejects(
+() => transition(db, jobIds[0], "completed"), IllegalTransition);
+  await transition(db, jobIds[0], "claimed");
+  await transition(db, jobIds[0], "researching");
+  await assert.rejects(() => transition(db, jobIds[0], "completed"), IllegalTransition);
   void runId;
 });
 
-test("exhausting the budget halts the run and every unfinished job", () => {
-  const { db, periodId, companies } = seeded();
-  const { runId } = createRun(db, periodId, companies.map((c) => c.id),
+test("exhausting the budget halts the run and every unfinished job", async () => {
+  const { db, periodId, companies } = await seeded();
+  const { runId } = await createRun(db, periodId, companies.map((c) => c.id),
     { cassetteDir: CASSETTE_DIR, budgetUsd: 1 });
 
-  const warned = recordSpend(db, runId, 0.85);
+  const warned = await recordSpend(db, runId, 0.85);
   assert.equal(warned.warn, true);
   assert.equal(warned.halt, false);
 
-  const halted = recordSpend(db, runId, 0.30);
+  const halted = await recordSpend(db, runId, 0.30);
   assert.equal(halted.halt, true);
-  const run = db.prepare("select status, halt_reason from enrichment_runs where id = ?")
-    .get(runId) as { status: string; halt_reason: string };
+  const run = await db.get("select status, halt_reason from enrichment_runs where id = ?", runId) as { status: string; halt_reason: string };
   assert.equal(run.status, "halted");
   assert.match(run.halt_reason, /budget exhausted/);
-  const stuck = db.prepare(
-    "select count(*) n from enrichment_jobs where run_id = ? and state = 'halted'")
-    .get(runId) as { n: number };
+  const stuck = await db.get("select count(*) n from enrichment_jobs where run_id = ? and state = 'halted'", runId) as { n: number };
   assert.equal(stuck.n, 2, "both spend-limit shapes route to halt, not retry");
 });
 
-test("a run cannot be created without a budget", () => {
-  const { db, periodId, companies } = seeded();
-  assert.throws(
-    () => createRun(db, periodId, [companies[0].id], { cassetteDir: CASSETTE_DIR, budgetUsd: 0 }),
+test("a run cannot be created without a budget", async () => {
+  const { db, periodId, companies } = await seeded();
+  await assert.rejects(
+() => createRun(db, periodId, [companies[0].id], { cassetteDir: CASSETTE_DIR, budgetUsd: 0 }),
     /without a budget/);
 });
 
 // -------------------------------------------------------------- cassettes
 
-test("replay mode sends nothing, and a miss is a hard stop", () => {
+test("replay mode sends nothing, and a miss is a hard stop", async () => {
   const cassettes = new Cassettes(CASSETTE_DIR, "replay");
   assert.throws(() => cassettes.read("extract_general-doesnotexist"), CassetteMiss);
 });
 
-test("a changed prompt version changes the cassette key by design", () => {
+test("a changed prompt version changes the cassette key by design", async () => {
   const base = { route: "extract_general", model: "claude-sonnet-5",
                  schemaHash: "findings-v1", content: "Company: X" };
   const a = cassetteKey({ ...base, promptVersion: "1" });
@@ -223,23 +219,23 @@ test("a changed prompt version changes the cassette key by design", () => {
   assert.notEqual(a, b, "a stale recording must not answer a changed prompt");
 });
 
-test("live mode refuses to run in this build", () => {
-  const { db, periodId, companies } = seeded();
-  const { runId } = createRun(db, periodId, [companies[0].id],
+test("live mode refuses to run in this build", async () => {
+  const { db, periodId, companies } = await seeded();
+  const { runId } = await createRun(db, periodId, [companies[0].id],
     { cassetteDir: CASSETTE_DIR, mode: "live" });
-  assert.throws(
-    () => researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR, mode: "live" }),
+  await assert.rejects(
+() => researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR, mode: "live" }),
     /live mode is not enabled/);
 });
 
 // ------------------------------------------------------------- end to end
 
-test("ONE COMPANY END TO END, and the planted fabricated fee is rejected", () => {
-  const { db, periodId, companies } = seeded();
+test("ONE COMPANY END TO END, and the planted fabricated fee is rejected", async () => {
+  const { db, periodId, companies } = await seeded();
   const northco = companies.find((c) => c.name === "Northco Mining Corp.")!;
-  const { runId } = createRun(db, periodId, [northco.id], { cassetteDir: CASSETTE_DIR });
+  const { runId } = await createRun(db, periodId, [northco.id], { cassetteDir: CASSETTE_DIR });
 
-  const outcome = researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
+  const outcome = await researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
 
   // The ledger moved all the way through.
   assert.equal(outcome.jobState, "completed");
@@ -266,16 +262,14 @@ test("ONE COMPANY END TO END, and the planted fabricated fee is rejected", () =>
 
   // The raw response was stored BEFORE any finding was derived from it, so a
   // crash between the two costs a re-derivation and not a re-call.
-  const raw = db.prepare(
-    "select count(*) n from enrichment_job_results where job_id = ?").get(outcome.jobId) as
+  const raw = await db.get("select count(*) n from enrichment_job_results where job_id = ?",outcome.jobId) as
     { n: number };
   assert.equal(raw.n, 1);
 
   // Every finding carries a versioned evidence score and names its document.
-  const rows = db.prepare(
-    `select field_key, state, anchor_mode, evidence_strength, evidence_version,
+  const rows = await db.all(`select field_key, state, anchor_mode, evidence_strength, evidence_version,
             anchor_document_hash, model_self_confidence
-       from enrichment_findings where run_id = ?`).all(runId) as Array<Record<string, unknown>>;
+       from enrichment_findings where run_id = ?`, runId) as Array<Record<string, unknown>>;
   assert.equal(rows.length, 4);
   for (const r of rows) {
     assert.equal(r.evidence_version, "1.0.0");
@@ -294,16 +288,15 @@ test("ONE COMPANY END TO END, and the planted fabricated fee is rejected", () =>
     "evidence strength must rank the anchored fee above the fabricated one");
 });
 
-test("abstention is a first-class outcome, not a failure", () => {
-  const { db, periodId, companies } = seeded();
+test("abstention is a first-class outcome, not a failure", async () => {
+  const { db, periodId, companies } = await seeded();
   const royalco = companies.find((c) => c.name === "Royalco Streaming Inc.")!;
-  const { runId } = createRun(db, periodId, [royalco.id], { cassetteDir: CASSETTE_DIR });
-  const outcome = researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
-  assert.equal(outcome.jobState, "completed");
+  const { runId } = await createRun(db, periodId, [royalco.id], { cassetteDir: CASSETTE_DIR });
+  const outcome = await researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
+  assert.equal((await outcome).jobState, "completed");
 
-  const abstained = db.prepare(
-    `select field_key, state, abstained, abstention_reason from enrichment_findings
-      where run_id = ? and abstained = 1`).all(runId) as Array<Record<string, unknown>>;
+  const abstained = await db.all(`select field_key, state, abstained, abstention_reason from enrichment_findings
+      where run_id = ? and abstained = 1`, runId) as Array<Record<string, unknown>>;
   assert.equal(abstained.length, 1);
   assert.equal(abstained[0].field_key, "audit_fee");
   assert.equal(abstained[0].state, "abstained",
@@ -311,38 +304,38 @@ test("abstention is a first-class outcome, not a failure", () => {
   assert.match(String(abstained[0].abstention_reason), /does not disclose/);
 
   // The rate that gates publish must not count an honest abstention.
-  const rate = hallucinationRate(db, runId);
+  const rate = await hallucinationRate(db, runId);
   assert.equal(rate.unsupported, 0);
   assert.equal(rate.assessed, 1, "only the non-abstained finding is assessed");
   assert.equal(rate.rate, 0);
 });
 
-test("the publish gate counts unsupported findings and excludes abstentions", () => {
-  const { db, periodId, companies } = seeded();
+test("the publish gate counts unsupported findings and excludes abstentions", async () => {
+  const { db, periodId, companies } = await seeded();
   const northco = companies.find((c) => c.name === "Northco Mining Corp.")!;
   const royalco = companies.find((c) => c.name === "Royalco Streaming Inc.")!;
 
-  const a = createRun(db, periodId, [northco.id], { cassetteDir: CASSETTE_DIR });
-  researchOneCompany(db, a.runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
+  const a = await createRun(db, periodId, [northco.id], { cassetteDir: CASSETTE_DIR });
+  await researchOneCompany(db,(await a).runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
   // Northco: 4 findings, none abstained, none unsupported (the fabrication is
   // anchor_mismatch -- plausible but unanchored, which is quarantine, not a lie).
-  const ra = hallucinationRate(db, a.runId);
+  const ra = await hallucinationRate(db,(await a).runId);
   assert.equal(ra.assessed, 4);
   assert.equal(ra.unsupported, 0);
 
-  const b = createRun(db, periodId, [royalco.id], { cassetteDir: CASSETTE_DIR });
-  researchOneCompany(db, b.runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
-  const rb = hallucinationRate(db, b.runId);
+  const b = await createRun(db, periodId, [royalco.id], { cassetteDir: CASSETTE_DIR });
+  await researchOneCompany(db,(await b).runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
+  const rb = await hallucinationRate(db,(await b).runId);
   assert.equal(rb.assessed, 1, "the abstention is not assessed");
 });
 
-test("spend is reconciled onto the run from the recorded usage", () => {
-  const { db, periodId, companies } = seeded();
+test("spend is reconciled onto the run from the recorded usage", async () => {
+  const { db, periodId, companies } = await seeded();
   const northco = companies.find((c) => c.name === "Northco Mining Corp.")!;
-  const { runId } = createRun(db, periodId, [northco.id],
+  const { runId } = await createRun(db, periodId, [northco.id],
     { cassetteDir: CASSETTE_DIR, budgetUsd: 5 });
-  researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
-  const b = budgetState(db, runId);
-  assert.ok(b.spend > 0, "usage from the recording must be debited against the budget");
-  assert.equal(b.halt, false);
+  await researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
+  const b = await budgetState(db, runId);
+  assert.ok((await b).spend > 0, "usage from the recording must be debited against the budget");
+  assert.equal((await b).halt, false);
 });

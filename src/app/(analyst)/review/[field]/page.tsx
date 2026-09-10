@@ -40,18 +40,15 @@ export default async function FieldReview(
   const { field } = await params;
   const { bucket = "all", q = "" } = await searchParams;
 
-  const period = ctx.db.prepare(
-    "select id, label from periods order by market_cap_as_of desc limit 1",
-  ).get() as { id: string; label: string } | undefined;
+  const period = await ctx.db.get("select id, label from periods order by market_cap_as_of desc limit 1") as { id: string; label: string } | undefined;
   if (!period) notFound();
 
-  const catalogue = ctx.db.prepare(
-    "select key, label from field_catalog where key = ?").get(field) as
+  const catalogue = await ctx.db.get("select key, label from field_catalog where key = ?", field) as
     { key: string; label: string } | undefined;
   if (!catalogue) notFound();
 
-  const raw = fieldRows(ctx.db, period.id, field, bucket, THRESHOLD);
-  const rows: GridRow[] = raw.map((r) => ({
+  const raw = await fieldRows(ctx.db, period.id, field, bucket, THRESHOLD);
+  const rows: GridRow[] = await Promise.all(raw.map(async (r) => ({
     companyId: r.companyId,
     companyName: r.companyName,
     value: r.abstained ? "abstained" : formatValue(r.proposedValue),
@@ -69,12 +66,14 @@ export default async function FieldReview(
     findingAttempt: r.findingAttempt,
     extractValue: r.extractValue === null ? null : formatValue(r.extractValue),
     cellLabel: cellLabel(r, catalogue.label),
-    tierNote: tierConsequence(ctx.db, period.id, r),
-  }));
+    tierNote: await tierConsequence(ctx.db, period.id, r),
+  })));
 
   // A count on every filter, so the choice of batch is made before the click.
-  const counts = Object.fromEntries(BUCKETS.map(([key]) =>
-    [key, key === bucket ? raw.length : fieldRows(ctx.db, period.id, field, key, THRESHOLD).length]));
+  const counts = Object.fromEntries(await Promise.all(BUCKETS.map(async ([key]) =>
+    [key, key === bucket
+      ? raw.length
+      : (await fieldRows(ctx.db, period.id, field, key, THRESHOLD)).length])));
 
   return (
     <>

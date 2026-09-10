@@ -203,10 +203,17 @@ and policies in `0003` and `0008` are skipped locally and only run where there
 is a real database.
 
 ```bash
+node scripts/migrate.mjs "$DATABASE_URL"              # schema, roles and policies
 node scripts/pg_export.mjs ./period.db > period.sql   # a committed period, as SQL
 psql "$DATABASE_URL" -f period.sql
+MM_DATABASE_URL="$DATABASE_URL" npm run pg:smoke      # the adapter, against the real thing
 psql "$DATABASE_URL" -f scripts/s5_access_model.sql   # prove the access model
 ```
+
+Run the application against it by setting `MM_DATABASE_URL` instead of
+`MM_DATABASE`; nothing else changes. `pg:smoke` is the one to run first after a
+schema or query change — it checks that values come back in the shapes the
+application expects, which is the difference that does not announce itself.
 
 The export is a file rather than an API call on purpose: the extract is
 licensed for internal use and not for redistribution, and a file goes from this

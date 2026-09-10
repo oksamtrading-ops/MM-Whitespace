@@ -39,18 +39,18 @@ export async function decide(form: FormData): Promise<ActionResult> {
   let overrideValue: unknown = undefined;
   if (decision === "override") {
     if (fromExtract) {
-      const fact = extractedFact(db, periodId, companyId, fieldKey);
+      const fact = await extractedFact(db, periodId, companyId, fieldKey);
       if (!fact.present) {
         return { ok: false, message: "The workbook asserts no value for this field, so there is nothing to keep." };
       }
-      overrideValue = fact.value;
+      overrideValue =fact.value;
     } else {
       overrideValue = rawOverride === null ? undefined : String(rawOverride);
     }
   }
 
   try {
-    recordDecision(db, {
+    await recordDecision(db, {
       periodId, companyId, fieldKey, decision, overrideValue,
       reason, findingId, findingAttempt, actorId: user.id,
     });
@@ -69,7 +69,7 @@ export async function undo(form: FormData): Promise<ActionResult> {
 
   const periodId = String(form.get("periodId") ?? "");
   const fieldKey = String(form.get("fieldKey") ?? "");
-  const result = undoLast(db, periodId, fieldKey, user.id);
+  const result = await undoLast(db, periodId, fieldKey, user.id);
   revalidatePath(`/review/${fieldKey}`);
   return result
     ? { ok: true, message: "Last decision undone." }
@@ -86,19 +86,17 @@ export async function bulkAccept(form: FormData): Promise<ActionResult> {
   // Stage determines tier, so the opt-in is TYPED rather than a checkbox.
   const stageOptIn = String(form.get("stageOptIn") ?? "").trim().toUpperCase() === "STAGE";
 
-  const rows = fieldRows(db, periodId, fieldKey, bucket, threshold);
+  const rows = await fieldRows(db, periodId, fieldKey, bucket, threshold);
   const { accept, refused } = partitionForBulkAccept(fieldKey, rows, { threshold, stageOptIn });
 
   for (const c of accept) {
-    recordDecision(db, {
+    await recordDecision(db, {
       periodId, companyId: c.companyId, fieldKey, decision: "accept",
       findingId: c.findingId, findingAttempt: c.findingAttempt,
       actorId: user.id, bulk: true,
     });
   }
-  db.prepare(
-    `insert into audit_log (event, actor_id, period_id, detail) values ('bulk_accept', ?, ?, ?)`,
-  ).run(user.id, periodId, JSON.stringify({
+  await db.run(`insert into audit_log (event, actor_id, period_id, detail) values ('bulk_accept', ?, ?, ?)`, user.id, periodId, JSON.stringify({
     fieldKey, threshold, accepted: accept.length, refused: refused.length,
     companies: accept.map((c) => c.companyId),
   }));
@@ -114,7 +112,7 @@ export async function confirmationText(
   periodId: string, fieldKey: string, fieldLabel: string, bucket: string, threshold: number,
 ): Promise<string> {
   const { db } = await requireRole(["analyst", "admin"]);
-  const rows = fieldRows(db, periodId, fieldKey, bucket, threshold);
+  const rows = await fieldRows(db, periodId, fieldKey, bucket, threshold);
   const { accept, refused } = partitionForBulkAccept(fieldKey, rows, { threshold });
   return bulkConfirmation(fieldLabel, accept.length, threshold, refused.length);
 }

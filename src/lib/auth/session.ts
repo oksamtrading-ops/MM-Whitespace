@@ -18,7 +18,7 @@
  * See docs/design/11-security-privacy-compliance.md.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { Sql } from "../db/sql.ts";
 
 export type Role = "admin" | "analyst" | "viewer";
 
@@ -133,11 +133,9 @@ export function readCookie(cookieHeader: string | null, name: string): string | 
  * application outside Deloitte's own estate, so deactivation is the only thing
  * standing between a partner who rolls off and the client roster.
  */
-export function resolveUser(db: DatabaseSync, email: string | null): AppUser | null {
+export async function resolveUser(db: Sql, email: string | null): Promise<AppUser | null> {
   if (!email) return null;
-  const row = db.prepare(
-    "select id, email, role, is_active from app_users where lower(email) = lower(?)",
-  ).get(email) as { id: string; email: string; role: Role; is_active: number } | undefined;
+  const row = await db.get("select id, email, role, is_active from app_users where lower(email) = lower(?)", email) as { id: string; email: string; role: Role; is_active: number } | undefined;
   if (!row) return null;
   if (!row.is_active) return null;
   return { id: row.id, email: row.email, role: row.role, isActive: true };
@@ -161,14 +159,14 @@ export function hasRole(user: AppUser | null, required: readonly Role[]): boolea
  * this as its first statement; `npm run check:auth` fails the build otherwise.
  */
 export async function assertRole(
-  ctx: { db: DatabaseSync; claims: ClaimSource; cookieHeader: string | null },
+  ctx: { db: Sql; claims: ClaimSource; cookieHeader: string | null },
   required: readonly Role[],
 ): Promise<AppUser> {
   const email = await ctx.claims.emailClaim(ctx.cookieHeader);
   if (!email) throw new Unauthenticated("no verified email claim");
-  const user = resolveUser(ctx.db, email);
+  const user = await resolveUser(ctx.db, email);
   if (!user) throw new Unauthenticated("no active application user for that claim");
-  if (!hasRole(user, required)) throw new Forbidden([...required], user.role);
+  if (!hasRole(await user, required)) throw new Forbidden([...required],user.role);
   return user;
 }
 

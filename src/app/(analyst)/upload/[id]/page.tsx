@@ -41,9 +41,7 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
   const totals = Object.entries(report.totals ?? {});
   const failing = totals.filter(([, [actual, expected]]) => actual !== expected);
 
-  const previous = ctx.db.prepare(
-    "select label from periods order by market_cap_as_of desc limit 1",
-  ).get() as { label: string } | undefined;
+  const previous = await ctx.db.get("select label from periods order by market_cap_as_of desc limit 1") as { label: string } | undefined;
 
   // What the commit will refuse, said here rather than discovered by pressing
   // the button. A period with no date cannot be committed at all.
@@ -51,7 +49,7 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
     ? "The parser could not resolve a market-cap date, so there is no period to commit."
     : report.blocking.length > 0
       ? `${report.blocking.length} blocking finding${report.blocking.length === 1 ? "" : "s"} must be resolved in the workbook first.`
-      : periodAdmissibility(ctx.db, asOf);
+      : await periodAdmissibility(ctx.db, asOf);
 
   return (
     <div className="reading">
@@ -127,7 +125,7 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
 
       <Section id="commit" title="Commit" index={5}>
         <CommitForm parseId={parse.id}
-                    suggestedLabel={asOf ? suggestLabel(previous?.label ?? null, asOf) : ""}
+                    suggestedLabel={asOf ? await suggestLabel(previous?.label ?? null, asOf) : ""}
                     warnings={report.warnings.length}
                     blocked={blocked} />
       </Section>

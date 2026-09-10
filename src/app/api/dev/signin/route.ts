@@ -31,20 +31,15 @@ export async function POST(request: Request) {
   if (!isAllowedDomain(email, ALLOWED_DOMAINS)) {
     return NextResponse.json({ error: "domain not allowed" }, { status: 403 });
   }
-  const known = db().prepare(
-    "select id from app_users where lower(email) = lower(?) and is_active = 1").get(email);
+  const known = await db().get("select id from app_users where lower(email) = lower(?) and is_active = true", email);
   if (!known) {
     return NextResponse.json(
       { error: "no active application user for that address (invite-only)" }, { status: 403 });
   }
 
   // Without this the access review has nothing to review.
-  db().prepare(
-    "update app_users set last_sign_in_at = ? where lower(email) = lower(?)",
-  ).run(new Date().toISOString().replace("T", " ").slice(0, 19), email);
-  db().prepare(
-    "insert into audit_log (event, detail) values ('sign_in', ?)",
-  ).run(JSON.stringify({ email }));
+  await db().run("update app_users set last_sign_in_at = ? where lower(email) = lower(?)", new Date().toISOString().replace("T", " ").slice(0, 19), email);
+  await db().run("insert into audit_log (event, detail) values ('sign_in', ?)", JSON.stringify({ email }));
 
   const response = NextResponse.json({ ok: true, email });
   response.cookies.set("mm_dev_session", signDevSession(email, secret), {

@@ -6,7 +6,7 @@
  * nobody names one. A setting that changes nothing is worse than no setting,
  * because it teaches people the screen is decorative.
  */
-import type { DatabaseSync } from "node:sqlite";
+import type { Sql } from "../db/sql.ts";
 
 export type SettingKey =
   | "default_threshold_amount" | "default_threshold_currency"
@@ -76,11 +76,11 @@ export function validate(key: SettingKey, raw: string): string {
   }
 }
 
-export function readSettings(db: DatabaseSync): Setting[] {
-  const rows = db.prepare(
+export async function readSettings(db: Sql): Promise<Setting[]> {
+  const rows = await db.all(
     `select s.key, s.value, s.updated_at, u.email as updated_by
        from app_settings s left join app_users u on u.id = s.updated_by`,
-  ).all() as Array<{ key: string; value: string; updated_at: string | null; updated_by: string | null }>;
+  ) as Array<{ key: string; value: string; updated_at: string | null; updated_by: string | null }>;
   const byKey = new Map(rows.map((r) => [r.key, r]));
   return DEFINITIONS.map((d) => {
     const row = byKey.get(d.key);
@@ -100,9 +100,9 @@ export function readSettings(db: DatabaseSync): Setting[] {
  * failing because a defaults table it never needed is not there yet.
  * scripts/migrate.mjs is the actual fix; this is what keeps the lag survivable.
  */
-export function getSetting(db: DatabaseSync, key: SettingKey): string | null {
+export async function getSetting(db: Sql, key: SettingKey): Promise<string | null> {
   try {
-    const row = db.prepare("select value from app_settings where key = ?").get(key) as
+    const row = await db.get("select value from app_settings where key = ?", key) as
       { value: string } | undefined;
     return row?.value ?? null;
   } catch {
@@ -110,30 +110,32 @@ export function getSetting(db: DatabaseSync, key: SettingKey): string | null {
   }
 }
 
-export function getNumber(db: DatabaseSync, key: SettingKey, fallback: number): number {
-  const raw = getSetting(db, key);
+export async function getNumber(
+  db: Sql, key: SettingKey, fallback: number,
+): Promise<number> {
+  const raw = await getSetting(db, key);
   const n = raw === null ? NaN : Number(raw);
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 /** Returns what changed, so the caller can write one audit line per change. */
-export function putSettings(
-  db: DatabaseSync, values: Partial<Record<SettingKey, string>>, actorId: string | null,
-): Array<{ key: SettingKey; from: string | null; to: string }> {
+export async function putSettings(
+  db: Sql, values: Partial<Record<SettingKey, string>>, actorId: string | null,
+): Promise<Array<{ key: SettingKey; from: string | null; to: string }>> {
   const changes: Array<{ key: SettingKey; from: string | null; to: string }> = [];
   for (const d of DEFINITIONS) {
     const raw = values[d.key];
     if (raw === undefined) continue;
     const clean = validate(d.key, raw);
-    const before = getSetting(db, d.key);
+    const before = await getSetting(db, d.key);
     if (before === clean) continue;
-    db.prepare(
+    await db.run(
       `insert into app_settings (key, value, updated_by, updated_at)
-       values (?, ?, ?, datetime('now'))
+       values (?, ?, ?, current_timestamp)
        on conflict (key) do update
          set value = excluded.value, updated_by = excluded.updated_by,
              updated_at = excluded.updated_at`,
-    ).run(d.key, clean, actorId);
+      d.key, clean, actorId);
     changes.push({ key: d.key, from: before, to: clean });
   }
   return changes;

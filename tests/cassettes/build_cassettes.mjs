@@ -16,6 +16,7 @@ import { DatabaseSync } from "node:sqlite";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applySchema } from "../../src/lib/db/schema.ts";
+import { SqliteSql } from "../../src/lib/db/sqlite.ts";
 import { buildPrompt, PROMPT_VERSION } from "../../src/lib/enrich/prompt.ts";
 import { cassetteKey, Cassettes } from "../../src/lib/enrich/cassette.ts";
 import { publicRow, SCHEMA_HASH, DEFAULT_MODEL } from "../../src/lib/enrich/worker.ts";
@@ -91,7 +92,10 @@ export function seedFixtureDatabase() {
        values (?, ?, 'property_regions', ?, 'extract', 'asserted')`,
     ).run(period.id, row.id, JSON.stringify(c.regions));
   }
-  return { db, periodId: period.id, companies: ids };
+  // The seeding above is raw SQLite because it is one process building a
+  // fixture; what the caller gets back is the seam, because that is what every
+  // library function now takes.
+  return { db: new SqliteSql(db), periodId: period.id, companies: ids };
 }
 
 const RESPONSES = {
@@ -164,12 +168,12 @@ conducts no exploration, development or mining operations of its own.`,
   },
 };
 
-export function buildAll() {
+export async function buildAll() {
   const { db, companies } = seedFixtureDatabase();
   const cassettes = new Cassettes(CASSETTE_DIR, "record");
   const written = [];
   for (const c of companies) {
-    const row = publicRow(db, c.id, PERIOD_AS_OF);
+    const row = await publicRow(db, c.id, PERIOD_AS_OF);
     const prompt = buildPrompt("extract_general", row);
     const key = cassetteKey({
       route: "extract_general", model: DEFAULT_MODEL,
@@ -192,5 +196,5 @@ export function buildAll() {
 // Compare resolved paths: this repo's path contains a space, so the
 // file:// URL is percent-encoded and a string compare never matches.
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  for (const w of buildAll()) console.log(`${w.company.padEnd(24)} -> ${w.key}`);
+  for (const w of await buildAll()) console.log(`${w.company.padEnd(24)} -> ${w.key}`);
 }

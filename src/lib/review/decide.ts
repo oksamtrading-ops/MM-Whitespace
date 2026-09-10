@@ -8,7 +8,8 @@
  *
  * See docs/design/08-review-workspace.md.
  */
-import { DatabaseSync } from "node:sqlite";
+import { decisionStamp } from "../db/stamp.ts";
+import type { Sql } from "../db/sql.ts";
 
 export type DecisionKind = "accept" | "override" | "flag" | "undo";
 
@@ -137,13 +138,11 @@ export function isConflict(c: Candidate): boolean {
  * the extract has to stay possible after an accept and an undo, and the facts
  * table is the only place the workbook's own assertion survives.
  */
-export function extractedFact(
-  db: DatabaseSync, periodId: string, companyId: string, fieldKey: string,
-): { present: boolean; value: unknown } {
-  const row = db.prepare(
-    `select typed_value, assertion from company_period_facts
-      where period_id = ? and company_id = ? and field_key = ?`,
-  ).get(periodId, companyId, fieldKey) as
+export async function extractedFact(
+  db: Sql, periodId: string, companyId: string, fieldKey: string,
+): Promise<{ present: boolean; value: unknown }> {
+  const row = await db.get(`select typed_value, assertion from company_period_facts
+      where period_id = ? and company_id = ? and field_key = ?`, periodId, companyId, fieldKey) as
     { typed_value: string | null; assertion: string } | undefined;
   if (!row || row.assertion !== "asserted" || row.typed_value === null) {
     return { present: false, value: null };
@@ -166,43 +165,37 @@ export type RecordOptions = {
   undoesId?: string | null;
 };
 
-export function recordDecision(db: DatabaseSync, opts: RecordOptions): string {
+export async function recordDecision(db: Sql, opts: RecordOptions): Promise<string> {
   if (opts.decision === "flag" && !opts.reason?.trim()) {
     throw new Error("a flag requires a one-line reason");
   }
   if (opts.decision === "override" && opts.overrideValue === undefined) {
     throw new Error("an override requires a value");
   }
-  db.prepare(
-    `insert into review_decisions
+  const row = await db.get(`insert into review_decisions
        (period_id, company_id, field_key, decision, override_value, reason,
-        finding_id, finding_attempt, actor_id, bulk, undoes_id)
-     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(opts.periodId, opts.companyId, opts.fieldKey, opts.decision,
+        finding_id, finding_attempt, actor_id, bulk, undoes_id, decided_at)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     returning id`, opts.periodId, opts.companyId, opts.fieldKey, opts.decision,
         opts.overrideValue === undefined ? null : JSON.stringify(opts.overrideValue),
         opts.reason ?? null, opts.findingId ?? null, opts.findingAttempt ?? null,
-        opts.actorId ?? null, opts.bulk ? 1 : 0, opts.undoesId ?? null);
-
-  const row = db.prepare(
-    "select id from review_decisions order by rowid desc limit 1").get() as { id: string };
+        opts.actorId ?? null, Boolean(opts.bulk), opts.undoesId ?? null,
+        decisionStamp()) as { id: string };
 
   // An accepted or overridden value is promoted into the resolved-value table,
   // where the conditional upsert protects it from any later extract import.
   if (opts.decision === "accept" || opts.decision === "override") {
     const value = opts.decision === "override"
       ? JSON.stringify(opts.overrideValue)
-      : (db.prepare("select proposed_value v from enrichment_findings where id = ?")
-          .get(opts.findingId ?? "") as { v: string } | undefined)?.v ?? null;
-    db.prepare(
-      `insert into company_period_field_values as v
+      : (await db.get("select proposed_value v from enrichment_findings where id = ?", opts.findingId ?? "") as { v: string } | undefined)?.v ?? null;
+    await db.run(`insert into company_period_field_values as v
          (period_id, company_id, field_key, value, source, evidence_state, actor_id)
        values (?, ?, ?, ?, ?, 'asserted', ?)
        on conflict (period_id, company_id, field_key) do update
          set value = excluded.value, source = excluded.source,
              evidence_state = excluded.evidence_state, actor_id = excluded.actor_id,
-             decided_at = (datetime('now'))
-         where v.frozen_at is null`,
-    ).run(opts.periodId, opts.companyId, opts.fieldKey, value,
+             decided_at = current_timestamp
+         where v.frozen_at is null`, opts.periodId, opts.companyId, opts.fieldKey, value,
           opts.decision === "override" ? "manual_override" : "ai_accepted",
           opts.actorId ?? null);
   }
@@ -210,18 +203,23 @@ export function recordDecision(db: DatabaseSync, opts: RecordOptions): string {
 }
 
 /** Undo is an INSERT, because decisions are rows. */
-export function undoLast(
-  db: DatabaseSync, periodId: string, fieldKey: string, actorId: string | null,
-): { undone: string; companyId: string } | null {
-  const last = db.prepare(
-    `select d.id, d.company_id, d.decision from review_decisions d
+export async function undoLast(
+  db: Sql, periodId: string, fieldKey: string, actorId: string | null,
+): Promise<{ undone: string; companyId: string } | null> {
+  // The tiebreak is d.id, not SQLite's rowid, which Postgres does not have.
+  // Deterministic on both, but NOT insertion order: decisions written in one
+  // transaction share decided_at exactly on Postgres, and a random uuid then
+  // decides which reads as latest. Within one company and field the workflow
+  // writes at most one decision per transaction, so this shows only here,
+  // across a bulk accept, and it changes which company is walked back first
+  // rather than how many are. A monotonic column is the durable fix.
+  const last = await db.get(`select d.id, d.company_id, d.decision from review_decisions d
       where d.period_id = ? and d.field_key = ? and d.decision != 'undo'
         and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-      order by d.decided_at desc, d.rowid desc limit 1`,
-  ).get(periodId, fieldKey) as { id: string; company_id: string } | undefined;
+      order by d.decided_at desc, d.id desc limit 1`, periodId, fieldKey) as { id: string; company_id: string } | undefined;
   if (!last) return null;
 
-  recordDecision(db, {
+  await recordDecision(db, {
     periodId, companyId: last.company_id, fieldKey,
     decision: "undo", undoesId: last.id, actorId,
     reason: "undo",
@@ -230,17 +228,15 @@ export function undoLast(
 }
 
 /** The decision standing for a company and field, ignoring undone ones. */
-export function effectiveDecision(
-  db: DatabaseSync, periodId: string, companyId: string, fieldKey: string,
+export async function effectiveDecision(
+  db: Sql, periodId: string, companyId: string, fieldKey: string,
 ) {
-  return db.prepare(
-    `select d.id, d.decision, d.override_value, d.reason, d.finding_attempt, d.bulk
+  return await db.get(`select d.id, d.decision, d.override_value, d.reason, d.finding_attempt, d.bulk
        from review_decisions d
       where d.period_id = ? and d.company_id = ? and d.field_key = ?
         and d.decision != 'undo'
         and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-      order by d.decided_at desc, d.rowid desc limit 1`,
-  ).get(periodId, companyId, fieldKey) as
+      order by d.decided_at desc, d.id desc limit 1`, periodId, companyId, fieldKey) as
     { id: string; decision: DecisionKind; override_value: string | null;
       reason: string | null; finding_attempt: number | null; bulk: number } | undefined;
 }

@@ -37,16 +37,16 @@ export default async function Runs() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
-  const period = ctx.db.prepare(
+  const period = await ctx.db.get(
     "select id, label from periods order by market_cap_as_of desc limit 1",
-  ).get() as { id: string; label: string } | undefined;
+  ) as { id: string; label: string } | undefined;
   if (!period) {
     return <Refusal title="No period yet"
                     body="A run belongs to a period, and none has been committed."
                     action={{ href: "/upload", label: "Upload a workbook" }} />;
   }
 
-  const runs = listRuns(ctx.db, period.id);
+  const runs = await listRuns(ctx.db, period.id);
   if (runs.length === 0) {
     return (
       <div className="reading rise">

@@ -57,10 +57,8 @@ export default async function Dashboard() {
   }
   const canReview = ctx.user.role !== "viewer";
 
-  const period = ctx.db.prepare(
-    "select id, label, market_cap_as_of, threshold_amount, threshold_currency, proximity_band_pct " +
-    "from periods order by market_cap_as_of desc limit 1",
-  ).get() as {
+  const period = await ctx.db.get("select id, label, market_cap_as_of, threshold_amount, threshold_currency, proximity_band_pct " +
+    "from periods order by market_cap_as_of desc limit 1") as {
     id: string; label: string; market_cap_as_of: string;
     threshold_amount: number; threshold_currency: string; proximity_band_pct: number;
   } | undefined;
@@ -68,7 +66,7 @@ export default async function Dashboard() {
     return <Refusal title="No period yet" body="Nothing has been committed. The dashboard appears once a workbook is ingested and a period is published." />;
   }
 
-  const snap = readPublished(ctx.db, period.id);
+  const snap = await readPublished(ctx.db, period.id);
   if (!snap) {
     return (
       <Refusal title="Not published"
@@ -76,12 +74,11 @@ export default async function Dashboard() {
                action={canReview ? { href: "/review", label: "Open the review board" } : undefined} />
     );
   }
-  const publisher = snap.publication.published_by
-    ? (ctx.db.prepare("select email from app_users where id = ?")
-        .get(snap.publication.published_by) as { email: string } | undefined)?.email ?? null
+  const publisher =snap.publication.published_by
+    ? (await ctx.db.get("select email from app_users where id = ?",snap.publication.published_by) as { email: string } | undefined)?.email ?? null
     : null;
 
-  const agg = snap.aggregates as Aggregates;
+  const agg =snap.aggregates as Aggregates;
   const { tiles } = populationTiles(agg);
   const population = Number(tiles.find((t) => t.label === "Companies")?.value ?? "0");
   const deloitte = (agg.auditor_share ?? []).find((a) => a.bucket === "Deloitte")?.n ?? 0;
@@ -94,8 +91,7 @@ export default async function Dashboard() {
     if (row.sub === "population") entry.population = row.n;
     coverage.set(row.bucket, entry);
   }
-  const floors = ctx.db.prepare(
-    "select chart, label, driving_field, floor_pct from coverage_floors").all() as
+  const floors = await ctx.db.all("select chart, label, driving_field, floor_pct from coverage_floors") as
     Array<{ chart: string; label: string; driving_field: string; floor_pct: number | null }>;
   const gateFor = (chart: string): Gated => {
     const f = floors.find((x) => x.chart === chart);
@@ -167,7 +163,7 @@ export default async function Dashboard() {
         <div className="rise" style={{ "--i": 3 } as React.CSSProperties}>
           <Ledger items={[
             ...tiles.map((t) => ({ value: t.value, label: t.label })),
-            { value: snap.publication.unresolved_count, label: "Unresolved values", quiet: true },
+            { value:snap.publication.unresolved_count, label: "Unresolved values", quiet: true },
           ]} />
         </div>
 

@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const ctx = await authContext();
   const email = await ctx.claims.emailClaim(ctx.cookieHeader);
-  const user = resolveUser(ctx.db, email);
+  const user = await resolveUser(ctx.db, email);
   const canReview = user?.role === "analyst" || user?.role === "admin";
 
   const items: NavItem[] = [];
@@ -47,11 +47,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // The period chip. A Viewer is shown a period only once it is published;
   // draft state is the workstation's business.
   const period = user
-    ? ctx.db.prepare(
+    ? await ctx.db.get(
         `select p.label, p.status,
                 (select max(revision) from period_publications where period_id = p.id) as revision
            from periods p order by p.market_cap_as_of desc limit 1`,
-      ).get() as { label: string; status: string; revision: number | null } | undefined
+      ) as { label: string; status: string; revision: number | null } | undefined
     : undefined;
   const showPeriod = period && (period.revision !== null || canReview);
 

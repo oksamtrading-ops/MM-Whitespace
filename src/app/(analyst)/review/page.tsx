@@ -29,17 +29,15 @@ export default async function ReviewBoard() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
-  const period = ctx.db.prepare(
-    "select id, label, status from periods order by market_cap_as_of desc limit 1",
-  ).get() as { id: string; label: string; status: string } | undefined;
+  const period = await ctx.db.get("select id, label, status from periods order by market_cap_as_of desc limit 1") as { id: string; label: string; status: string } | undefined;
 
   if (!period) {
     return <Refusal title="Review" body="No period has been committed yet. Ingest a workbook and commit it first." />;
   }
 
-  const gate = evaluateGate(ctx.db, period.id);
-  const fields = reviewableFields(ctx.db, period.id);
-  const buckets = queueBuckets(ctx.db, period.id);
+  const gate = await evaluateGate(ctx.db, period.id);
+  const fields = await reviewableFields(ctx.db, period.id);
+  const buckets = await queueBuckets(ctx.db, period.id);
   const totalValues = buckets.reduce((a, b) => a + b.count, 0);
   const firstField = fields[0]?.fieldKey;
   const { name: periodTitle, asOf } = periodName(period.label);
@@ -59,9 +57,9 @@ export default async function ReviewBoard() {
         { label: "Period", value: periodTitle, figure: true },
         ...(asOf ? [{ label: "Market cap as of", value: fmtDate(asOf) }] : []),
         { label: "Status", value: <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>{period.status}</span> },
-        { label: "Companies", value: gate.population, figure: true },
+        { label: "Companies", value:gate.population, figure: true },
         ...(totalValues > 0 ? [{ label: "Proposals", value: totalValues, figure: true }] : []),
-        { label: "Publish gate", value: gate.blockers.length === 0
+        { label: "Publish gate", value:gate.blockers.length === 0
             ? <span className="pill ok">open</span>
             : <><span className="pill no">blocked</span><span className="sub"><a href="#gate">{gate.blockers.length} reason{gate.blockers.length === 1 ? "" : "s"}</a></span></> },
       ]} />

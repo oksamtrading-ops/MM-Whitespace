@@ -9,7 +9,7 @@
  * partner must never see an unpublished finding or a draft period. An Analyst
  * may look at the draft, and is told that is what they are looking at.
  */
-import type { DatabaseSync } from "node:sqlite";
+import type { Sql } from "../db/sql.ts";
 import { resolveCompanyId } from "../identity/merge.ts";
 
 export type Provenance =
@@ -100,45 +100,37 @@ function parseJson(text: unknown): unknown {
  * `draft` is true only for an Analyst or Admin looking at a period that has
  * not been published, and the page says so on their behalf.
  */
-export function readCompanyProfile(
-  db: DatabaseSync, rawCompanyId: string, opts: { allowDraft: boolean },
-): CompanyProfile | null {
+export async function readCompanyProfile(
+  db: Sql, rawCompanyId: string, opts: { allowDraft: boolean },
+): Promise<CompanyProfile | null> {
   // A link made before a merge still lands on the company it was about.
-  const companyId = resolveCompanyId(db, rawCompanyId);
-  const company = db.prepare(
-    "select id, canonical_name from companies where id = ?").get(companyId) as
+  const companyId = await resolveCompanyId(db, rawCompanyId);
+  const company = await db.get("select id, canonical_name from companies where id = ?", companyId) as
     { id: string; canonical_name: string } | undefined;
   if (!company) return null;
 
-  const period = db.prepare(
-    "select id, label, market_cap_as_of from periods order by market_cap_as_of desc limit 1",
-  ).get() as { id: string; label: string; market_cap_as_of: string } | undefined;
+  const period = await db.get("select id, label, market_cap_as_of from periods order by market_cap_as_of desc limit 1") as { id: string; label: string; market_cap_as_of: string } | undefined;
   if (!period) return null;
 
-  const pub = db.prepare(
-    `select id, revision, published_at from period_publications
-      where period_id = ? order by revision desc limit 1`).get(period.id) as
+  const pub = await db.get(`select id, revision, published_at from period_publications
+      where period_id = ? order by revision desc limit 1`, period.id) as
     { id: string; revision: number; published_at: string } | undefined;
 
   if (!pub && !opts.allowDraft) return null;
 
   const catalogue = new Map(
-    (db.prepare("select key, label from field_catalog").all() as Array<{ key: string; label: string }>)
+    (await db.all("select key, label from field_catalog") as Array<{ key: string; label: string }>)
       .map((f) => [f.key, f.label]));
 
   const rows = pub
-    ? db.prepare(
-        `select field_key, value, source, evidence_state, evidence_strength, excerpt, sources
-           from published_period_values where publication_id = ? and company_id = ?`,
-      ).all(pub.id, companyId) as RawValue[]
-    : db.prepare(
-        `select field_key, value, source, evidence_state,
+    ? await db.all(`select field_key, value, source, evidence_state, evidence_strength, excerpt, sources
+           from published_period_values where publication_id = ? and company_id = ?`, pub.id, companyId) as RawValue[]
+    : await db.all(`select field_key, value, source, evidence_state,
                 null as evidence_strength, null as excerpt, null as sources, source_period_id
-           from company_period_field_values where period_id = ? and company_id = ?`,
-      ).all(period.id, companyId) as RawValue[];
+           from company_period_field_values where period_id = ? and company_id = ?`, period.id, companyId) as RawValue[];
 
   const periods = new Map(
-    (db.prepare("select id, label, market_cap_as_of from periods").all() as
+    (await db.all("select id, label, market_cap_as_of from periods") as
       Array<{ id: string; label: string; market_cap_as_of: string }>).map((p) => [p.id, p]));
 
   const values: ProfileValue[] = rows.map((r) => {
@@ -168,28 +160,20 @@ export function readCompanyProfile(
   const byKey = new Map(values.map((v) => [v.fieldKey, v]));
 
   const tierRow = pub
-    ? db.prepare(
-        `select tier, status, footprint, rule_set_version, prior_tier, tier_changed
-           from published_period_tiers where publication_id = ? and company_id = ?`,
-      ).get(pub.id, companyId) as TierRow | undefined
-    : db.prepare(
-        `select tier, status, footprint, rule_set_version,
+    ? await db.get(`select tier, status, footprint, rule_set_version, prior_tier, tier_changed
+           from published_period_tiers where publication_id = ? and company_id = ?`, pub.id, companyId) as TierRow | undefined
+    : await db.get(`select tier, status, footprint, rule_set_version,
                 null as prior_tier, null as tier_changed
-           from tiers where period_id = ? and company_id = ?`,
-      ).get(period.id, companyId) as TierRow | undefined;
+           from tiers where period_id = ? and company_id = ?`, period.id, companyId) as TierRow | undefined;
 
   // The trace is a live row. It is shown only when it still produces the tier
   // on the page: a trace that disagrees with the tier beside it is worse than
   // no trace at all.
-  const live = db.prepare(
-    "select tier, status from tiers where period_id = ? and company_id = ?",
-  ).get(period.id, companyId) as { tier: number | null; status: string } | undefined;
+  const live = await db.get("select tier, status from tiers where period_id = ? and company_id = ?", period.id, companyId) as { tier: number | null; status: string } | undefined;
   const consistent = Boolean(tierRow && live &&
     (live.tier ?? null) === (tierRow.tier ?? null) && live.status === tierRow.status);
   const trace = consistent
-    ? (db.prepare(
-        "select ord, rule_id, inputs, matched from tier_traces where period_id = ? and company_id = ? order by ord",
-      ).all(period.id, companyId) as Array<{ ord: number; rule_id: string; inputs: string; matched: number }>)
+    ? (await db.all("select ord, rule_id, inputs, matched from tier_traces where period_id = ? and company_id = ? order by ord", period.id, companyId) as Array<{ ord: number; rule_id: string; inputs: string; matched: number }>)
         .map((t) => ({ ord: t.ord, ruleId: t.rule_id,
                        inputs: (parseJson(t.inputs) as Record<string, unknown>) ?? {},
                        matched: Boolean(t.matched) }))
@@ -227,24 +211,20 @@ type TierRow = {
 };
 
 /** The published population, for the company index. */
-export function listCompanies(db: DatabaseSync, opts: { allowDraft: boolean }): Array<{
+export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Promise<Array<{
   companyId: string; name: string; ticker: string | null; exchange: string | null;
   tier: number | null; status: string; auditor: string | null;
-}> {
-  const period = db.prepare(
-    "select id from periods order by market_cap_as_of desc limit 1").get() as { id: string } | undefined;
+}>>{
+  const period = await db.get("select id from periods order by market_cap_as_of desc limit 1") as { id: string } | undefined;
   if (!period) return [];
-  const pub = db.prepare(
-    `select id from period_publications where period_id = ? order by revision desc limit 1`,
-  ).get(period.id) as { id: string } | undefined;
+  const pub = await db.get(`select id from period_publications where period_id = ? order by revision desc limit 1`, period.id) as { id: string } | undefined;
   if (!pub && !opts.allowDraft) return [];
 
   const rows = pub
-    ? db.prepare(
-        `select c.id as company_id, c.canonical_name as name,
-                max(case when v.field_key = 'root_ticker' then v.value end) as ticker,
-                max(case when v.field_key = 'exchange' then v.value end) as exchange,
-                max(case when v.field_key = 'auditor' then v.value end) as auditor,
+    ? await db.all(`select c.id as company_id, c.canonical_name as name,
+                max(case when v.field_key = 'root_ticker' then cast(v.value as text) end) as ticker,
+                max(case when v.field_key = 'exchange' then cast(v.value as text) end) as exchange,
+                max(case when v.field_key = 'auditor' then cast(v.value as text) end) as auditor,
                 t.tier as tier, t.status as status
            from published_period_tiers t
            join companies c on c.id = t.company_id
@@ -252,12 +232,11 @@ export function listCompanies(db: DatabaseSync, opts: { allowDraft: boolean }): 
                   on v.publication_id = t.publication_id and v.company_id = t.company_id
           where t.publication_id = ? and c.status != 'merged'
           group by c.id, c.canonical_name, t.tier, t.status
-          order by c.canonical_name`).all(pub.id)
-    : db.prepare(
-        `select c.id as company_id, c.canonical_name as name,
-                max(case when v.field_key = 'root_ticker' then v.value end) as ticker,
-                max(case when v.field_key = 'exchange' then v.value end) as exchange,
-                max(case when v.field_key = 'auditor' then v.value end) as auditor,
+          order by c.canonical_name`, pub.id)
+    : await db.all(`select c.id as company_id, c.canonical_name as name,
+                max(case when v.field_key = 'root_ticker' then cast(v.value as text) end) as ticker,
+                max(case when v.field_key = 'exchange' then cast(v.value as text) end) as exchange,
+                max(case when v.field_key = 'auditor' then cast(v.value as text) end) as auditor,
                 t.tier as tier, t.status as status
            from tiers t
            join companies c on c.id = t.company_id
@@ -265,7 +244,7 @@ export function listCompanies(db: DatabaseSync, opts: { allowDraft: boolean }): 
                   on v.period_id = t.period_id and v.company_id = t.company_id
           where t.period_id = ? and c.status != 'merged'
           group by c.id, c.canonical_name, t.tier, t.status
-          order by c.canonical_name`).all(period.id);
+          order by c.canonical_name`, period.id);
 
   return (rows as Array<Record<string, unknown>>).map((r) => ({
     companyId: String(r.company_id),

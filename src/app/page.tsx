@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const ctx = await authContext();
-  const user = resolveUser(ctx.db, await ctx.claims.emailClaim(ctx.cookieHeader));
+  const user = await resolveUser(ctx.db, await ctx.claims.emailClaim(ctx.cookieHeader));
   // A redirect is a convenience, never a boundary. Each page asserts its own role.
-  redirect(user && user.role !== "viewer" ? "/review" : "/dashboard");
+  redirect(user &&user.role !== "viewer" ? "/review" : "/dashboard");
 }

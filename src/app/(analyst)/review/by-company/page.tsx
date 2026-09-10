@@ -28,19 +28,17 @@ export default async function ByCompany(
   }
 
   const { q = "" } = await searchParams;
-  const period = ctx.db.prepare(
-    "select id, label from periods order by market_cap_as_of desc limit 1",
-  ).get() as { id: string; label: string } | undefined;
+  const period = await ctx.db.get("select id, label from periods order by market_cap_as_of desc limit 1") as { id: string; label: string } | undefined;
   if (!period) {
     return <Refusal title="Review" body="No period has been committed yet."
                     action={{ href: "/upload", label: "Upload a workbook" }} />;
   }
 
-  const { fields, rows } = companyRows(ctx.db, period.id, THRESHOLD);
-  const grid: Row[] = rows.map((r) => ({
+  const { fields, rows } = await companyRows(ctx.db, period.id, THRESHOLD);
+  const grid: Row[] = await Promise.all(rows.map(async (r) => ({
     companyId: r.companyId,
     companyName: r.companyName,
-    cells: r.cells.map((c, i) => c && {
+    cells: await Promise.all(r.cells.map(async (c, i) => c && {
       fieldKey: c.fieldKey,
       value: c.abstained ? "abstained" : formatValue(c.proposedValue),
       band: c.band,
@@ -56,9 +54,9 @@ export default async function ByCompany(
       findingAttempt: c.findingAttempt,
       extractValue: c.extractValue === null ? null : formatValue(c.extractValue),
       cellLabel: cellLabel(c, fields[i].label),
-      tierNote: tierConsequence(ctx.db, period.id, c),
-    }),
-  }));
+      tierNote: await tierConsequence(ctx.db, period.id, c),
+    })),
+  })));
 
   return (
     <>

@@ -31,15 +31,15 @@ export default async function Merge(
 
   const isAdmin = ctx.user.role === "admin";
   const { a, b } = await searchParams;
-  const candidates = findDuplicateCandidates(ctx.db);
+  const candidates = await findDuplicateCandidates(ctx.db);
 
   let pair = null;
   let blocked: string | null = null;
   if (a && b) {
     try {
       pair = mergePreview(ctx.db, a, b);
-      if (pair.overlappingPeriods.length > 0) {
-        blocked = `Both hold data in ${pair.overlappingPeriods.join(", ")}. Two companies in ` +
+      if ((await pair).overlappingPeriods.length > 0) {
+        blocked = `Both hold data in ${(await pair).overlappingPeriods.join(", ")}. Two companies in ` +
                   `one period are two companies, not one recorded twice.`;
       } else if (!isAdmin) {
         blocked = "An Admin performs the merge. You can say these are one company; " +
@@ -62,34 +62,34 @@ export default async function Merge(
       </p>
 
       {pair && (
-        <Section id="pair" title={`${pair.loser.name} and ${pair.winner.name}`} index={1}
+        <Section id="pair" title={`${(await pair).loser.name} and ${(await pair).winner.name}`} index={1}
                  caption="A merge is a redirect, not a deletion: the row merged away keeps its id, so every frozen snapshot that pointed at it still resolves.">
           <table>
             <thead><tr><th>What moves</th><th className="n">Rows</th></tr></thead>
             <tbody>
-              {pair.moves.length === 0
+              {(await pair).moves.length === 0
                 ? <tr><td colSpan={2} className="meta">Nothing is recorded against it yet.</td></tr>
-                : pair.moves.map((m) => (
+                :(await pair).moves.map((m) => (
                     <tr key={m.table}>
                       <td><code>{m.table}</code></td>
                       <td className="n">{m.rows}</td>
                     </tr>
                   ))}
-              {pair.duplicates > 0 && (
+              {(await pair).duplicates > 0 && (
                 <tr>
                   <td className="meta">already recorded on the other, so dropped</td>
-                  <td className="n">{pair.duplicates}</td>
+                  <td className="n">{(await pair).duplicates}</td>
                 </tr>
               )}
               <tr>
                 <td className="meta">published rows, left exactly as published</td>
-                <td className="n">{pair.frozenRevisions}</td>
+                <td className="n">{(await pair).frozenRevisions}</td>
               </tr>
             </tbody>
           </table>
           <div style={{ marginTop: 24 }}>
-            <MergeForm a={{ id: pair.winner.id, name: pair.winner.name }}
-                       b={{ id: pair.loser.id, name: pair.loser.name }}
+            <MergeForm a={{ id:(await pair).winner.id, name:(await pair).winner.name }}
+                       b={{ id:(await pair).loser.id, name:(await pair).loser.name }}
                        blocked={blocked} />
           </div>
         </Section>

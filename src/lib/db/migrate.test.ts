@@ -1,6 +1,6 @@
 import { test } from "node:test";
-import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +10,7 @@ import { isPostgresOnly } from "./dialect.ts";
 /* A migration added later reaches new databases only. That is how a settings
    table ships and the settings screen throws on the one database in use. */
 
-test("applying the schema twice is a no-op, not a duplicate-key error", () => {
+test("applying the schema twice is a no-op, not a duplicate-key error", async () => {
   const db = new DatabaseSync(":memory:");
   const first = applySchema(db);
   assert.ok(first.applied.length > 0);
@@ -20,7 +20,7 @@ test("applying the schema twice is a no-op, not a duplicate-key error", () => {
   assert.equal(second.statements, 0);
 });
 
-test("a database that predates the ledger is adopted, not replayed", () => {
+test("a database that predates the ledger is adopted, not replayed", async () => {
   const db = new DatabaseSync(":memory:");
   applySchema(db);
   // Erase the ledger to stand in for a database made before it existed.
@@ -33,7 +33,7 @@ test("a database that predates the ledger is adopted, not replayed", () => {
   assert.ok(rows.n > 0);
 });
 
-test("a migration the database has not had is applied to it", () => {
+test("a migration the database has not had is applied to it", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mm-mig-"));
   writeFileSync(join(dir, "0001_first.sql"), "create table alpha (id integer primary key);");
   const db = new DatabaseSync(":memory:");
@@ -45,7 +45,7 @@ test("a migration the database has not had is applied to it", () => {
   assert.ok(db.prepare("select 1 from sqlite_master where name = 'beta'").get());
 });
 
-test("the ledger records what was applied", () => {
+test("the ledger records what was applied", async () => {
   const db = new DatabaseSync(":memory:");
   applySchema(db);
   const recorded = (db.prepare("select file from schema_migrations order by file").all() as

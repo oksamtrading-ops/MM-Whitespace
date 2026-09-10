@@ -38,22 +38,18 @@ export default async function Publish() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
-  const period = ctx.db.prepare(
-    "select id, label, status, market_cap_as_of from periods order by market_cap_as_of desc limit 1",
-  ).get() as { id: string; label: string; status: string; market_cap_as_of: string } | undefined;
+  const period = await ctx.db.get("select id, label, status, market_cap_as_of from periods order by market_cap_as_of desc limit 1") as { id: string; label: string; status: string; market_cap_as_of: string } | undefined;
   if (!period) {
     return <Refusal title="Nothing to publish"
                     body="No period has been committed yet. A workbook has to be read and committed first."
                     action={{ href: "/upload", label: "Upload a workbook" }} />;
   }
 
-  const gate = evaluateGate(ctx.db, period.id);
-  const revisions = ctx.db.prepare(
-    `select p.revision, p.published_at, p.override_reason, p.amendment_reason,
+  const gate = await evaluateGate(ctx.db, period.id);
+  const revisions = await ctx.db.all(`select p.revision, p.published_at, p.override_reason, p.amendment_reason,
             p.unresolved_count, u.email as by_email
        from period_publications p left join app_users u on u.id = p.published_by
-      where p.period_id = ? order by p.revision desc`,
-  ).all(period.id) as Array<{
+      where p.period_id = ? order by p.revision desc`, period.id) as Array<{
     revision: number; published_at: string; override_reason: string | null;
     amendment_reason: string | null; unresolved_count: number; by_email: string | null;
   }>;
@@ -122,8 +118,8 @@ export default async function Publish() {
         <Section id="freeze" title="What gets frozen" index={3}
                  caption="A revision is a copy, not a pointer. This is what it will contain.">
           <Facts items={[
-            { label: "Companies", value: gate.population, figure: true },
-            { label: "Companies with unresolved values", value: gate.unresolvedCount, figure: true },
+            { label: "Companies", value:gate.population, figure: true },
+            { label: "Companies with unresolved values", value:gate.unresolvedCount, figure: true },
             { label: "Revision", value: revisions.length + 1, figure: true },
           ]} />
         </Section>
@@ -169,7 +165,7 @@ export default async function Publish() {
           { label: "Status", value: (
               <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>{period.status}</span>
             ) },
-          { label: "Gate", value: gate.publishable
+          { label: "Gate", value:gate.publishable
               ? <span className="pill ok">open</span>
               : <span className="pill no">blocked</span> },
           ...(revisions.length > 0

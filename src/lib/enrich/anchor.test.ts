@@ -45,7 +45,7 @@ const doc = (text: string, over: Partial<StoredDocument> = {}): StoredDocument =
   hasTextLayer: true, ...over,
 });
 
-test("normalisation folds the unicode that real filings carry", () => {
+test("normalisation folds the unicode that real filings carry", async () => {
   assert.equal(normalize("Audit fees"), "audit fees");          // nbsp
   assert.equal(normalize("veriﬁcation"), "verification");        // fi ligature
   assert.equal(normalize("soft­hyphen"), "softhyphen");
@@ -53,7 +53,7 @@ test("normalisation folds the unicode that real filings carry", () => {
   assert.equal(normalize("  Audit   Fees  "), "audit fees");
 });
 
-test("numerals reduce to digits regardless of separator", () => {
+test("numerals reduce to digits regardless of separator", async () => {
   assert.equal(normalizeNumeral("$1,234,567"), "1234567");
   assert.equal(normalizeNumeral("1 234 567"), "1234567");             // French spacing
   assert.equal(normalizeNumeral("1 234 567"), "1234567");   // nbsp separator
@@ -61,7 +61,7 @@ test("numerals reduce to digits regardless of separator", () => {
   assert.equal(normalizeNumeral(412000), "412000");
 });
 
-test("a fee whose label and figure are not contiguous still anchors", () => {
+test("a fee whose label and figure are not contiguous still anchors", async () => {
   // 412 sits in a table cell; "Audit fees" is at the start of the row. No
   // contiguous excerpt containing both exists, so exact matching cannot work.
   const r = anchorNumeric(
@@ -73,7 +73,7 @@ test("a fee whose label and figure are not contiguous still anchors", () => {
   assert.equal(r.matched?.year, "2025");
 });
 
-test("the scale word prevents a thousandfold error", () => {
+test("the scale word prevents a thousandfold error", async () => {
   // The document says thousands. A finding claiming $412 in units is wrong by
   // three orders of magnitude, and the figure 412 IS present -- so only the
   // scale check can catch it.
@@ -94,7 +94,7 @@ test("the scale word prevents a thousandfold error", () => {
   assert.equal(right.state, "proposed");
 });
 
-test("detectScale reads the phrase in force", () => {
+test("detectScale reads the phrase in force", async () => {
   assert.equal(detectScale("amounts in thousands of dollars"), "thousands");
   assert.equal(detectScale("expressed in millions"), "millions");
   assert.equal(detectScale("(000s)"), "thousands");
@@ -102,7 +102,7 @@ test("detectScale reads the phrase in force", () => {
   assert.equal(detectScale("a plain sentence with no scale"), null);
 });
 
-test("a French filing anchors on the French label", () => {
+test("a French filing anchors on the French label", async () => {
   const french = `
 Honoraires du vérificateur indépendant
 Les montants sont exprimés en milliers de dollars canadiens.
@@ -117,7 +117,7 @@ Honoraires fiscaux                       118           102
   assert.equal(r.matched?.label, "honoraires d'audit");
 });
 
-test("THE PLANTED FABRICATED FEE IS REJECTED", () => {
+test("THE PLANTED FABRICATED FEE IS REJECTED", async () => {
   // The failure this system exists to prevent: a plausible, well-formed,
   // confidently-stated audit fee that appears nowhere in the document.
   const fabricated = gate({
@@ -141,7 +141,7 @@ test("THE PLANTED FABRICATED FEE IS REJECTED", () => {
     "a document that never discusses fees yields unsupported, not anchor_mismatch");
 });
 
-test("a numeral does not match inside a larger number", () => {
+test("a numeral does not match inside a larger number", async () => {
   const d = doc(`All amounts in thousands.
 Audit fees for 2025 were 1412000 in aggregate across the group.`);
   const r = anchorNumeric(
@@ -149,7 +149,7 @@ Audit fees for 2025 were 1412000 in aggregate across the group.`);
   assert.notEqual(r.mode, "proximity", "412 must not match inside 1412000");
 });
 
-test("a scanned filing is its own state, not a rejection", () => {
+test("a scanned filing is its own state, not a rejection", async () => {
   const scanned = doc("  \n \n ", { pageCount: 40, charCount: 6, charsPerPage: 0.15 });
   assert.equal(hasTextLayer(scanned), false);
   const v = gate({ fieldKey: "audit_fee", excerpt: "anything", document: scanned });
@@ -157,7 +157,7 @@ test("a scanned filing is its own state, not a rejection", () => {
   assert.equal(v.bulkAcceptable, false);
 });
 
-test("searched-and-found-nothing is not source-unreachable", () => {
+test("searched-and-found-nothing is not source-unreachable", async () => {
   const unreachable = gate({ fieldKey: "audit_fee", excerpt: "x", document: null });
   assert.equal(unreachable.state, "source_unreachable");
 
@@ -170,7 +170,7 @@ test("searched-and-found-nothing is not source-unreachable", () => {
     "the workbook loses this distinction; the pipeline must keep it");
 });
 
-test("a contiguous excerpt anchors exactly and reports its span", () => {
+test("a contiguous excerpt anchors exactly and reports its span", async () => {
   const d = doc(FEE_TABLE);
   const v = gate({
     fieldKey: "auditor",
@@ -184,7 +184,7 @@ test("a contiguous excerpt anchors exactly and reports its span", () => {
   assert.ok((v.anchor.end ?? 0) > (v.anchor.start ?? 0));
 });
 
-test("the anchor always names the document it was verified against", () => {
+test("the anchor always names the document it was verified against", async () => {
   // Verification is against the byte-identical stored artifact, keyed by hash.
   // Re-extracting at verification time is what rejects correct findings when
   // column order drifts.

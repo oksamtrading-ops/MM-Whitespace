@@ -20,7 +20,7 @@ function isolate() {
   return process.env.MM_QUARANTINE;
 }
 
-test("a parse id is generated here, never taken from a filename", () => {
+test("a parse id is generated here, never taken from a filename", async () => {
   assert.ok(!isParseId("../../etc/passwd"));
   assert.ok(!isParseId("abc"));
   assert.ok(!isParseId("A".repeat(32)), "upper case is not the generated shape");
@@ -70,7 +70,7 @@ test("the workbook is parsed and then deleted; only the payload remains",
   assert.equal(readParse(parse.id), null);
 });
 
-test("a parse older than its hour is not returned, and is swept", () => {
+test("a parse older than its hour is not returned, and is swept", async () => {
   const dir = isolate();
   const id = "0123456789abcdef0123456789abcdef";
   const stale = new Date(Date.now() - 61 * 60 * 1000).toISOString();
@@ -87,7 +87,7 @@ test("a parse older than its hour is not returned, and is swept", () => {
   assert.deepEqual(readdirSync(quarantineDir()), []);
 });
 
-test("the label is suggested from the previous period, never derived from the date", () => {
+test("the label is suggested from the previous period, never derived from the date", async () => {
   // The workbook carries a market-cap date; the quarter is not in it at all.
   assert.equal(suggestLabel("Q3-2026 (2026-05-31)", "2026-08-31"), "Q4-2026 (2026-08-31)");
   assert.equal(suggestLabel("Q4-2026 (2026-08-31)", "2026-11-30"), "Q1-2027 (2026-11-30)");

@@ -34,23 +34,23 @@ for (const company of targets) {
   console.log(`\n${company.name}  (${company.ticker})`);
   console.log("-".repeat(74));
 
-  const { runId, jobIds } = createRun(db, periodId, [company.id], {
+  const { runId, jobIds } = await createRun(db, periodId, [company.id], {
     cassetteDir: CASSETTE_DIR, budgetUsd: 5, mode: "replay",
   });
 
-  const before = db.prepare("select state from enrichment_jobs where id = ?").get(jobIds[0]);
+  const before = db.handle.prepare("select state from enrichment_jobs where id = ?").get(jobIds[0]);
   process.stdout.write(`  ledger: ${before.state}`);
 
-  const outcome = researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
+  const outcome = await researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR });
   console.log(` -> claimed -> researching -> persisting -> ${outcome.jobState}`);
 
-  const raw = db.prepare(
+  const raw = db.handle.prepare(
     "select count(*) n from enrichment_job_results where job_id = ?").get(outcome.jobId);
   console.log(`  raw responses stored before any finding was derived: ${raw.n}`);
 
   console.log("");
   console.log(`  ${pad("field", 27)}${pad("state", 19)}${pad("anchor", 18)}${pad("evid", 7)}bulk`);
-  const rows = db.prepare(
+  const rows = db.handle.prepare(
     `select field_key, state, anchor_mode, evidence_strength, model_self_confidence,
             abstained, anchor_document_hash
        from enrichment_findings where run_id = ? order by field_key`).all(runId);
@@ -73,10 +73,10 @@ for (const company of targets) {
     }
   }
 
-  const b = budgetState(db, runId);
+  const b = await budgetState(db, runId);
   console.log(`\n  spend $${b.spend.toFixed(3)} of $${b.budget.toFixed(2)} budget` +
               `${b.warn ? "  (WARN >=80%)" : ""}`);
 }
 
 console.log("\nNo request was sent. Replay mode reads tests/cassettes/ only.\n");
-db.close();
+await db.close();

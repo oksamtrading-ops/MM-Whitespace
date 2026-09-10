@@ -1,23 +1,21 @@
 /** Build the authorisation context from a Next request. Server-only. */
 import "server-only";
 import { cookies, headers } from "next/headers";
-import { DatabaseSync } from "node:sqlite";
-import { applySchema } from "../db/schema.ts";
+import { openSql, DATABASE_PATH } from "../db/open.ts";
+import type { Sql } from "../db/sql.ts";
 import { assertRole, devClaimSource, type ClaimSource, type Role } from "./session.ts";
 
-export const DATABASE_PATH = process.env.MM_DATABASE ?? "./period.db";
+export { DATABASE_PATH };
 
-let cached: DatabaseSync | null = null;
+let cached: Sql | null = null;
 
-export function db(): DatabaseSync {
-  if (cached) return cached;
-  const handle = new DatabaseSync(DATABASE_PATH);
-  handle.exec("pragma foreign_keys = on");
-  const has = handle.prepare(
-    "select count(*) n from sqlite_master where type='table' and name='app_users'",
-  ).get() as { n: number };
-  if (has.n === 0) applySchema(handle);
-  cached = handle;
+/**
+ * One handle for the process. Postgres pools inside it, SQLite holds one file
+ * open; either way opening a database per request is what turns a page into a
+ * connection storm.
+ */
+export function db(): Sql {
+  if (!cached) cached = openSql();
   return cached;
 }
 

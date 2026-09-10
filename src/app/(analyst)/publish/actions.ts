@@ -30,13 +30,11 @@ export async function publish(_prev: PublishMessage | null, form: FormData): Pro
   const overrideReason = String(form.get("overrideReason") ?? "").trim();
   const amendmentReason = String(form.get("amendmentReason") ?? "").trim();
 
-  const period = db.prepare("select id, label, status from periods where id = ?")
-    .get(periodId) as { id: string; label: string; status: string } | undefined;
+  const period = await db.get("select id, label, status from periods where id = ?", periodId) as { id: string; label: string; status: string } | undefined;
   if (!period) return { ok: false, message: "That period no longer exists." };
 
-  const gate = evaluateGate(db, periodId);
-  const amending = Boolean(db.prepare(
-    "select 1 from period_publications where period_id = ? limit 1").get(periodId));
+  const gate = await evaluateGate(db, periodId);
+  const amending = Boolean(await db.get("select 1 from period_publications where period_id = ? limit 1", periodId));
 
   if (!gate.publishable) {
     if (user.role !== "admin") {
@@ -55,9 +53,9 @@ export async function publish(_prev: PublishMessage | null, form: FormData): Pro
   }
 
   try {
-    publishPeriod(db, periodId, {
+    await publishPeriod(db, periodId, {
       actorId: user.id,
-      overrideReason: gate.publishable ? null : overrideReason,
+      overrideReason:gate.publishable ? null : overrideReason,
       amendmentReason: amending ? amendmentReason : null,
     });
   } catch (err) {

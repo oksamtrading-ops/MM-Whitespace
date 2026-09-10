@@ -23,9 +23,7 @@ export default async function Upload() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
-  const latest = ctx.db.prepare(
-    "select label, status, market_cap_as_of from periods order by market_cap_as_of desc limit 1",
-  ).get() as { label: string; status: string; market_cap_as_of: string } | undefined;
+  const latest = await ctx.db.get("select label, status, market_cap_as_of from periods order by market_cap_as_of desc limit 1") as { label: string; status: string; market_cap_as_of: string } | undefined;
 
   return (
     <div className="withrail">

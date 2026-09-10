@@ -27,17 +27,13 @@ export async function POST(request: Request) {
   }
 
   const handle = db();
-  const reaped = reapExpiredLeases(handle);
+  const reaped = await reapExpiredLeases(handle);
 
-  const pending = (handle.prepare(
-    `select count(*) n from enrichment_jobs
-      where state = 'queued' and (available_at is null or available_at <= datetime('now'))`,
-  ).get() as { n: number }).n;
+  const pending = (await handle.get(`select count(*) n from enrichment_jobs
+      where state = 'queued' and (available_at is null or available_at <= current_timestamp)`) as { n: number }).n;
 
-  const freeSlots = (handle.prepare(
-    `select count(*) n from worker_slots
-      where leased_by is null or lease_expires_at < datetime('now')`,
-  ).get() as { n: number }).n;
+  const freeSlots = (await handle.get(`select count(*) n from worker_slots
+      where leased_by is null or lease_expires_at < current_timestamp`) as { n: number }).n;
 
   const shouldInvoke = pending > 0 && freeSlots > 0;
   return NextResponse.json({

@@ -8,7 +8,7 @@
  * the design and it is why the two steps are separate functions here.
  */
 import { createHash } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import type { Sql } from "../db/sql.ts";
 import { gate, type StoredDocument } from "./anchor.ts";
 import { evidenceStrength, type EvidenceInput } from "./evidence.ts";
 import { Cassettes, cassetteKey, type Mode } from "./cassette.ts";
@@ -75,46 +75,37 @@ export type ResearchOutcome = {
 };
 
 /** Create a run and one job per company. A run cannot exist without a budget. */
-export function createRun(
-  db: DatabaseSync, periodId: string, companyIds: string[], opts: RunOptions,
-): { runId: string; jobIds: string[] } {
+export async function createRun(
+  db: Sql, periodId: string, companyIds: string[], opts: RunOptions): Promise<{ runId: string; jobIds: string[] }> {
   // The Admin's default, so the settings screen is not decorative.
-  const budget = opts.budgetUsd ?? getNumber(db, "default_run_budget_usd", 5);
-  if (!(budget > 0)) throw new Error("a run cannot be created without a budget");
-  db.prepare(
+  const budget = opts.budgetUsd ?? await getNumber(db, "default_run_budget_usd", 5);
+  if (!(await budget > 0)) throw new Error("a run cannot be created without a budget");
+  const run = await db.get(
     `insert into enrichment_runs (period_id, budget_usd, model, prompt_version, mode)
-     values (?, ?, ?, ?, ?)`,
-  ).run(periodId, budget, opts.model ?? DEFAULT_MODEL, PROMPT_VERSION, opts.mode ?? "replay");
-  const run = db.prepare(
-    "select id from enrichment_runs order by rowid desc limit 1").get() as { id: string };
+     values (?, ?, ?, ?, ?) returning id`,
+    periodId, budget, opts.model ?? DEFAULT_MODEL, PROMPT_VERSION,
+    opts.mode ?? "replay") as { id: string };
 
-  const ins = db.prepare(
-    `insert into enrichment_jobs (run_id, company_id, field_group) values (?, ?, ?)`);
+  const ins = `insert into enrichment_jobs (run_id, company_id, field_group)
+     values (?, ?, ?) returning id`;
   const jobIds: string[] = [];
   for (const companyId of companyIds) {
-    ins.run(run.id, companyId, opts.fieldGroup ?? "general");
-    const j = db.prepare(
-      "select id from enrichment_jobs order by rowid desc limit 1").get() as { id: string };
+    const j = await db.get(ins, run.id, companyId,
+                           opts.fieldGroup ?? "general") as { id: string };
     jobIds.push(j.id);
   }
   return { runId: run.id, jobIds };
 }
 
-export function publicRow(db: DatabaseSync, companyId: string, periodAsOf: string): PublicCompanyRow {
-  const c = db.prepare(
-    "select id, canonical_name from companies where id = ?").get(companyId) as
+export async function publicRow(db: Sql, companyId: string, periodAsOf: string): Promise<PublicCompanyRow> {
+  const c = await db.get("select id, canonical_name from companies where id = ?", companyId) as
     { id: string; canonical_name: string };
-  const ident = db.prepare(
-    `select value, exchange from company_identifiers
-      where company_id = ? and scheme = 'root_ticker' and valid_to is null limit 1`,
-  ).get(companyId) as { value: string; exchange: string } | undefined;
-  const aliases = (db.prepare(
-    "select name from company_aliases where company_id = ?").all(companyId) as Array<{ name: string }>)
+  const ident = await db.get(`select value, exchange from company_identifiers
+      where company_id = ? and scheme = 'root_ticker' and valid_to is null limit 1`, companyId) as { value: string; exchange: string } | undefined;
+  const aliases = (await db.all("select name from company_aliases where company_id = ?", companyId) as Array<{ name: string }>)
     .map((r) => r.name);
-  const regionsRow = db.prepare(
-    `select value from company_period_field_values
-      where company_id = ? and field_key = 'property_regions' limit 1`,
-  ).get(companyId) as { value: string } | undefined;
+  const regionsRow = await db.get(`select value from company_period_field_values
+      where company_id = ? and field_key = 'property_regions' limit 1`, companyId) as { value: string } | undefined;
 
   return {
     companyId: c.id,
@@ -136,17 +127,15 @@ export function publicRow(db: DatabaseSync, companyId: string, periodAsOf: strin
  * Step one: obtain a validated response and store it raw. Nothing is derived
  * here, and nothing downstream may read anything but the stored row.
  */
-function research(
-  db: DatabaseSync, jobId: string, row: PublicCompanyRow, opts: RunOptions,
-): { body: CassetteBody; attempt: number } {
+async function research(
+  db: Sql, jobId: string, row: PublicCompanyRow, opts: RunOptions): Promise<{ body: CassetteBody; attempt: number }> {
   const route: Route = opts.route ?? "extract_general";
   const model = opts.model ?? DEFAULT_MODEL;
   const prompt = buildPrompt(route, row);
 
   // The egress scan runs on the serialised body, in the one place that talks
   // to the vendor. A hit throws and dead-letters the job; it never redacts.
-  const catalog = db.prepare(
-    "select key, label, classification from field_catalog").all() as
+  const catalog = await db.all("select key, label, classification from field_catalog") as
     Array<{ key: string; label: string; classification: string }>;
   egressScan({ prefix: prompt.stablePrefix, content: prompt.userContent },
              restrictionsFromCatalog(catalog));
@@ -161,44 +150,36 @@ function research(
     throw new Error(
       "live mode is not enabled in this build. No vendor call has been made. " +
       "Enable it only after the risk and legal review under decision 1 is complete, " +
-      "and with a key present.",
-    );
+      "and with a key present.");
   }
   const cassettes = new Cassettes(opts.cassetteDir, mode);
   const rec = cassettes.read(key);
   const body = rec.response as CassetteBody;
 
-  const attempt = ((db.prepare(
-    "select coalesce(max(attempt), 0) a from enrichment_job_results where job_id = ?",
-  ).get(jobId) as { a: number }).a) + 1;
+  const attempt = ((await db.get("select coalesce(max(attempt), 0) a from enrichment_job_results where job_id = ?", jobId) as { a: number }).a) + 1;
 
-  db.prepare(
-    `insert into enrichment_job_results (job_id, attempt, raw, request_id, usage, verbatim_turn)
-     values (?, ?, ?, ?, ?, ?)`,
-  ).run(jobId, attempt, JSON.stringify(body), rec.key,
+  await db.run(`insert into enrichment_job_results (job_id, attempt, raw, request_id, usage, verbatim_turn)
+     values (?, ?, ?, ?, ?, ?)`, jobId, attempt, JSON.stringify(body), rec.key,
         JSON.stringify(rec.usage ?? {}), rec.verbatimTurn ?? null);
 
   return { body, attempt };
 }
 
 /** Step two: derive findings from the STORED response and run every one through the gate. */
-function persist(
-  db: DatabaseSync, runId: string, jobId: string, companyId: string,
-  body: CassetteBody, attempt: number, opts: RunOptions,
-): ResearchOutcome["findings"] {
+async function persist(
+  db: Sql, runId: string, jobId: string, companyId: string,
+  body: CassetteBody, attempt: number, opts: RunOptions): Promise<ResearchOutcome["findings"]> {
   const model = opts.model ?? DEFAULT_MODEL;
   const docs = new Map<string, StoredDocument>();
   for (const d of body.documents ?? []) {
     const hash = d.contentHash ?? `sha256:${createHash("sha256").update(d.text).digest("hex")}`;
     const stored: StoredDocument = { ...d, contentHash: hash };
     docs.set(hash, stored);
-    db.prepare(
-      `insert into documents (content_hash, url, retrieved_at, extractor, extractor_version,
+    await db.run(`insert into documents (content_hash, url, retrieved_at, extractor, extractor_version,
                               normalization_version, text_content, char_count, page_count,
                               chars_per_page, source_tier, doc_type, scale_phrase, has_text_layer)
        values (?, ?, ?, 'fixture', '1.0.0', '1.0.0', ?, ?, ?, ?, ?, ?, ?, ?)
-       on conflict (content_hash) do nothing`,
-    ).run(hash, d.url, new Date().toISOString(), d.text, d.text.length,
+       on conflict (content_hash) do nothing`, hash, d.url, new Date().toISOString(), d.text, d.text.length,
           d.pageCount ?? 1, d.charsPerPage ?? d.text.length,
           d.sourceTier, d.docType ?? null, d.scalePhrase ?? null,
           d.hasTextLayer === false ? 0 : 1);
@@ -238,29 +219,23 @@ function persist(
     };
     const score = evidenceStrength(ev);
 
-    db.prepare(
-      `insert into enrichment_findings
+    const finding = await db.get(`insert into enrichment_findings
          (run_id, job_id, attempt, company_id, field_key, proposed_value,
           evidence_strength, evidence_version, evidence_components,
           model_self_confidence, anchor_mode, anchor_start, anchor_end,
           anchor_document_hash, evidence_excerpt, scale_token, abstained,
           abstention_reason, state, model, prompt_version)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(runId, jobId, attempt, companyId, f.field_key, JSON.stringify(f.value ?? null),
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       returning id`, runId, jobId, attempt, companyId, f.field_key, JSON.stringify(f.value ?? null),
           score.strength, score.version, JSON.stringify(score.components),
           f.model_self_confidence ?? null, verdict.anchor.mode,
           verdict.anchor.start, verdict.anchor.end, verdict.anchor.documentHash,
           f.evidence_excerpt ?? null, f.numeric?.scale ?? null,
-          f.abstained ? 1 : 0, f.abstention_reason ?? null,
-          verdict.state, model, PROMPT_VERSION);
-
-    const finding = db.prepare(
-      "select id from enrichment_findings order by rowid desc limit 1").get() as { id: string };
+          Boolean(f.abstained), f.abstention_reason ?? null,
+          verdict.state, model, PROMPT_VERSION) as { id: string };
     if (f.source_url) {
-      db.prepare(
-        `insert into finding_sources (finding_id, url, content_hash, source_tier, doc_type)
-         values (?, ?, ?, ?, ?) on conflict do nothing`,
-      ).run(finding.id, f.source_url, verdict.anchor.documentHash,
+      await db.run(`insert into finding_sources (finding_id, url, content_hash, source_tier, doc_type)
+         values (?, ?, ?, ?, ?) on conflict do nothing`, finding.id, f.source_url, verdict.anchor.documentHash,
             f.source_tier ?? 5, null);
     }
 
@@ -281,11 +256,9 @@ function persist(
  * fetched this" a meaningful claim. A model may nominate a URL; if its host is
  * not reachable from this set, the fetcher declines it.
  */
-export function allowlistFromPeriod(db: DatabaseSync, periodId: string): Set<string> {
-  const rows = db.prepare(
-    `select value from company_period_field_values
-      where period_id = ? and field_key = 'website' and value is not null`,
-  ).all(periodId) as Array<{ value: string }>;
+export async function allowlistFromPeriod(db: Sql, periodId: string): Promise<Set<string>> {
+  const rows = await db.all(`select value from company_period_field_values
+      where period_id = ? and field_key = 'website' and value is not null`, periodId) as Array<{ value: string }>;
 
   const domains: string[] = [];
   for (const r of rows) {
@@ -301,15 +274,13 @@ export function allowlistFromPeriod(db: DatabaseSync, periodId: string): Set<str
 }
 
 /** Persist a fetched document. The text is stored; the file never is. */
-export function storeDocument(db: DatabaseSync, doc: FetchedDocument): string {
-  db.prepare(
-    `insert into documents (content_hash, url, final_url, retrieved_at, extractor,
+export async function storeDocument(db: Sql, doc: FetchedDocument): Promise<string> {
+  await db.run(`insert into documents (content_hash, url, final_url, retrieved_at, extractor,
                             extractor_version, normalization_version, text_content,
                             char_count, page_count, chars_per_page, source_tier,
                             doc_type, has_text_layer)
      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     on conflict (content_hash) do nothing`,
-  ).run(doc.contentHash, doc.url, doc.finalUrl, doc.retrievedAt, doc.extractor,
+     on conflict (content_hash) do nothing`, doc.contentHash, doc.url, doc.finalUrl, doc.retrievedAt, doc.extractor,
         doc.extractorVersion, doc.normalizationVersion, doc.text, doc.charCount,
         doc.pageCount, doc.charsPerPage, doc.sourceTier, doc.docType,
         doc.hasTextLayer ? 1 : 0);
@@ -323,55 +294,50 @@ export function storeDocument(db: DatabaseSync, doc: FetchedDocument): string {
  * value is behaving correctly, and counting that as a hallucination would both
  * understate the pipeline and block publishes for the wrong reason.
  */
-export function hallucinationRate(
-  db: DatabaseSync, runId: string,
-): { unsupported: number; assessed: number; rate: number } {
-  const row = db.prepare(
-    `select
+export async function hallucinationRate(
+  db: Sql, runId: string): Promise<{ unsupported: number; assessed: number; rate: number }> {
+  const row = await db.get(`select
        sum(case when state = 'unsupported' then 1 else 0 end) as unsupported,
        sum(case when state != 'abstained' then 1 else 0 end)  as assessed
-     from enrichment_findings where run_id = ?`,
-  ).get(runId) as { unsupported: number | null; assessed: number | null };
+     from enrichment_findings where run_id = ?`, runId) as { unsupported: number | null; assessed: number | null };
   const unsupported = row.unsupported ?? 0;
   const assessed = row.assessed ?? 0;
   return { unsupported, assessed, rate: assessed === 0 ? 0 : unsupported / assessed };
 }
 
 /** Drive one job from queued to completed. */
-export function researchOneCompany(
-  db: DatabaseSync, runId: string, periodAsOf: string, opts: RunOptions,
-): ResearchOutcome {
-  ensureSlots(db, 4);
+export async function researchOneCompany(
+  db: Sql, runId: string, periodAsOf: string, opts: RunOptions): Promise<ResearchOutcome> {
+  await ensureSlots(db, 4);
   const workerId = `worker-${process.pid}-${Date.now()}`;
-  const slot = claimSlot(db, workerId);
+  const slot = await claimSlot(db, workerId);
   if (slot === null) {
     throw new Error("no free worker slot; the worker exits rather than exceeding concurrency");
   }
   try {
-    const [job] = claimJobs(db, runId, workerId, 1);
+    const [job] = await claimJobs(db, runId, workerId, 1);
     if (!job) throw new Error("no claimable job in this run");
 
-    transition(db, job.id, "researching", { chargeAttempt: true });
-    const row = publicRow(db, job.company_id, periodAsOf);
+    await transition(db, job.id, "researching", { chargeAttempt: true });
+    const row = await publicRow(db, job.company_id, periodAsOf);
 
     let body: CassetteBody, attempt: number;
     try {
-      ({ body, attempt } = research(db, job.id, row, opts));
+      ({ body, attempt } = await research(db, job.id, row, opts));
     } catch (err) {
-      transition(db, job.id, "dead_letter", { error: (err as Error).message });
+      await transition(db, job.id, "dead_letter", { error: (err as Error).message });
       throw err;
     }
 
-    transition(db, job.id, "persisting");
-    const findings = persist(db, runId, job.id, job.company_id, body, attempt, opts);
-    transition(db, job.id, "completed");
+    await transition(db, job.id, "persisting");
+    const findings = await persist(db, runId, job.id, job.company_id, body, attempt, opts);
+    await transition(db, job.id, "completed");
 
-    const budget = recordSpend(db, runId, body.cost_usd ?? 0);
-    const state = (db.prepare("select state from enrichment_jobs where id = ?")
-      .get(job.id) as { state: string }).state;
+    const budget = await recordSpend(db, runId, body.cost_usd ?? 0);
+    const state = (await db.get("select state from enrichment_jobs where id = ?", job.id) as { state: string }).state;
 
-      return { runId, jobId: job.id, findings, spendUsd: budget.spend, jobState: state };
+    return { runId, jobId: job.id, findings, spendUsd: budget.spend, jobState: state };
   } finally {
-    releaseSlot(db, slot);
+    await releaseSlot(db, slot);
   }
 }

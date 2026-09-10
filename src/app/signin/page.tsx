@@ -27,7 +27,7 @@ export default async function SignIn() {
   // Offering a sign-in to somebody who is already signed in is a small lie the
   // top bar immediately contradicts, so say who they are and let them past.
   const ctx = await authContext();
-  const user = resolveUser(ctx.db, await ctx.claims.emailClaim(ctx.cookieHeader));
+  const user = await resolveUser(ctx.db, await ctx.claims.emailClaim(ctx.cookieHeader));
 
   return (
     <div className="signin rise">
@@ -35,11 +35,11 @@ export default async function SignIn() {
       {user ? (
         <>
           <p className="lede">
-            Signed in as {user.email}, {user.role === "admin" ? "an" : "a"} {user.role}.
+            Signed in as {(await user).email}, {(await user).role === "admin" ? "an" : "a"} {(await user).role}.
           </p>
           <p className="actions">
             <Link className="btn primary" href="/" prefetch={false}>
-              Continue{user.role === "viewer" ? " to the dashboard" : " to the review board"}
+              Continue{(await user).role === "viewer" ? " to the dashboard" : " to the review board"}
             </Link>
           </p>
           <p className="switch">Switch account</p>

@@ -65,7 +65,7 @@ function workbookTier(stages: Stage[], footprint: Footprint): number {
   return 4;
 }
 
-test("truth table: all 64 stage-footprint pairs", () => {
+test("truth table: all 64 stage-footprint pairs", async () => {
   let checked = 0;
   for (const { key, stages } of subsets()) {
     for (const footprint of FOOTPRINTS) {
@@ -95,7 +95,7 @@ test("truth table: all 64 stage-footprint pairs", () => {
   assert.equal(checked, 64);
 });
 
-test("no stage evidence short-circuits before every other rule", () => {
+test("no stage evidence short-circuits before every other rule", async () => {
   for (const footprint of FOOTPRINTS) {
     const got = classify({
       stages: [], stageEvidence: "none", footprint, propertyEvidence: "complete",
@@ -107,7 +107,7 @@ test("no stage evidence short-circuits before every other rule", () => {
   }
 });
 
-test("blank stages are not the same input as confirmed-no-stage", () => {
+test("blank stages are not the same input as confirmed-no-stage", async () => {
   const unresearched = classify({
     stages: [], stageEvidence: "none", footprint: "canada_only", propertyEvidence: "complete",
   });
@@ -119,7 +119,7 @@ test("blank stages are not the same input as confirmed-no-stage", () => {
   assert.equal(confirmed.status, "unclassified_conflicting");
 });
 
-test("the three cases that diverge from the workbook", () => {
+test("the three cases that diverge from the workbook", async () => {
   // Royalty with no properties: we say Tier 4 footprint none; workbook says
   // Tier 4 but calls the footprint Canada only. Same tier, different truth --
   // which is why this defect survives tier tests and reaches the dashboard.
@@ -148,7 +148,7 @@ test("the three cases that diverge from the workbook", () => {
   assert.equal(workbookTier([], "canada_only"), 4);
 });
 
-test("tier agrees with the workbook everywhere evidence is complete and properties exist", () => {
+test("tier agrees with the workbook everywhere evidence is complete and properties exist", async () => {
   for (const { stages } of subsets()) {
     for (const footprint of FOOTPRINTS) {
       if (footprint === "none") continue;      // the known divergence
@@ -162,7 +162,7 @@ test("tier agrees with the workbook everywhere evidence is complete and properti
   }
 });
 
-test("deriveFootprint emits the value the workbook never produces", () => {
+test("deriveFootprint emits the value the workbook never produces", async () => {
   assert.equal(deriveFootprint(true, true, "complete"), "canada_and_abroad");
   assert.equal(deriveFootprint(true, false, "complete"), "canada_only");
   assert.equal(deriveFootprint(false, true, "complete"), "abroad");

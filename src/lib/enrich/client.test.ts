@@ -24,7 +24,7 @@ const base = {
   restrictions: NO_RESTRICTIONS,
 };
 
-test("route models match the design's per-route decisions", () => {
+test("route models match the design's per-route decisions", async () => {
   // Discovery is Opus-tier deliberately: picking the wrong company's filing
   // produces a confidently wrong, well-cited fee.
   assert.equal(ROUTE_CONFIG.discovery.model, "claude-opus-5");
@@ -33,7 +33,7 @@ test("route models match the design's per-route decisions", () => {
   assert.equal(ROUTE_CONFIG.adjudication.model, "claude-opus-5");
 });
 
-test("discovery uses the dynamic-filtering web search variant", () => {
+test("discovery uses the dynamic-filtering web search variant", async () => {
   const tool = ROUTE_CONFIG.discovery.tools[0] as Record<string, unknown>;
   assert.equal(tool.type, "web_search_20260209",
     "the 20250305 variant is for models older than Opus 4.6 / Sonnet 4.6");
@@ -41,7 +41,7 @@ test("discovery uses the dynamic-filtering web search variant", () => {
     "extraction has no tools: separate routes, separate cache prefixes");
 });
 
-test("citations and structured output are never both on for a route", () => {
+test("citations and structured output are never both on for a route", async () => {
   for (const [name, config] of Object.entries(ROUTE_CONFIG)) {
     assertOutputModeIsLegal(config as never);
     assert.ok(!(config.citations && config.structured), `${name} sets both`);
@@ -55,14 +55,14 @@ test("citations and structured output are never both on for a route", () => {
     /cannot both be set/);
 });
 
-test("the fees route keeps citations and gives up structured output", () => {
+test("the fees route keeps citations and gives up structured output", async () => {
   // An API-generated span over the document cannot be fabricated; a
   // model-authored excerpt in a structured field can.
   assert.equal(ROUTE_CONFIG.extract_fees.citations, true);
   assert.equal(ROUTE_CONFIG.extract_fees.structured, false);
 });
 
-test("spend-limit errors halt the run; they are never retried", () => {
+test("spend-limit errors halt the run; they are never retried", async () => {
   // The 400 shape a self-set spend limit produces. A naive classifier calls
   // this permanent and fails every remaining company one at a time.
   assert.equal(classifyError({ status: 400, error: { error: { type: "billing_error",
@@ -117,7 +117,7 @@ test("live mode without credentials fails with an actionable message", async () 
   }
 });
 
-test("a cache read after the first request is an asserted invariant", () => {
+test("a cache read after the first request is an asserted invariant", async () => {
   assert.equal(assertCacheIsWorking([{ cache_read_input_tokens: 0 }]).ok, true,
     "one request cannot read a cache it just wrote");
 

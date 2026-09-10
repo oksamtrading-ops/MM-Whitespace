@@ -24,28 +24,21 @@ export default async function Settings() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
-  const settings = readSettings(ctx.db);
-  const period = ctx.db.prepare(
-    `select label, status, threshold_amount, threshold_operator, threshold_currency,
-            proximity_band_pct from periods order by market_cap_as_of desc limit 1`,
-  ).get() as {
+  const settings = await readSettings(ctx.db);
+  const period = await ctx.db.get(`select label, status, threshold_amount, threshold_operator, threshold_currency,
+            proximity_band_pct from periods order by market_cap_as_of desc limit 1`) as {
     label: string; status: string; threshold_amount: number; threshold_operator: string;
     threshold_currency: string; proximity_band_pct: number;
   } | undefined;
 
-  const floors = ctx.db.prepare(
-    "select chart, label, driving_field, floor_pct, blocks_publish from coverage_floors order by chart",
-  ).all() as Array<{ chart: string; label: string; driving_field: string;
+  const floors = await ctx.db.all("select chart, label, driving_field, floor_pct, blocks_publish from coverage_floors order by chart") as Array<{ chart: string; label: string; driving_field: string;
                      floor_pct: number | null; blocks_publish: number }>;
-  const ceiling = ctx.db.prepare(
-    "select value from publish_thresholds where key = 'max_hallucination_rate'").get() as
+  const ceiling = await ctx.db.get("select value from publish_thresholds where key = 'max_hallucination_rate'") as
     { value: number } | undefined;
 
-  const changes = ctx.db.prepare(
-    `select a.detail, a.created_at, u.email
+  const changes = await ctx.db.all(`select a.detail, a.created_at, u.email
        from audit_log a left join app_users u on u.id = a.actor_id
-      where a.event = 'setting_changed' order by a.created_at desc limit 8`,
-  ).all() as Array<{ detail: string; created_at: string; email: string | null }>;
+      where a.event = 'setting_changed' order by a.created_at desc limit 8`) as Array<{ detail: string; created_at: string; email: string | null }>;
 
   return (
     <div className="withrail">

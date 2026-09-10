@@ -26,16 +26,16 @@ export async function saveSettings(
 
   let changes;
   try {
-    changes = putSettings(db, values, user.id);
+    changes = await putSettings(db, values, user.id);
   } catch (err) {
     if (err instanceof InvalidSetting) return { ok: false, message: err.message };
     throw err;
   }
 
   // One line per change: "the settings were edited" answers nothing later.
-  const audit = db.prepare(
-    "insert into audit_log (event, actor_id, detail) values ('setting_changed', ?, ?)");
-  for (const c of changes) audit.run(user.id, JSON.stringify(c));
+  const audit =
+    "insert into audit_log (event, actor_id, detail) values ('setting_changed', ?, ?)";
+  for (const c of changes) await db.run(audit, user.id, JSON.stringify(c));
 
   revalidatePath("/settings");
   return changes.length === 0

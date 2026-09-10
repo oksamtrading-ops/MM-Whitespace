@@ -1,6 +1,9 @@
 import { test } from "node:test";
-import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { SqliteSql } from "../db/sqlite.ts";
+import type { Sql } from "../db/sql.ts";
+import { memorySql } from "../db/open.ts";
+import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +15,7 @@ type Rule = {
   owner: string; transferable?: boolean;
 };
 
-test("EVERY retention rule has a named owner", () => {
+test("EVERY retention rule has a named owner", async () => {
   // "Each line needs a named owner, or none of it happens." A rule added later
   // without one fails the build here, rather than only at runtime on a
   // schedule nobody is watching.
@@ -22,7 +25,7 @@ test("EVERY retention rule has a named owner", () => {
   }
 });
 
-test("an owner is a person, not a team", () => {
+test("an owner is a person, not a team", async () => {
   // A team cannot be paged and does not notice a job that stopped running.
   const TEAMS = /^(engineering|ops|platform|the team|tbd|n\/?a)$/i;
   for (const rule of RULES as Rule[]) {
@@ -31,7 +34,7 @@ test("an owner is a person, not a team", () => {
   }
 });
 
-test("the retention schedule matches the design's table", () => {
+test("the retention schedule matches the design's table", async () => {
   const byKey = Object.fromEntries((RULES as Rule[]).map((r) => [r.key, r]));
   assert.match(byKey.raw_uploads.retention, /1 hour/);
   assert.match(byKey.document_text.retention, /90 days/);
@@ -40,25 +43,21 @@ test("the retention schedule matches the design's table", () => {
   assert.match(byKey.published_snapshots.retention, /life of the pilot/);
 });
 
-test("the audit log is not trimmed without an export path", () => {
+test("the audit log is not trimmed without an export path", async () => {
   // It is the one artifact that answers who published what; trimming it
   // unexported destroys that answer.
-  const db = new DatabaseSync(":memory:");
-  applySchema(db);
-  db.prepare(
-    "insert into audit_log (event, detail, created_at) values ('old', '{}', '2000-01-01 00:00:00')",
-  ).run();
+  const db = memorySql();
+  await db.run("insert into audit_log (event, detail, created_at) values ('old', '{}', '2000-01-01 00:00:00')");
   db.close();
 
   // run() opens the path itself, so use a file-backed database.
   const dir = mkdtempSync(join(tmpdir(), "mm-ret-"));
   try {
     const path = join(dir, "r.db");
-    const file = new DatabaseSync(path);
-    applySchema(file);
-    file.prepare(
-      "insert into audit_log (event, detail, created_at) values ('old','{}','2000-01-01 00:00:00')",
-    ).run();
+    const handle = new DatabaseSync(path);
+    applySchema(handle);
+    const file = new SqliteSql(handle);
+    await file.run("insert into audit_log (event, detail, created_at) values ('old','{}','2000-01-01 00:00:00')");
     file.close();
 
     const { results } = run(path, { apply: true, exportPath: null }) as
@@ -72,8 +71,8 @@ test("the audit log is not trimmed without an export path", () => {
     assert.equal(audit.examined, 1, "the refusal states how many rows it declined to touch");
     assert.equal(audit.deleted, 0);
 
-    const after = new DatabaseSync(path);
-    const n = after.prepare("select count(*) n from audit_log").get() as { n: number };
+    const after = new SqliteSql(new DatabaseSync(path));
+    const n = await after.get("select count(*) n from audit_log") as { n: number };
     assert.equal(n.n, 1, "the row must survive a refused trim");
     after.close();
   } finally {
@@ -81,27 +80,25 @@ test("the audit log is not trimmed without an export path", () => {
   }
 });
 
-test("expired document text is cleared but the row is kept", () => {
+test("expired document text is cleared but the row is kept", async () => {
   // Deleting the row would orphan a finding's anchor and make an accepted
   // value unverifiable after the fact.
   const dir = mkdtempSync(join(tmpdir(), "mm-ret-"));
   try {
     const path = join(dir, "d.db");
-    const db = new DatabaseSync(path);
-    applySchema(db);
-    db.prepare(
-      `insert into documents (content_hash, url, retrieved_at, extractor, extractor_version,
+    const handle = new DatabaseSync(path);
+    applySchema(handle);
+    const db = new SqliteSql(handle);
+    await db.run(`insert into documents (content_hash, url, retrieved_at, extractor, extractor_version,
                               normalization_version, text_content, source_tier)
        values ('sha256:old', 'https://x.invalid', '2000-01-01 00:00:00', 'f', '1', '1',
-               'the filing text', 1)`).run();
+               'the filing text', 1)`);
     db.close();
 
     run(path, { apply: true, exportPath: null });
 
-    const after = new DatabaseSync(path);
-    const row = after.prepare(
-      "select content_hash, text_content from documents where content_hash = 'sha256:old'",
-    ).get() as { content_hash: string; text_content: string | null };
+    const after = new SqliteSql(new DatabaseSync(path));
+    const row = await after.get("select content_hash, text_content from documents where content_hash = 'sha256:old'") as { content_hash: string; text_content: string | null };
     assert.equal(row.content_hash, "sha256:old", "the row survives, so anchors resolve");
     assert.equal(row.text_content, null, "the text is gone");
     after.close();

@@ -11,7 +11,7 @@
  * So the Analyst lands on a triage board and picks a batch. They never face
  * 2,590 undifferentiated cells.
  */
-import { DatabaseSync } from "node:sqlite";
+import type { Sql } from "../db/sql.ts";
 import { evidenceBand, isConflict, isStageField, type Candidate } from "./decide.ts";
 
 export type QueueBucket = {
@@ -32,9 +32,8 @@ export type FieldSummary = {
   bulkAcceptable: boolean;
 };
 
-export function reviewableFields(db: DatabaseSync, periodId: string): FieldSummary[] {
-  return db.prepare(
-    `select f.key as fieldKey, f.label,
+export async function reviewableFields(db: Sql, periodId: string): Promise<FieldSummary[]> {
+  return (await db.all(`select f.key as fieldKey, f.label,
             count(distinct e.company_id) as proposals,
             f.bulk_acceptable as bulkAcceptable,
             (select count(distinct d.company_id) from review_decisions d
@@ -45,8 +44,7 @@ export function reviewableFields(db: DatabaseSync, periodId: string): FieldSumma
        join enrichment_findings e on e.field_key = f.key
        join enrichment_runs r on r.id = e.run_id and r.period_id = ?
       group by f.key
-      order by proposals desc`,
-  ).all(periodId, periodId).map((r) => {
+      order by proposals desc`, periodId, periodId)).map((r) => {
     const row = r as Record<string, unknown>;
     return {
       fieldKey: String(row.fieldKey),
@@ -86,10 +84,10 @@ export const IN_BUCKET: Record<string, (c: Bucketable, threshold: number) => boo
                          !IN_BUCKET.conflict(c, t) && !IN_BUCKET.bulkable(c, t),
 };
 
-export function queueBuckets(
-  db: DatabaseSync, periodId: string, threshold = 0.8,
-): QueueBucket[] {
-  const undecided = allCandidates(db, periodId)
+export async function queueBuckets(
+  db: Sql, periodId: string, threshold = 0.8,
+): Promise<QueueBucket[]> {
+  const undecided = (await allCandidates(db, periodId))
     .filter((c) => !c.decided)
     .map((c) => ({ ...c, conflict: isConflict(c) }));
   // A count is across fields and the grid shows one field, so each bucket also
@@ -123,9 +121,8 @@ export type Row = Candidate & {
   conflict: boolean;
 };
 
-function allCandidates(db: DatabaseSync, periodId: string): Row[] {
-  const rows = db.prepare(
-    `select c.id as companyId, c.canonical_name as companyName,
+async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
+  const rows = await db.all(`select c.id as companyId, c.canonical_name as companyName,
             e.id as findingId, e.attempt as findingAttempt, e.field_key as fieldKey,
             e.proposed_value as proposedValue, e.evidence_strength as evidenceStrength,
             e.anchor_mode as anchorMode, e.state as findingState,
@@ -144,14 +141,13 @@ function allCandidates(db: DatabaseSync, periodId: string): Row[] {
               where d.period_id = ? and d.company_id = c.id and d.field_key = e.field_key
                 and d.decision != 'undo'
                 and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-              order by d.decided_at desc, d.rowid desc limit 1) as decision
+              order by d.decided_at desc, d.id desc limit 1) as decision
        from enrichment_findings e
        join enrichment_runs r on r.id = e.run_id and r.period_id = ?
        join companies c on c.id = e.company_id
        join field_catalog f on f.key = e.field_key
       where e.state != 'superseded'
-      order by e.evidence_strength asc nulls first, c.canonical_name asc`,
-  ).all(periodId, periodId, periodId) as Array<Record<string, unknown>>;
+      order by e.evidence_strength asc nulls first, c.canonical_name asc`, periodId, periodId, periodId) as Array<Record<string, unknown>>;
 
   return rows.map((r) => {
     const proposedValue = r.proposedValue ? safeParse(String(r.proposedValue)) : null;
@@ -186,10 +182,10 @@ function allCandidates(db: DatabaseSync, periodId: string): Row[] {
 }
 
 /** Field-major, sorted by evidence ASCENDING so the worst work comes first. */
-export function fieldRows(
-  db: DatabaseSync, periodId: string, fieldKey: string, bucket?: string, threshold = 0.8,
-): Row[] {
-  const all = allCandidates(db, periodId).filter((r) => r.fieldKey === fieldKey);
+export async function fieldRows(
+  db: Sql, periodId: string, fieldKey: string, bucket?: string, threshold = 0.8,
+): Promise<Row[]> {
+  const all = (await allCandidates(db, periodId)).filter((r) => r.fieldKey === fieldKey);
   if (!bucket || bucket === "all") return all;
 
   const undecided = all.filter((r) => !r.decided);
@@ -214,14 +210,16 @@ export type CompanyRow = {
  * query would be a second definition of what is reviewable, and the two would
  * disagree the first time either changed.
  */
-export function companyRows(
-  db: DatabaseSync, periodId: string, threshold = 0.8,
-): { fields: FieldSummary[]; rows: CompanyRow[] } {
-  const fields = reviewableFields(db, periodId);
+export async function companyRows(
+  db: Sql, periodId: string, threshold = 0.8,
+): Promise<{ fields: FieldSummary[]; rows: CompanyRow[] }> {
+  const fields = await reviewableFields(db, periodId);
   const byCompany = new Map<string, CompanyRow>();
 
-  fields.forEach((field, column) => {
-    for (const row of fieldRows(db, periodId, field.fieldKey, "all", threshold)) {
+  // Sequential rather than mapped: the column index is the field's position,
+  // so the loop carries it, and one connection does the work either way.
+  for (const [column, field] of fields.entries()) {
+    for (const row of await fieldRows(db, periodId, field.fieldKey, "all", threshold)) {
       let entry = byCompany.get(row.companyId);
       if (!entry) {
         entry = {
@@ -232,7 +230,7 @@ export function companyRows(
       }
       entry.cells[column] = row;
     }
-  });
+  }
 
   const rows = [...byCompany.values()].sort((a, b) => a.companyName.localeCompare(b.companyName));
   return { fields, rows };
@@ -264,13 +262,11 @@ export function formatValue(value: unknown): string {
 }
 
 /** Stage is the only field that moves tier, so the consequence is shown live. */
-export function tierConsequence(
-  db: DatabaseSync, periodId: string, row: Row,
-): string | null {
+export async function tierConsequence(
+  db: Sql, periodId: string, row: Row,
+): Promise<string | null> {
   if (!isStageField(row.fieldKey)) return null;
-  const current = db.prepare(
-    "select tier, status from tiers where period_id = ? and company_id = ?",
-  ).get(periodId, row.companyId) as { tier: number | null; status: string } | undefined;
+  const current = await db.get("select tier, status from tiers where period_id = ? and company_id = ?", periodId, row.companyId) as { tier: number | null; status: string } | undefined;
   if (!current) return null;
   const from = current.tier === null ? "Unclassified" : `Tier ${current.tier}`;
   return `Accepting re-runs the classifier for ${row.companyName}, currently ${from}.`;

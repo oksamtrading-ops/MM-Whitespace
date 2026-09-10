@@ -178,6 +178,48 @@ faithfully, so an untranslated one fails at load instead of quietly changing
 meaning. Roles and row-level security live in a Postgres-only migration that the
 local path skips.
 
+### One seam, two databases
+
+Every query goes through `Sql` in `src/lib/db/sql.ts`. `MM_DATABASE_URL` selects
+Postgres; its absence selects the SQLite file at `MM_DATABASE`.
+
+```bash
+node scripts/migrate.mjs ./period.db          # SQLite, translated
+node scripts/migrate.mjs "$MM_DATABASE_URL"   # Postgres, verbatim, roles included
+MM_DATABASE_URL="postgresql://..." npm run pg:smoke
+```
+
+**The interface is asynchronous, and that is the whole cost of the seam.**
+`node:sqlite` is synchronous and Postgres cannot be. A synchronous facade over
+Postgres is buildable — a worker thread and `Atomics.wait` — and would have
+avoided a wide refactor at the price of blocking the event loop on every query,
+which serialises every request the server is handling. The refactor is paid
+once; that would be paid on every page view.
+
+**The Postgres adapter answers in SQLite's shapes.** Its type parsers return
+text for jsonb, dates and timestamps, numbers for numeric and `count(*)`, and
+1/0 for booleans. Every query and every test here was written against SQLite, so
+SQLite is the shape that must be matched rather than the one three hundred call
+sites defend against. `npm run pg:smoke` asserts each of those shapes against a
+real database, because a mismatch is silent: it surfaces a screen later as
+`JSON.parse` receiving `"[object Object]"`.
+
+**Portable SQL is written by hand, not translated at runtime.** The seam
+rewrites `?` to `$1` and nothing else. Statements use `current_timestamp`, `on
+conflict do nothing`, `true`/`false` and `returning id` — accepted as-is by
+both. Four things had to change to get there, and each was a real defect rather
+than a cosmetic one:
+
+| Was | Why it could not stay |
+|---|---|
+| `order by rowid desc limit 1` after an insert | `rowid` is SQLite's alone. It was also racy: two concurrent inserts and the second reads the first one's row. Now `returning id` |
+| `order by decided_at desc, rowid desc` | Same, and the tie is not hypothetical: `current_timestamp` is the TRANSACTION's start time on Postgres, so every row written together is identical. `decisionStamp()` in `src/lib/db/stamp.ts` now carries the order at microsecond resolution |
+| `max(v.value)` over the resolved values | `value` is `jsonb`, and Postgres has no `max(jsonb)`. Now `cast(v.value as text)`, a no-op on SQLite |
+| `do update set n = n + excluded.n` | Ambiguous on Postgres. Now qualified with the table name |
+
+Every statement the application issues was prepared against the live Postgres
+schema to find those. That check is worth repeating after any query changes.
+
 **Precedence is enforced by the database, not by the commit code.** The promotion
 of extract values is a conditional upsert that can only ever overwrite another
 extract value:

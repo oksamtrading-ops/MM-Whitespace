@@ -56,7 +56,7 @@ export async function commitParsed(_prev: CommitResultMessage | null, form: Form
   }
 
   try {
-    commitPeriod(db, parse.payload as Parameters<typeof commitPeriod>[1], {
+    await commitPeriod(db, parse.payload as Parameters<typeof commitPeriod>[1], {
       label, sourceSha256: parse.sha256, actorId: user.id,
     });
   } catch (err) {

@@ -22,7 +22,8 @@ export async function merge(_prev: MergeMessage | null, form: FormData): Promise
   if (!confirmed) return { ok: false, message: "Confirm the direction before merging." };
 
   try {
-    const { moved, discarded, preview } = mergeCompanies(db, { winnerId, loserId, actorId: user.id });
+    const { moved, discarded, preview } =
+      await mergeCompanies(db, { winnerId, loserId, actorId: user.id });
     revalidatePath("/companies");
     revalidatePath("/companies/merge");
     return {

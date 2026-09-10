@@ -8,7 +8,7 @@
  * that ever pointed at it still resolves. A published revision is not edited
  * by anything, this included.
  */
-import type { DatabaseSync } from "node:sqlite";
+import type { Sql } from "../db/sql.ts";
 
 export class MergeRefused extends Error {}
 
@@ -46,7 +46,7 @@ export function nameStem(normalized: string): string {
  * that look like one company, with the reason stated so it can be disagreed
  * with.
  */
-export function findDuplicateCandidates(db: DatabaseSync, limit = 50): Candidate[] {
+export async function findDuplicateCandidates(db: Sql, limit = 50): Promise<Candidate[]> {
   const found = new Map<string, Candidate>();
   const add = (c: Candidate) => {
     const key = [c.aId, c.bId].sort().join(":");
@@ -56,8 +56,7 @@ export function findDuplicateCandidates(db: DatabaseSync, limit = 50): Candidate
 
   // 1. The same identifier on two companies. The auditor tab's entity id is
   //    the only stable non-ticker identifier in the corpus.
-  const shared = db.prepare(
-    `select i.scheme, i.value,
+  const shared = await db.all(`select i.scheme, i.value,
             a.id as aId, a.canonical_name as aName,
             b.id as bId, b.canonical_name as bName
        from company_identifiers i
@@ -65,8 +64,7 @@ export function findDuplicateCandidates(db: DatabaseSync, limit = 50): Candidate
          on j.scheme = i.scheme and j.value = i.value and j.company_id > i.company_id
        join companies a on a.id = i.company_id and a.status = 'active'
        join companies b on b.id = j.company_id and b.status = 'active'
-      group by a.id, b.id, i.scheme, i.value`,
-  ).all() as Array<{ scheme: string; value: string; aId: string; aName: string; bId: string; bName: string }>;
+      group by a.id, b.id, i.scheme, i.value`) as Array<{ scheme: string; value: string; aId: string; aName: string; bId: string; bName: string }>;
   for (const r of shared) {
     add({ aId: r.aId, aName: r.aName, bId: r.bId, bName: r.bName,
           reason: "shared_identifier", strength: 1,
@@ -74,14 +72,12 @@ export function findDuplicateCandidates(db: DatabaseSync, limit = 50): Candidate
   }
 
   // 2. A name already recorded as somebody's former name.
-  const aliased = db.prepare(
-    `select al.company_id as aId, a.canonical_name as aName,
+  const aliased = await db.all(`select al.company_id as aId, a.canonical_name as aName,
             c.id as bId, c.canonical_name as bName, al.name as alias
        from company_aliases al
        join companies c on c.name_normalized = al.name_normalized and c.id != al.company_id
        join companies a on a.id = al.company_id
-      where a.status = 'active' and c.status = 'active'`,
-  ).all() as Array<{ aId: string; aName: string; bId: string; bName: string; alias: string }>;
+      where a.status = 'active' and c.status = 'active'`) as Array<{ aId: string; aName: string; bId: string; bName: string; alias: string }>;
   for (const r of aliased) {
     add({ aId: r.aId, aName: r.aName, bId: r.bId, bName: r.bName,
           reason: "alias_collision", strength: 2, detail: `“${r.alias}”` });
@@ -89,9 +85,7 @@ export function findDuplicateCandidates(db: DatabaseSync, limit = 50): Candidate
 
   // 3. The same name with a different corporate suffix. A hunch, and marked
   //    as one: two genuinely different companies can share a stem.
-  const active = db.prepare(
-    "select id, canonical_name, name_normalized from companies where status = 'active'",
-  ).all() as Array<{ id: string; canonical_name: string; name_normalized: string }>;
+  const active = await db.all("select id, canonical_name, name_normalized from companies where status = 'active'") as Array<{ id: string; canonical_name: string; name_normalized: string }>;
   const byStem = new Map<string, typeof active>();
   for (const c of active) {
     const stem = nameStem(c.name_normalized);
@@ -156,15 +150,14 @@ export type MergePreview = {
   frozenRevisions: number;
 };
 
-function company(db: DatabaseSync, id: string) {
-  return db.prepare(
-    "select id, canonical_name, status, merged_into_id from companies where id = ?").get(id) as
+async function company(db: Sql, id: string) {
+  return await db.get("select id, canonical_name, status, merged_into_id from companies where id = ?", id) as
     { id: string; canonical_name: string; status: string; merged_into_id: string | null } | undefined;
 }
 
-export function mergePreview(db: DatabaseSync, winnerId: string, loserId: string): MergePreview {
-  const winner = company(db, winnerId);
-  const loser = company(db, loserId);
+export async function mergePreview(db: Sql, winnerId: string, loserId: string): Promise<MergePreview> {
+  const winner = await company(db, winnerId);
+  const loser = await company(db, loserId);
   if (!winner || !loser) throw new MergeRefused("One of those companies no longer exists.");
   if (winnerId === loserId) throw new MergeRefused("A company cannot be merged into itself.");
   if (loser.status === "merged") {
@@ -174,53 +167,47 @@ export function mergePreview(db: DatabaseSync, winnerId: string, loserId: string
     throw new MergeRefused(`“${winner.canonical_name}” has itself been merged into another company.`);
   }
 
-  const moves = MOVES.map((m) => ({
+  const moves = (await Promise.all(MOVES.map(async (m) => ({
     table: m.table,
-    rows: (db.prepare(`select count(*) n from ${m.table} where ${m.column} = ?`)
-      .get(loserId) as { n: number }).n,
-  })).filter((m) => m.rows > 0);
+    rows: (await db.get(
+      `select count(*) n from ${m.table} where ${m.column} = ?`, loserId) as { n: number }).n,
+  })))).filter((m) => m.rows > 0);
 
   let duplicates = 0;
   for (const m of MOVES) {
     if (!m.unique) continue;
-    duplicates += (db.prepare(
-      `select count(*) n from ${m.table} l where l.${m.column} = ? and exists (
+    duplicates += (await db.get(`select count(*) n from ${m.table} l where l.${m.column} = ? and exists (
          select 1 from ${m.table} w where w.${m.column} = ?
-           and ${m.unique.map((c) => `w.${c} is l.${c}`).join(" and ")})`,
-    ).get(loserId, winnerId) as { n: number }).n;
+           and ${m.unique.map((c) => `w.${c} is l.${c}`).join(" and ")})`, loserId, winnerId) as { n: number }).n;
   }
 
   // Two companies with data in one period are two companies. Merging them
   // would collide on (period_id, company_id) and, worse, would be wrong.
-  const overlappingPeriods = (db.prepare(
-    `select distinct p.label
+  const overlappingPeriods = (await db.all(`select distinct p.label
        from company_period_facts a
        join company_period_facts b
          on b.period_id = a.period_id and b.company_id = ?
        join periods p on p.id = a.period_id
-      where a.company_id = ?`,
-  ).all(winnerId, loserId) as Array<{ label: string }>).map((r) => r.label);
+      where a.company_id = ?`, winnerId, loserId) as Array<{ label: string }>).map((r) => r.label);
 
-  const frozenRevisions = (db.prepare(
-    "select count(*) n from published_period_values where company_id = ?")
-    .get(loserId) as { n: number }).n;
+  const frozenRevisions = (await db.get("select count(*) n from published_period_values where company_id = ?", loserId) as { n: number }).n;
 
   return {
-    winner: { id: winner.id, name: winner.canonical_name },
-    loser: { id: loser.id, name: loser.canonical_name },
+    winner: { id:winner.id, name:winner.canonical_name },
+    loser: { id:loser.id, name:loser.canonical_name },
     moves, duplicates, overlappingPeriods, frozenRevisions,
   };
 }
 
 export type MergeResult = { moved: number; discarded: number; preview: MergePreview };
 
-export function mergeCompanies(
-  db: DatabaseSync, opts: { winnerId: string; loserId: string; actorId?: string | null },
-): MergeResult {
-  const preview = mergePreview(db, opts.winnerId, opts.loserId);
-  if (preview.overlappingPeriods.length > 0) {
+export async function mergeCompanies(
+  db: Sql, opts: { winnerId: string; loserId: string; actorId?: string | null },
+): Promise<MergeResult> {
+  const preview = await mergePreview(db, opts.winnerId, opts.loserId);
+  if ((await preview).overlappingPeriods.length > 0) {
     throw new MergeRefused(
-      `Both hold data in ${preview.overlappingPeriods.join(", ")}. Two companies in one ` +
+      `Both hold data in ${(await preview).overlappingPeriods.join(", ")}. Two companies in one ` +
       `period are two companies, not one recorded twice.`);
   }
 
@@ -232,37 +219,34 @@ export function mergeCompanies(
       // `is` rather than `=`, so a NULL exchange matches a NULL exchange:
       // 143 identifiers have no exchange and would otherwise never match.
       if (m.unique) {
-        const r = db.prepare(
-          `delete from ${m.table} where rowid in (
-             select l.rowid from ${m.table} l where l.${m.column} = ? and exists (
+        // Deleted by predicate rather than by rowid, which exists only in
+        // SQLite. `is not distinct from` rather than `=` so a NULL exchange
+        // matches a NULL exchange: 143 identifiers have no exchange and would
+        // otherwise never match.
+        const r = await db.run(`delete from ${m.table}
+             where ${m.column} = ? and exists (
                select 1 from ${m.table} w where w.${m.column} = ?
-                 and ${m.unique.map((c) => `w.${c} is l.${c}`).join(" and ")}))`,
-        ).run(opts.loserId, opts.winnerId);
+                 and ${m.unique.map((c) => `w.${c} is not distinct from ${m.table}.${c}`)
+                       .join(" and ")})`, opts.loserId, opts.winnerId);
         discarded += Number(r.changes ?? 0);
       }
-      const r = db.prepare(`update ${m.table} set ${m.column} = ? where ${m.column} = ?`)
-        .run(opts.winnerId, opts.loserId);
+      const r = await db.run(`update ${m.table} set ${m.column} = ? where ${m.column} = ?`, opts.winnerId, opts.loserId);
       moved += Number(r.changes ?? 0);
     }
     // The name it was known by is kept, or the merge loses the very thing it
     // was performed to preserve.
-    db.prepare(
-      `insert or ignore into company_aliases
+    await db.run(`insert into company_aliases
          (company_id, name, name_normalized, alias_type, source)
        select ?, canonical_name, name_normalized, 'former', 'merge'
-         from companies where id = ?`,
-    ).run(opts.winnerId, opts.loserId);
+         from companies where id = ?
+       on conflict do nothing`, opts.winnerId, opts.loserId);
 
     // A redirect, not a deletion: published revisions still point here.
-    db.prepare(
-      "update companies set status = 'merged', merged_into_id = ? where id = ?",
-    ).run(opts.winnerId, opts.loserId);
+    await db.run("update companies set status = 'merged', merged_into_id = ? where id = ?", opts.winnerId, opts.loserId);
 
-    db.prepare(
-      `insert into audit_log (event, actor_id, detail) values ('companies_merged', ?, ?)`,
-    ).run(opts.actorId ?? null, JSON.stringify({
-      winner: preview.winner, loser: preview.loser, moved, discarded,
-      frozenRevisionsLeftIntact: preview.frozenRevisions,
+    await db.run(`insert into audit_log (event, actor_id, detail) values ('companies_merged', ?, ?)`, opts.actorId ?? null, JSON.stringify({
+      winner:(await preview).winner, loser:(await preview).loser, moved, discarded,
+      frozenRevisionsLeftIntact:(await preview).frozenRevisions,
     }));
     db.exec("commit");
   } catch (err) {
@@ -273,10 +257,10 @@ export function mergeCompanies(
 }
 
 /** Follow a merge, so a link made before it still lands on the company. */
-export function resolveCompanyId(db: DatabaseSync, id: string, hops = 4): string {
+export async function resolveCompanyId(db: Sql, id: string, hops = 4): Promise<string> {
   let current = id;
   for (let i = 0; i < hops; i++) {
-    const row = db.prepare("select merged_into_id from companies where id = ?").get(current) as
+    const row = await db.get("select merged_into_id from companies where id = ?", current) as
       { merged_into_id: string | null } | undefined;
     if (!row?.merged_into_id) return current;
     current = row.merged_into_id;

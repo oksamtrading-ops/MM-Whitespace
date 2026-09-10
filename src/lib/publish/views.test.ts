@@ -39,14 +39,14 @@ const AGG: Aggregates = {
 
 // ------------------------------------------------------------ proof line
 
-test("the proof line ties, and says so", () => {
+test("the proof line ties, and says so", async () => {
   const { bars, proof } = marketBars(AGG);
   assert.equal(proof.text, "121 + 61 + 12 + 7 + 5 + 53 = 259 ✓");
   assert.equal(proof.ties, true);
   assert.equal(bars.length, 6);
 });
 
-test("the proof line FAILS VISIBLY when a bucket is dropped", () => {
+test("the proof line FAILS VISIBLY when a bucket is dropped", async () => {
   // This is the assertion that would have caught the 258-versus-259
   // discrepancy on its own screen.
   const bars = [{ label: "a", n: 121, pct: 0 }, { label: "b", n: 61, pct: 0 }];
@@ -57,7 +57,7 @@ test("the proof line FAILS VISIBLY when a bucket is dropped", () => {
 
 // --------------------------------------------------------- market view
 
-test("the foreign-HQ bucket is shown, always last, and never sorted into the ranking", () => {
+test("the foreign-HQ bucket is shown, always last, and never sorted into the ranking", async () => {
   const { bars } = marketBars(AGG);
   const last = bars[bars.length - 1];
   assert.match(last.label, /no Deloitte market/);
@@ -70,7 +70,7 @@ test("the foreign-HQ bucket is shown, always last, and never sorted into the ran
   assert.ok(!bars.some((b) => b.label === "Other"));
 });
 
-test("the named markets are sorted descending, with no value ramp", () => {
+test("the named markets are sorted descending, with no value ramp", async () => {
   const { bars } = marketBars(AGG);
   const named = bars.filter((b) => !b.terminal).map((b) => b.n);
   assert.deepEqual(named, [...named].sort((a, b) => b - a));
@@ -78,7 +78,7 @@ test("the named markets are sorted descending, with no value ramp", () => {
 
 // -------------------------------------------------------- auditor share
 
-test("Unknown is its own bar, is the longest, and is labelled as the finding", () => {
+test("Unknown is its own bar, is the longest, and is labelled as the finding", async () => {
   const { bars, proof } = auditorBars(AGG);
   const unknown = bars[bars.length - 1];
   assert.equal(unknown.label, "Unknown");
@@ -90,7 +90,7 @@ test("Unknown is its own bar, is the longest, and is labelled as the finding", (
   assert.equal(proof.ties, true);
 });
 
-test("auditor share is an emphasis encoding: Deloitte accented, everyone else grey", () => {
+test("auditor share is an emphasis encoding: Deloitte accented, everyone else grey", async () => {
   const { bars } = auditorBars(AGG);
   const deloitte = bars.find((b) => b.label === "Deloitte")!;
   assert.equal(deloitte.accent, true);
@@ -100,7 +100,7 @@ test("auditor share is an emphasis encoding: Deloitte accented, everyone else gr
   }
 });
 
-test("the hero figure is how much of this market is not ours", () => {
+test("the hero figure is how much of this market is not ours", async () => {
   const { hero, tiles } = populationTiles(AGG);
   assert.equal(hero, "Deloitte audits 17 of 259 (6.6%)");
   // Stat tiles, not a four-bar chart of four numbers.
@@ -109,7 +109,7 @@ test("the hero figure is how much of this market is not ours", () => {
 
 // ------------------------------------------------------------- gating
 
-test("a chart below its coverage floor becomes a meter, not a lie", () => {
+test("a chart below its coverage floor becomes a meter, not a lie", async () => {
   // Day one: 17 of 259 have stage evidence. The tier chart would render one
   // full-width bar -- confident, well-formed and entirely false.
   const gated = gateChart(
@@ -122,19 +122,19 @@ test("a chart below its coverage floor becomes a meter, not a lie", () => {
   assert.match(gated.reviewLink, /^\/review\/stage_evidence_state/);
 });
 
-test("a chart at or above its floor draws", () => {
+test("a chart at or above its floor draws", async () => {
   const gated = gateChart("footprint", "Footprint", "footprint", 247, 259, 95);
   assert.equal(gated.kind, "chart");
   assert.equal(gated.coveragePct, 95.4);
 });
 
-test("a view with no floor always draws", () => {
+test("a view with no floor always draws", async () => {
   assert.equal(gateChart("fee_views", "Fees", "audit_fee", 0, 259, null).kind, "chart");
 });
 
 // ---------------------------------------------------------- footprints
 
-test("the footprint views are named for what they actually compute", () => {
+test("the footprint views are named for what they actually compute", async () => {
   // Property location and stage are both recorded at COMPANY level with no link
   // between them, so "producing mines in province X" is underivable at any
   // confidence. Naming the view for the join would manufacture the number.
@@ -144,7 +144,7 @@ test("the footprint views are named for what they actually compute", () => {
   assert.ok(!/producing mines/i.test(JURISDICTION_TITLE));
 });
 
-test("a long axis is topped and tailed rather than truncated silently", () => {
+test("a long axis is topped and tailed rather than truncated silently", async () => {
   const many: Aggregates = {
     jurisdiction_footprint: Array.from({ length: 20 }, (_, i) => ({
       bucket: `J${i}`, sub: "-", n: 20 - i,
@@ -159,7 +159,7 @@ test("a long axis is topped and tailed rather than truncated silently", () => {
   assert.equal(last.n, bars.slice(12).reduce((a, b) => a + b.n, 0));
 });
 
-test("a short axis is not othered at all", () => {
+test("a short axis is not othered at all", async () => {
   const { bars, othered } = footprintBars(AGG, "province_footprint", 12);
   assert.equal(othered, 0);
   assert.equal(bars.length, 3);
@@ -167,14 +167,14 @@ test("a short axis is not othered at all", () => {
 
 // ---------------------------------------------------------- migration
 
-test("the first published period renders an empty state, not a blank grid", () => {
+test("the first published period renders an empty state, not a blank grid", async () => {
   const m = tierMigration(AGG, false);
   assert.equal(m.kind, "first_period");
   if (m.kind !== "first_period") return;
   assert.match(m.message, /first published period/);
 });
 
-test("research completing is NOT migration", () => {
+test("research completing is NOT migration", async () => {
   // Without this the first enrichment run shows 242 phantom upgrades and the
   // view is noise on its debut.
   assert.equal(classifyMovement("unclassified_no_stage_evidence", "1"), "research");
@@ -201,7 +201,7 @@ test("research completing is NOT migration", () => {
 
 // -------------------------------------------------- entrants & drop-outs
 
-test("a company just above the threshold is marked as near it", () => {
+test("a company just above the threshold is marked as near it", async () => {
   const threshold = 200_000_000;
   // Generation Mining and Greenland Resources sit 0.85% and 0.86% above.
   assert.equal(nearThreshold(201_700_000, threshold, 2), true);
@@ -211,7 +211,7 @@ test("a company just above the threshold is marked as near it", () => {
   assert.equal(nearThreshold(null, threshold, 2), false);
 });
 
-test("a threshold change is distinguished from a market move", () => {
+test("a threshold change is distinguished from a market move", async () => {
   // Otherwise switching the parameter once produces hundreds of spurious entrants.
   assert.equal(thresholdNote(200_000_000, 200_000_000, "CAD"), null);
   assert.equal(thresholdNote(200_000_000, null, "CAD"), null);
