@@ -13,8 +13,23 @@ import type { Sql } from "./sql.ts";
 
 export const DATABASE_PATH = process.env.MM_DATABASE ?? "./period.db";
 
+/**
+ * Where Postgres is, in the order the answer is most likely to be right.
+ *
+ * POSTGRES_URL and its non-pooling twin are what the Supabase integration
+ * injects into a Vercel project. Reading them means connecting the two
+ * services is a button rather than a secret copied by hand -- which matters
+ * beyond convenience: a credential that is never typed is never pasted into a
+ * chat, a ticket or a screenshot, and rotating it is the integration's job.
+ *
+ * MM_DATABASE_URL still wins, so a deployment can point somewhere else.
+ */
 export function databaseUrl(): string | null {
-  return process.env.MM_DATABASE_URL ?? process.env.DATABASE_URL ?? null;
+  return process.env.MM_DATABASE_URL
+    ?? process.env.DATABASE_URL
+    ?? process.env.POSTGRES_URL
+    ?? process.env.POSTGRES_URL_NON_POOLING
+    ?? null;
 }
 
 /**
