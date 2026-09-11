@@ -66,7 +66,8 @@ test("the embedded root is exactly the one whose provenance is recorded", () => 
 /* --------------------------------------------- transactions on a pool */
 
 import { Pool } from "pg";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PostgresSql } from "./postgres.ts";
 
@@ -134,4 +135,45 @@ test("no application code opens a transaction by hand", () => {
   };
   walk(root);
   assert.deepEqual(offenders, [], "use db.tx(async (db) => ...) instead");
+});
+
+/** Every unquoted camel-case column alias inside a template string, file by file. */
+export function unquotedCamelAliases(root: string): string[] {
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) { walk(full); continue; }
+      if (!/\.(ts|tsx)$/.test(entry) || /\.test\.ts$/.test(entry)) continue;
+      // Template strings are the odd-numbered pieces between backticks: that is
+      // where SQL lives, and where `as fooBar` is an alias rather than a cast.
+      const pieces = readFileSync(full, "utf8").split("`");
+      for (let i = 1; i < pieces.length; i += 2) {
+        for (const m of pieces[i].matchAll(/\bas ([a-z]+[A-Z][A-Za-z0-9]*)\b/g)) {
+          offenders.push(`${full.slice(root.length + 1)}: as ${m[1]}`);
+        }
+      }
+    }
+  };
+  walk(root);
+  return offenders;
+}
+
+test("no query names a column in camel case without quoting it", () => {
+  // Postgres folds an unquoted identifier to lower case and SQLite does not,
+  // so `select f.key as fieldKey` answers `fieldkey` in production and the
+  // code reading `row.fieldKey` gets undefined -- which put /review/undefined
+  // behind every link on the review board the first time production had a
+  // finding, while every test (SQLite) passed. Quote it: as "fieldKey".
+  const root = join(import.meta.dirname, "..", "..");
+  assert.deepEqual(unquotedCamelAliases(root), [], 'write as "camelCase", with the quotes');
+});
+
+test("the alias check finds what it is meant to find", () => {
+  // A check that never fails proves nothing.
+  const dir = mkdtempSync(join(tmpdir(), "mm-alias-"));
+  writeFileSync(join(dir, "q.ts"),
+    'const a = db.all(`select f.key as fieldKey, f.label as "okLabel" from t`);\n' +
+    "const b = x as unknown as SomeType;\n");
+  assert.deepEqual(unquotedCamelAliases(dir), ["q.ts: as fieldKey"]);
 });

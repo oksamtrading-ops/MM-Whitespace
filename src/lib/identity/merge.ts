@@ -57,8 +57,8 @@ export async function findDuplicateCandidates(db: Sql, limit = 50): Promise<Cand
   // 1. The same identifier on two companies. The auditor tab's entity id is
   //    the only stable non-ticker identifier in the corpus.
   const shared = await db.all(`select i.scheme, i.value,
-            a.id as aId, a.canonical_name as aName,
-            b.id as bId, b.canonical_name as bName
+            a.id as "aId", a.canonical_name as "aName",
+            b.id as "bId", b.canonical_name as "bName"
        from company_identifiers i
        join company_identifiers j
          on j.scheme = i.scheme and j.value = i.value and j.company_id > i.company_id
@@ -72,8 +72,8 @@ export async function findDuplicateCandidates(db: Sql, limit = 50): Promise<Cand
   }
 
   // 2. A name already recorded as somebody's former name.
-  const aliased = await db.all(`select al.company_id as aId, a.canonical_name as aName,
-            c.id as bId, c.canonical_name as bName, al.name as alias
+  const aliased = await db.all(`select al.company_id as "aId", a.canonical_name as "aName",
+            c.id as "bId", c.canonical_name as "bName", al.name as alias
        from company_aliases al
        join companies c on c.name_normalized = al.name_normalized and c.id != al.company_id
        join companies a on a.id = al.company_id

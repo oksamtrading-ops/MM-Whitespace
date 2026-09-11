@@ -33,9 +33,9 @@ export type FieldSummary = {
 };
 
 export async function reviewableFields(db: Sql, periodId: string): Promise<FieldSummary[]> {
-  return (await db.all(`select f.key as fieldKey, f.label,
+  return (await db.all(`select f.key as "fieldKey", f.label,
             count(distinct e.company_id) as proposals,
-            f.bulk_acceptable as bulkAcceptable,
+            f.bulk_acceptable as "bulkAcceptable",
             (select count(distinct d.company_id) from review_decisions d
               where d.period_id = ? and d.field_key = f.key and d.decision != 'undo'
                 and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
@@ -122,21 +122,21 @@ export type Row = Candidate & {
 };
 
 async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
-  const rows = await db.all(`select c.id as companyId, c.canonical_name as companyName,
-            e.id as findingId, e.attempt as findingAttempt, e.field_key as fieldKey,
-            e.proposed_value as proposedValue, e.evidence_strength as evidenceStrength,
-            e.anchor_mode as anchorMode, e.state as findingState,
+  const rows = await db.all(`select c.id as "companyId", c.canonical_name as "companyName",
+            e.id as "findingId", e.attempt as "findingAttempt", e.field_key as "fieldKey",
+            e.proposed_value as "proposedValue", e.evidence_strength as "evidenceStrength",
+            e.anchor_mode as "anchorMode", e.state as "findingState",
             e.evidence_excerpt as excerpt, e.abstained as abstained,
-            f.bulk_acceptable as bulkAcceptableField,
-            (select count(*) from finding_sources s where s.finding_id = e.id) as sourceCount,
-            (select s.url from finding_sources s where s.finding_id = e.id limit 1) as sourceUrl,
-            e.anchor_document_hash as documentHash,
+            f.bulk_acceptable as "bulkAcceptableField",
+            (select count(*) from finding_sources s where s.finding_id = e.id) as "sourceCount",
+            (select s.url from finding_sources s where s.finding_id = e.id limit 1) as "sourceUrl",
+            e.anchor_document_hash as "documentHash",
             -- From the facts table, not the resolved values: a decision
             -- rewrites the resolved row's source away from 'extract', and the
             -- diff would then show the AI's proposal against nothing.
             (select f.typed_value from company_period_facts f
               where f.period_id = ? and f.company_id = c.id and f.field_key = e.field_key
-                and f.assertion = 'asserted') as extractValue,
+                and f.assertion = 'asserted') as "extractValue",
             (select d.decision from review_decisions d
               where d.period_id = ? and d.company_id = c.id and d.field_key = e.field_key
                 and d.decision != 'undo'

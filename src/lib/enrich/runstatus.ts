@@ -107,8 +107,8 @@ export async function readRunStatus(
       where run_id = ? and state in ('claimed', 'researching')
         and lease_expires_at is not null and lease_expires_at < ?`, runId, nowStamp) as { n: number }).n;
 
-  const deadLetters = deadLetterCount === 0 ? [] : await db.all(`select c.canonical_name as companyName, j.field_group as fieldGroup,
-            j.attempts, j.last_error as lastError
+  const deadLetters = deadLetterCount === 0 ? [] : await db.all(`select c.canonical_name as "companyName", j.field_group as "fieldGroup",
+            j.attempts, j.last_error as "lastError"
        from enrichment_jobs j join companies c on c.id = j.company_id
       where j.run_id = ? and j.state = 'dead_letter'
       order by c.canonical_name limit 50`, runId) as RunStatus["deadLetters"];
