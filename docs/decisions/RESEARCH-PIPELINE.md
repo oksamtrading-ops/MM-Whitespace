@@ -2,8 +2,9 @@
 
 **Approved by Samuel Owusu, 11 September 2026**, with three new fields — fiscal
 year-end, auditor tenure and change of auditor, SEC registrant status.
-Built and tested the same day; **not yet run live** (`LIVE_ENABLED` is false
-in the build until the go-ahead for Run 1).
+Built and tested the same day, and **switched on in production that
+afternoon** after the go-ahead for Run 1. Nothing researches until a run is
+started on `/runs`.
 
 ## The goal
 
@@ -78,14 +79,14 @@ Run 1 measures it; every run records its real cost per job.
    without, one US-listed, one royalty company, one French-language filer.
 2. Run 2: 25 companies. Run 3: all 259, then the Batch API at half price.
 
-## Before Run 1
+## Before Run 1 — all done, 11 September 2026
 
-- `MM_SEC_CONTACT` in Vercel (a contact email EDGAR requires).
-- `LIVE_ENABLED = true` in `src/lib/enrich/worker.ts`, and `MM_ENRICH_MODE=live`
-  in Vercel.
-- Confirmation from whoever approved decision 1 that its scope covers the model
-  searching the web and the application downloading issuer sites and EDGAR.
-- Migrations `0015` applied to Supabase.
+- `MM_SEC_CONTACT` set in Vercel.
+- `LIVE_ENABLED = true` in `src/lib/enrich/worker.ts`; `MM_ENRICH_MODE=live` in Vercel.
+- Samuel confirmed decision 1's scope covers the model searching the web and
+  the application downloading issuer sites and EDGAR.
+- Migration `0015` applied to Supabase.
+- Run 1's five: AEM, WDO, ELE, NOU, RDS.
 
 ## Deliberately not in this build
 

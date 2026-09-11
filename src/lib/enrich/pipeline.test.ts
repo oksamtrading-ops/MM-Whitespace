@@ -219,13 +219,19 @@ test("a changed prompt version changes the cassette key by design", async () => 
   assert.notEqual(a, b, "a stale recording must not answer a changed prompt");
 });
 
-test("live mode refuses to run in this build", async () => {
-  const { db, periodId, companies } = await seeded();
-  const { runId } = await createRun(db, periodId, [companies[0].id],
-    { cassetteDir: CASSETTE_DIR, mode: "live" });
-  await assert.rejects(
-() => researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR, mode: "live" }),
-    /live mode is not enabled/);
+test("live mode without a key refuses before anything is sent", async () => {
+  const saved = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  try {
+    const { db, periodId, companies } = await seeded();
+    const { runId } = await createRun(db, periodId, [companies[0].id],
+      { cassetteDir: CASSETTE_DIR, mode: "live" });
+    await assert.rejects(
+      () => researchOneCompany(db, runId, PERIOD_AS_OF, { cassetteDir: CASSETTE_DIR, mode: "live" }),
+      /ANTHROPIC_API_KEY is not set/);
+  } finally {
+    if (saved !== undefined) process.env.ANTHROPIC_API_KEY = saved;
+  }
 });
 
 // ------------------------------------------------------------- end to end

@@ -133,11 +133,27 @@ test("a kick fails closed without a secret, and reports what the worker answered
   assert.match(no.note, /409.*MM_ENRICH_MODE/);
 });
 
-test("the enrichment mode fails closed when unset, and live is refused until the build enables it", () => {
+test("the enrichment mode fails closed when unset, and live refuses at the door without its settings", () => {
   assert.equal(enrichmentMode(undefined).mode, null);
   assert.equal(enrichmentMode("").mode, null);
   assert.equal(enrichmentMode("replay").mode, "replay");
-  assert.equal(enrichmentMode("live").mode, null);
-  assert.match(enrichmentMode("live").reason ?? "", /not enabled in this build/);
   assert.match(enrichmentMode("batch").reason ?? "", /not a mode/);
+
+  const saved = { key: process.env.ANTHROPIC_API_KEY, contact: process.env.MM_SEC_CONTACT };
+  try {
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.MM_SEC_CONTACT;
+    const missing = enrichmentMode("live");
+    assert.equal(missing.mode, null);
+    assert.match(missing.reason ?? "", /ANTHROPIC_API_KEY and MM_SEC_CONTACT/);
+
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-not-a-key";
+    assert.match(enrichmentMode("live").reason ?? "", /MM_SEC_CONTACT/);
+
+    process.env.MM_SEC_CONTACT = "contact@example.invalid";
+    assert.equal(enrichmentMode("live").mode, "live");
+  } finally {
+    if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = saved.key;
+    if (saved.contact === undefined) delete process.env.MM_SEC_CONTACT; else process.env.MM_SEC_CONTACT = saved.contact;
+  }
 });

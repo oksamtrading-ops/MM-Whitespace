@@ -32,12 +32,18 @@ export const SCHEMA_HASH = "findings-v1";
 export const DEFAULT_MODEL = "claude-sonnet-5";
 
 /**
- * Live mode is not enabled in this build. Flip this only after the risk and
- * legal review under decision 1 is complete, spike S3 has set the account's
- * spend limits, and a key is in the environment. The worker refuses below and
- * the start-run screen refuses before a run exists, from the same constant.
+ * Live mode is enabled in this build -- switched on 11 September 2026 by
+ * Samuel Owusu, after confirming that decision 1's scope covers web search and
+ * fetching issuer sites and EDGAR, that the key comes from the
+ * `mm-whitespace-prod` workspace with its own spend limit (S3), and that the
+ * key once exposed on screen was deleted.
+ *
+ * It is still not ON anywhere by default: a deployment researches live only
+ * with MM_ENRICH_MODE=live, ANTHROPIC_API_KEY and MM_SEC_CONTACT all set, and
+ * the start-run screen refuses before a run exists when any is missing.
+ * Setting this back to false stops live research everywhere at once.
  */
-export const LIVE_ENABLED = false;
+export const LIVE_ENABLED = true;
 
 /**
  * Whether this deployment may research at all, and how.
