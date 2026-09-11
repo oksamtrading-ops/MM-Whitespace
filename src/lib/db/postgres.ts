@@ -24,6 +24,7 @@
 import { readFileSync } from "node:fs";
 import { Pool, types as pgTypes, type PoolClient, type PoolConfig } from "pg";
 import { toNumberedPlaceholders, type Row, type Sql } from "./sql.ts";
+import { SUPABASE_ROOT_2021_CA } from "./supabase_ca.ts";
 
 const asText = (v: string) => v;
 const asNumber = (v: string) => Number(v);
@@ -70,22 +71,45 @@ export type PgOptions = {
  *
  * This connection carries licensed exchange data across the public internet,
  * and an unverified certificate makes the whole transport impersonable by
- * whoever holds the route. Supabase presents a publicly trusted certificate,
- * so the system trust store is enough; a deployment that terminates TLS with a
- * private authority sets MM_DATABASE_CA to that authority's PEM file and still
- * verifies against it.
+ * whoever holds the route.
+ *
+ * WHAT IS TRUSTED. Supabase's chain ends at its own private root, which no
+ * operating system trusts -- an earlier version of this comment claimed
+ * otherwise, and would have failed with SELF_SIGNED_CERT_IN_CHAIN on first
+ * contact. So a Supabase host is verified against exactly that root, shipped in
+ * supabase_ca.ts with its provenance recorded, and against nothing else. Any
+ * other host uses the system store. MM_DATABASE_CA overrides both, and takes
+ * either a path or the PEM text itself, because a serverless platform has
+ * environment variables and no filesystem to put a certificate on.
  *
  * `sslmode=disable` in the connection string is honoured, because a local
  * Postgres on a unix socket has no certificate to verify and pretending
  * otherwise would only teach people to reach for a flag that does not exist.
  */
-function tls(connectionString: string, override?: PoolConfig["ssl"]): PoolConfig["ssl"] {
+export function tls(connectionString: string, override?: PoolConfig["ssl"]): PoolConfig["ssl"] {
   if (override !== undefined) return override;
   if (/[?&]sslmode=disable\b/.test(connectionString)) return false;
-  const ca = process.env.MM_DATABASE_CA;
-  return ca
-    ? { ca: readFileSync(ca, "utf8"), rejectUnauthorized: true }
-    : { rejectUnauthorized: true };
+
+  const configured = process.env.MM_DATABASE_CA;
+  if (configured) {
+    const pem = configured.includes("-----BEGIN CERTIFICATE-----")
+      ? configured
+      : readFileSync(configured, "utf8");
+    return { ca: pem, rejectUnauthorized: true };
+  }
+  if (isSupabaseHost(connectionString)) {
+    return { ca: SUPABASE_ROOT_2021_CA, rejectUnauthorized: true };
+  }
+  return { rejectUnauthorized: true };
+}
+
+function isSupabaseHost(connectionString: string): boolean {
+  try {
+    const host = new URL(connectionString).hostname;
+    return host.endsWith(".supabase.com") || host.endsWith(".supabase.co");
+  } catch {
+    return false;
+  }
 }
 
 export class PostgresSql implements Sql {

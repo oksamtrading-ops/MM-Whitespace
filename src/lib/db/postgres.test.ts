@@ -1,0 +1,64 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { X509Certificate } from "node:crypto";
+import { tls } from "./postgres.ts";
+import { SUPABASE_ROOT_2021_CA } from "./supabase_ca.ts";
+
+const POOLER = "postgresql://postgres.x:y@aws-1-ca-central-1.pooler.supabase.com:5432/postgres";
+
+function withEnv<T>(key: string, value: string | undefined, fn: () => T): T {
+  const was = process.env[key];
+  if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  try { return fn(); } finally {
+    if (was === undefined) delete process.env[key]; else process.env[key] = was;
+  }
+}
+
+test("a Supabase host is verified against Supabase's root, never unverified", () => {
+  withEnv("MM_DATABASE_CA", undefined, () => {
+    const ssl = tls(POOLER) as { ca?: string; rejectUnauthorized: boolean };
+    assert.equal(ssl.rejectUnauthorized, true);
+    assert.equal(ssl.ca, SUPABASE_ROOT_2021_CA,
+      "the system store does not trust Supabase's root, so without this the first contact fails");
+  });
+});
+
+test("the direct host is a Supabase host too", () => {
+  withEnv("MM_DATABASE_CA", undefined, () => {
+    const ssl = tls("postgresql://postgres:y@db.abcdefgh.supabase.co:5432/postgres") as
+      { ca?: string };
+    assert.equal(ssl.ca, SUPABASE_ROOT_2021_CA);
+  });
+});
+
+test("any other host uses the system store, still verified", () => {
+  withEnv("MM_DATABASE_CA", undefined, () => {
+    const ssl = tls("postgresql://u:p@db.example.com:5432/app") as
+      { ca?: string; rejectUnauthorized: boolean };
+    assert.equal(ssl.ca, undefined);
+    assert.equal(ssl.rejectUnauthorized, true);
+  });
+});
+
+test("MM_DATABASE_CA accepts the PEM text itself, for a platform with no filesystem", () => {
+  const pem = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n";
+  withEnv("MM_DATABASE_CA", pem, () => {
+    const ssl = tls(POOLER) as { ca?: string; rejectUnauthorized: boolean };
+    assert.equal(ssl.ca, pem);
+    assert.equal(ssl.rejectUnauthorized, true);
+  });
+});
+
+test("sslmode=disable is honoured for a local socket, and nothing else turns it off", () => {
+  assert.equal(tls("postgresql://u@localhost/app?sslmode=disable"), false);
+  assert.notEqual(tls("postgresql://u@localhost/app?sslmode=require"), false);
+});
+
+test("the embedded root is exactly the one whose provenance is recorded", () => {
+  // If this changes, it was edited -- by a rotation, or by somebody. Either way
+  // it should be a deliberate act with its new provenance written down.
+  const fingerprint = new X509Certificate(SUPABASE_ROOT_2021_CA).fingerprint256;
+  assert.equal(fingerprint,
+    "80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA");
+  assert.match(new X509Certificate(SUPABASE_ROOT_2021_CA).subject, /Supabase Root 2021 CA/);
+});
