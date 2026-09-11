@@ -23,7 +23,7 @@ import {
   claimJobs, claimSlot, ensureSlots, heartbeat, HEARTBEAT_SECONDS, nextClaimableRun,
   releaseSlot, settleRun, WORKER_SLOTS,
 } from "./ledger.ts";
-import { cassetteDir as defaultCassetteDir, processJob } from "./worker.ts";
+import { cassetteDir as defaultCassetteDir, JobFailed, processJob } from "./worker.ts";
 
 export type EndReason =
   | "drained" | "deadline" | "no_slot" | "no_work" | "probe" | "error";
@@ -52,6 +52,8 @@ export type DrainOutcome = {
   reason: EndReason;
   jobsCompleted: number;
   jobsFailed: number;
+  /** Sent back to the queue with a delay: throttled or overloaded, not wrong. */
+  jobsRetried: number;
   /** Claimable work was still waiting when this worker stopped. */
   workRemains: boolean;
   seconds: number;
@@ -76,6 +78,7 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
   let reason: EndReason = "no_work";
   let completed = 0;
   let failed = 0;
+  let retried = 0;
   let lastError: string | null = null;
   let slot: number | null = null;
 
@@ -139,9 +142,11 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
           });
           completed++;
         } catch (err) {
-          // processJob has already dead-lettered the job; what is left is to
-          // remember why and carry on to the next one.
-          failed++;
+          // processJob has already routed the job -- back to the queue, the
+          // run halted, or abandoned. A retry is not a failure: the job comes
+          // back after its delay. What is left is to remember why.
+          const outcome = err instanceof JobFailed ? err.outcome : "dead_letter";
+          if (outcome === "retry") retried++; else failed++;
           lastError = (err as Error).message.split("\n")[0].slice(0, 500);
         }
         await settleRun(db, runId);
@@ -169,7 +174,7 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
     const workRemains = opts.probe ? false : (await nextClaimableRun(db)) !== null;
     return {
       workerRunId: run.id, workerId, reason, jobsCompleted: completed, jobsFailed: failed,
-      workRemains, seconds: Math.round((ended - started) / 1000), lastError,
+      jobsRetried: retried, workRemains, seconds: Math.round((ended - started) / 1000), lastError,
     };
   }
 }

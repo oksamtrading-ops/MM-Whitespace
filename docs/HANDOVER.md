@@ -326,11 +326,17 @@ it. Never run `git add -A` outside this project's folder.
    probe script (`scripts/s3_probe.mjs`); then `LIVE_ENABLED = true` in
    `src/lib/enrich/worker.ts` and `MM_ENRICH_MODE=live` in Vercel. Preparing
    S3 found that `classifyError` recognised **neither** real spend-limit
-   error; fixed and tested against the documented bodies. Live research is
-   also not wired through `classifyError` yet — `research()` throws before
-   it — so the retry/halt/dead-letter routing has to be connected when live
-   mode is turned on. The **Batch API** is not built: the ledger has an
-   `awaiting_batch` state and nothing submits or polls.
+   error; fixed and tested against the documented bodies. A research failure
+   is now routed by `routeFailure` in `src/lib/enrich/worker.ts`: retryable →
+   back to the queue after the vendor's `retry-after` or an exponential
+   backoff (a 529 charges no attempt); halt → the whole run stops with the
+   vendor's message as its reason; anything else → abandoned. **What live
+   mode still lacks is the pipeline itself**: `research()` has no live
+   branch — discovery (web search for candidate filings), fetching them
+   through `fetch.ts` (which has no PDF extractor yet), extraction with
+   structured output, and mapping the answer into findings. That is the next
+   build. The **Batch API** is not built: the ledger has an `awaiting_batch`
+   state and nothing submits or polls.
 4. **Excel export in the app.** It is only a Python command (`npm run
    export`); it needs a download, and on Vercel the same Python-function
    approach as the parser.

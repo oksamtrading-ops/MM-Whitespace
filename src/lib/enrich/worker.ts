@@ -13,8 +13,9 @@ import type { Sql } from "../db/sql.ts";
 import { gate, type StoredDocument } from "./anchor.ts";
 import { evidenceStrength, type EvidenceInput } from "./evidence.ts";
 import { Cassettes, cassetteKey, type Mode } from "./cassette.ts";
+import { classifyError, type Classification } from "./client.ts";
 import {
-  claimJobs, claimSlot, ensureSlots, recordSpend, releaseSlot, transition,
+  claimJobs, claimSlot, ensureSlots, haltRun, recordSpend, releaseSlot, requeueLater, transition,
   WORKER_SLOTS, type ClaimedJob,
 } from "./ledger.ts";
 import {
@@ -359,12 +360,70 @@ export async function hallucinationRate(
   return { unsupported, assessed, rate: assessed === 0 ? 0 : unsupported / assessed };
 }
 
+/** A job that did not complete, and which of the three ways it went. */
+export class JobFailed extends Error {
+  outcome: Classification;
+  constructor(outcome: Classification, cause: unknown) {
+    super((cause as Error)?.message ?? String(cause));
+    this.name = "JobFailed";
+    this.outcome = outcome;
+    this.cause = cause;
+  }
+}
+
+/** Backoff for a retryable failure: the vendor's retry-after when it gives one, else exponential. */
+export function retryDelayMs(err: unknown, attempts: number, random: () => number = Math.random): number {
+  const header = (err as { headers?: { get?: (k: string) => string | null } })?.headers?.get?.("retry-after");
+  const vendor = header && Number.isFinite(Number(header)) ? Number(header) * 1000 : 0;
+  const exponential = Math.min(30_000 * 2 ** Math.max(0, attempts - 1), 15 * 60_000);
+  // Jitter, so a dozen jobs throttled together do not all come back together.
+  return Math.max(vendor, exponential) + Math.floor(random() * 5_000);
+}
+
 /**
- * One CLAIMED job, through to a terminal state.
+ * Route a research failure the way docs/design/03's failure table says.
+ *
+ *   retry        back to the queue after a delay; dead-lettered once the job's
+ *                attempts are spent. An overloaded vendor (529) is not the
+ *                job's fault and charges no attempt.
+ *   halt         the whole run stops, with the vendor's message as the reason.
+ *                A spend limit, bad credentials or a billing problem would
+ *                fail every remaining company the same way, so failing them
+ *                one at a time is the one wrong answer.
+ *   dead_letter  this job alone is wrong: a malformed request, a refusal, a
+ *                missing recording, an egress-scan hit.
+ */
+export async function routeFailure(
+  db: Sql, runId: string, jobId: string, err: unknown, now: number = Date.now(),
+): Promise<Classification> {
+  const message = ((err as Error)?.message ?? String(err)).split("\n")[0].slice(0, 500);
+  const outcome = classifyError(err);
+
+  if (outcome === "halt") {
+    await haltRun(db, runId, `the model vendor refused: ${message}`);
+    return "halt";
+  }
+  if (outcome === "retry") {
+    const job = await db.get("select attempts, max_attempts from enrichment_jobs where id = ?", jobId) as
+      { attempts: number; max_attempts: number };
+    const overloaded = (err as { status?: number })?.status === 529;
+    if (!overloaded && job.attempts >= job.max_attempts) {
+      await transition(db, jobId, "dead_letter", { error: `attempts exhausted; last: ${message}` });
+      return "dead_letter";
+    }
+    await requeueLater(db, jobId, new Date(now + retryDelayMs(err, job.attempts)), message, overloaded);
+    return "retry";
+  }
+  await transition(db, jobId, "dead_letter", { error: message });
+  return "dead_letter";
+}
+
+/**
+ * One CLAIMED job, through to a terminal state -- or back to the queue.
  *
  * The caller holds the slot and the lease; this holds the order of operations.
- * A research failure dead-letters the job and rethrows, so a drain loop can
- * record the error and move on while a single-company caller sees it.
+ * A research failure is routed by routeFailure and rethrown as JobFailed, so
+ * a drain loop can count it and move on while a single-company caller sees it.
  */
 export async function processJob(
   db: Sql, runId: string, job: ClaimedJob, periodAsOf: string, opts: RunOptions,
@@ -376,8 +435,7 @@ export async function processJob(
   try {
     ({ body, attempt } = await research(db, job.id, row, opts));
   } catch (err) {
-    await transition(db, job.id, "dead_letter", { error: (err as Error).message });
-    throw err;
+    throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
   }
 
   await transition(db, job.id, "persisting");

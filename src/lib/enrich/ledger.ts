@@ -197,10 +197,41 @@ export async function recordSpend(db: Sql, runId: string, usd: number): Promise<
   await db.run("update enrichment_runs set spend_usd = spend_usd + ? where id = ?", usd, runId);
   const state = await budgetState(db, runId);
   if (state.halt) {
-    await db.run("update enrichment_runs set status = 'halted', halt_reason = ? where id = ?", `budget exhausted: ${state.spend.toFixed(2)} of ${state.budget.toFixed(2)}`, runId);
-    // Both spend-limit error shapes route to halt, not retry.
-    await db.run(`update enrichment_jobs set state = 'halted', leased_by = null, lease_expires_at = null
-        where run_id = ? and state in ('queued','claimed','researching','awaiting_batch')`, runId);
+    await haltRun(db, runId, `budget exhausted: ${state.spend.toFixed(2)} of ${state.budget.toFixed(2)}`);
   }
   return state;
+}
+
+/**
+ * Stop a run and everything unfinished in it, recording why.
+ *
+ * Two causes arrive here and the runbook tells them apart by the reason: the
+ * run's own budget ("budget exhausted: ..."), and the vendor refusing on a
+ * spend limit, credentials or billing (the vendor's message, verbatim). Jobs
+ * move to `halted`, not `dead_letter`, because nothing is wrong with them --
+ * the runbook's resume requeues exactly these.
+ */
+export async function haltRun(db: Sql, runId: string, reason: string): Promise<void> {
+  await db.run(`update enrichment_runs set status = 'halted', halt_reason = ?
+      where id = ? and status in ('queued', 'running', 'awaiting_batch')`, reason.slice(0, 500), runId);
+  await db.run(`update enrichment_jobs set state = 'halted', leased_by = null, lease_expires_at = null,
+        updated_at = ?
+      where run_id = ? and state in ('queued','claimed','researching','awaiting_batch')`, stamp(), runId);
+}
+
+/**
+ * Put a job back in the queue, not before `availableAt`.
+ *
+ * `refundAttempt` gives back the attempt charged on entering `researching`,
+ * for failures that say nothing about the job: an overloaded vendor is the
+ * design's example (docs/design/03 -- "does not count as an attempt").
+ */
+export async function requeueLater(
+  db: Sql, jobId: string, availableAt: Date, error: string, refundAttempt = false,
+): Promise<void> {
+  await transition(db, jobId, "queued", { error });
+  await db.run(`update enrichment_jobs
+        set available_at = ?, attempts = attempts - ?
+      where id = ?`, availableAt.toISOString().replace("T", " ").slice(0, 19),
+        refundAttempt ? 1 : 0, jobId);
 }
