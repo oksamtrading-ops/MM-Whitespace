@@ -340,6 +340,41 @@ async function journeys(dbPath) {
   check("a company that is not in the population is refused plainly",
         missing.html.includes("No such company"));
 
+  // Run 1: review changed a company after publication and the profile, which
+  // reads the published revision, kept saying the old thing without a word.
+  {
+    const { DatabaseSync } = await import("node:sqlite");
+    const handle = new DatabaseSync(dbPath);
+    const companyId = idMatch?.[1];
+    const periodId = handle.prepare("select id from periods order by market_cap_as_of desc limit 1").get().id;
+    const before = handle.prepare(`select value, source, evidence_state from company_period_field_values
+        where period_id = ? and company_id = ? and field_key = 'website'`).get(periodId, companyId);
+    const put = (value, source, state) => {
+      handle.prepare(`delete from company_period_field_values
+          where period_id = ? and company_id = ? and field_key = 'website'`).run(periodId, companyId);
+      if (value !== undefined) {
+        handle.prepare(`insert into company_period_field_values
+            (period_id, company_id, field_key, value, source, evidence_state) values (?, ?, 'website', ?, ?, ?)`)
+          .run(periodId, companyId, value, source, state);
+      }
+    };
+    const asAnalyst = await get(`/companies/${companyId}`, analyst.cookie);
+    check("an unchanged company carries no unpublished notice", !asAnalyst.html.includes("Not yet published"));
+    put('"https://changed-in-review.example"', "manual_entry", "asserted");
+    const changed = await get(`/companies/${companyId}`, analyst.cookie);
+    // React separates adjacent text with <!-- -->; read the text, not the markup.
+    const said = changed.html.replace(/<!-- -->/g, "");
+    check("an Analyst is told what review changed since the published revision",
+          said.includes("Not yet published") && /changed\s+in review: [^<]*Website/.test(said) &&
+          /Publish revision \d+/.test(said),
+          said.match(/Not yet published[\s\S]{0,400}/)?.[0] ?? "no notice");
+    const asViewer = await get(`/companies/${companyId}`, viewer.cookie);
+    check("a Viewer is not", !asViewer.html.includes("Not yet published") &&
+          !asViewer.html.includes("changed-in-review"));
+    put(before?.value, before?.source, before?.evidence_state);
+    handle.close();
+  }
+
   // 9. docs/design/03: run state is explicit and user-visible, and NEVER a
   //    bare spinner. Two of the seven states are derived, not stored.
   console.log("\n9. the run screen");

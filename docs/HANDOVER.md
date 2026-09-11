@@ -351,6 +351,11 @@ it. Never run `git add -A` outside this project's folder.
    - **Samuel reviews Run 1** on `/review`: websites and EDGAR values from
      pass 1, fields from pass 2. Elemental's head office really is Littleton,
      Colorado; there is no reject, so Override or Flag anything wrong.
+     Nouveau Monde's head office conflicts: EDGAR's L'Ange-Gardien (accepted)
+     against its own AIF's Saint-Michel-des-Saints (pending).
+   - **Then publish revision 2.** A company page reads the published revision,
+     for everyone, so nothing accepted shows until then; an Analyst or Admin
+     sees a "Not yet published" notice naming what changed.
    - **Re-run the fees**, if Samuel wants them: pass 2, "every eligible
      company", tickers AEM, ELE, NOU, WDO, about $0.60. Findings are not
      re-checked in place; a new run makes new ones.

@@ -2,7 +2,9 @@ import Link from "next/link";
 import type { Metadata, Route } from "next";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
-import { readCompanyProfile, SOURCE_LABEL, type ProfileValue } from "../../../../lib/profile/company.ts";
+import {
+  readCompanyProfile, SOURCE_LABEL, unpublishedChanges, type ProfileValue,
+} from "../../../../lib/profile/company.ts";
 import { evidenceBand } from "../../../../lib/review/decide.ts";
 import Facts from "../../../_ui/Facts.tsx";
 import Refusal from "../../../_ui/Refusal.tsx";
@@ -58,6 +60,10 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
                     action={{ href: "/companies", label: "Back to companies" }} />;
   }
 
+  // Only someone who can change a value is told it has changed; a Viewer
+  // reads the published revision and nothing about what may replace it.
+  const pending = canReview && p.publication ? await unpublishedChanges(ctx.db, p.companyId) : null;
+
   const auditor = p.values.find((v) => v.fieldKey === "auditor");
   const auditorName = auditor && auditor.value !== null ? String(auditor.value) : null;
   const isDeloitte = auditorName === "Deloitte";
@@ -72,6 +78,22 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
       <div className="reading">
         <p className="crumb rise"><Link href="/companies" prefetch={false}>← Companies</Link></p>
         <h1 className="rise">{p.name}</h1>
+
+        {pending && (pending.fields.length > 0 || pending.tier) && (
+          <div className="notice rise" role="status">
+            <b>Not yet published</b>
+            <span>
+              This page shows revision {pending.revision}, which is what a Viewer sees.{" "}
+              {pending.tier && <>Since then its tier has moved to <strong>{tierWords(pending.tier.to)}</strong>
+                {" "}(published: {tierWords(pending.tier.from)}). </>}
+              {pending.fields.length > 0 && <>
+                {pending.fields.length === 1 ? "One value has" : `${pending.fields.length} values have`} changed
+                {" "}in review: {pending.fields.join(", ")}.{" "}
+              </>}
+              <Link href={"/publish" as Route} prefetch={false}>Publish revision {pending.revision + 1}</Link> to show them.
+            </span>
+          </div>
+        )}
 
         {/* The two things a partner opened this page to learn. */}
         <p className="verdict rise">
@@ -119,7 +141,9 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
           {p.tier && (
             <p className="note">
               Rule set <code>{p.tier.ruleSetVersion}</code>.{" "}
-              {p.tier.tier === null && canReview && (
+              {/* Not when review has already classified it: the stage is
+                  researched, and only waiting to be published. */}
+              {p.tier.tier === null && canReview && !pending?.tier && (
                 <Link href={"/review/stage_evidence_state?bucket=need_review" as Route} prefetch={false}>
                   Research the stage →
                 </Link>
@@ -193,6 +217,10 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
       </aside>
     </div>
   );
+}
+
+function tierWords(t: { tier: number | null; status: string }): string {
+  return t.tier === null ? (UNCLASSIFIED[t.status] ?? "Unclassified") : `Tier ${t.tier}`;
 }
 
 function ValueRow({ v }: { v: ProfileValue }) {

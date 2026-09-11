@@ -200,6 +200,82 @@ export async function readCompanyProfile(
   };
 }
 
+export type UnpublishedChanges = {
+  /** The revision the page is showing. */
+  revision: number;
+  /** Labels of the fields whose working value or provenance differs from it. */
+  fields: string[];
+  /** Set when the working tier differs from the published one. */
+  tier: { from: { tier: number | null; status: string }; to: { tier: number | null; status: string } } | null;
+};
+
+/**
+ * What an Analyst has changed about a company that the published revision
+ * does not show yet.
+ *
+ * Once a period is published, the profile reads the frozen revision -- for
+ * everyone, so a partner never sees an unpublished value. The cost was an
+ * Analyst accepting a stage in review and then being told, on this page, that
+ * the company had "no stage research yet" (Run 1, Nouveau Monde). This is the
+ * difference, for the page to say so. A publication is a straight copy of the
+ * working values, so a field-by-field comparison is exact. Never for a Viewer.
+ */
+export async function unpublishedChanges(db: Sql, companyId: string): Promise<UnpublishedChanges | null> {
+  const period = await db.get("select id from periods order by market_cap_as_of desc limit 1") as
+    { id: string } | undefined;
+  if (!period) return null;
+  const pub = await db.get(`select id, revision from period_publications
+      where period_id = ? order by revision desc limit 1`, period.id) as
+    { id: string; revision: number } | undefined;
+  if (!pub) return null;
+
+  type Row = { field_key: string; value: unknown; source: string };
+  const live = await db.all(`select field_key, value, source from company_period_field_values
+      where period_id = ? and company_id = ?`, period.id, companyId) as Row[];
+  const frozen = new Map((await db.all(`select field_key, value, source from published_period_values
+      where publication_id = ? and company_id = ?`, pub.id, companyId) as Row[]).map((r) => [r.field_key, r]));
+
+  const changed = new Set<string>();
+  for (const row of live) {
+    const was = frozen.get(row.field_key);
+    frozen.delete(row.field_key);
+    // An empty working value with nothing published is not a change anyone can see.
+    if (!was) { if (canonical(row.value) !== "null") changed.add(row.field_key); continue; }
+    if (canonical(row.value) !== canonical(was.value) || row.source !== was.source) changed.add(row.field_key);
+  }
+  for (const [key, was] of frozen) if (canonical(was.value) !== "null") changed.add(key);
+
+  const tierOf = async (sql: string, id: string) =>
+    await db.get(sql, id, companyId) as { tier: number | null; status: string } | undefined;
+  const liveTier = await tierOf("select tier, status from tiers where period_id = ? and company_id = ?", period.id);
+  const pubTier = await tierOf(`select tier, status from published_period_tiers
+      where publication_id = ? and company_id = ?`, pub.id);
+  const tierMoved = Boolean(liveTier && pubTier &&
+    ((liveTier.tier ?? null) !== (pubTier.tier ?? null) || liveTier.status !== pubTier.status));
+
+  const catalogue = new Map(
+    (await db.all("select key, label from field_catalog") as Array<{ key: string; label: string }>)
+      .map((f) => [f.key, f.label]));
+  return {
+    revision: pub.revision,
+    fields: [...changed].map((k) => catalogue.get(k) ?? k).sort((a, b) => a.localeCompare(b)),
+    tier: tierMoved
+      ? { from: { tier: pubTier!.tier ?? null, status: pubTier!.status },
+          to: { tier: liveTier!.tier ?? null, status: liveTier!.status } }
+      : null,
+  };
+}
+
+/** A value as comparable text: parsed from either engine's form, keys in order. */
+function canonical(raw: unknown): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(sort)
+      : v && typeof v === "object"
+        ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])]))
+        : v;
+  return JSON.stringify(sort(parseJson(raw)) ?? null);
+}
+
 type RawValue = {
   field_key: string; value: string | null; source: string; evidence_state: string | null;
   evidence_strength: number | null; excerpt: string | null; sources: string | null;
