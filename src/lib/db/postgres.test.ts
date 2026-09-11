@@ -62,3 +62,76 @@ test("the embedded root is exactly the one whose provenance is recorded", () => 
     "80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA");
   assert.match(new X509Certificate(SUPABASE_ROOT_2021_CA).subject, /Supabase Root 2021 CA/);
 });
+
+/* --------------------------------------------- transactions on a pool */
+
+import { Pool } from "pg";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { PostgresSql } from "./postgres.ts";
+
+/** A pool whose connections record what was sent to them. */
+function recordingPool() {
+  const log: Array<{ client: number; text: string }> = [];
+  let next = 0;
+  const pool = new Pool({ max: 4 });
+  const clientFor = () => {
+    const id = ++next;
+    return {
+      query: async (q: string | { text: string }) => {
+        log.push({ client: id, text: typeof q === "string" ? q : q.text });
+        return { rows: [], rowCount: 1 };
+      },
+      release: () => {},
+    };
+  };
+  (pool as unknown as { connect: () => Promise<unknown> }).connect = async () => clientFor();
+  (pool as unknown as { query: (q: unknown) => Promise<unknown> }).query = async (q) => {
+    log.push({ client: 0, text: typeof q === "string" ? q : (q as { text: string }).text });
+    return { rows: [], rowCount: 1 };
+  };
+  return { pool, log };
+}
+
+test("a Postgres transaction is ONE connection: begin, every statement, commit", async () => {
+  const { pool, log } = recordingPool();
+  const db = new PostgresSql(pool);
+  await db.tx(async (db) => {
+    await db.run("insert into t values (?)", 1);
+    await db.run("insert into t values (?)", 2);
+  });
+  const clients = new Set(log.map((l) => l.client));
+  assert.equal(clients.size, 1, `statements spread over connections ${[...clients]}`);
+  assert.ok(!clients.has(0), "nothing may go to the pool's shared query path");
+  assert.deepEqual(log.map((l) => l.text.split(" ")[0]), ["begin", "insert", "insert", "commit"]);
+});
+
+test("a throw inside a Postgres transaction rolls back on the same connection", async () => {
+  const { pool, log } = recordingPool();
+  const db = new PostgresSql(pool);
+  await assert.rejects(db.tx(async (db) => {
+    await db.run("insert into t values (?)", 1);
+    throw new Error("no");
+  }));
+  assert.equal(new Set(log.map((l) => l.client)).size, 1);
+  assert.equal(log.at(-1)?.text, "rollback");
+});
+
+test("no application code opens a transaction by hand", () => {
+  // `db.exec("begin")` works on SQLite and silently does not on a pool: that
+  // shipped once, in publish, commit and merge. db.tx is the only way in.
+  const root = join(import.meta.dirname, "..", "..");
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) { walk(full); continue; }
+      if (!/\.(ts|tsx)$/.test(entry) || /\.test\.ts$/.test(entry)) continue;
+      if (/[/\\]db[/\\](sqlite|postgres|sql)\.ts$/.test(full)) continue;
+      const src = readFileSync(full, "utf8").replace(/\/\/.*$/gm, "");
+      if (/\.exec\(\s*["'](begin|commit|rollback)["']/i.test(src)) offenders.push(full);
+    }
+  };
+  walk(root);
+  assert.deepEqual(offenders, [], "use db.tx(async (db) => ...) instead");
+});

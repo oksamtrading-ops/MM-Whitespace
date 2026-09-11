@@ -235,10 +235,10 @@ test("the allowlist is derived from the extract, and page titles are ignored", a
          (period_id, company_id, field_key, value, source, evidence_state)
        values (?, ?, 'website', ?, 'extract', 'asserted')`, periodId, companyId, JSON.stringify(value));
 
-  put(companies[0].id, "https://northco.invalid/investors");
+  await put(companies[0].id, "https://northco.invalid/investors");
   // 45 of 143 real values are page titles rather than URLs. A title is not a
   // domain and must not widen what the fetcher will reach.
-  put(companies[1].id, "Royalco Streaming Inc. | Official Site");
+  await put(companies[1].id, "Royalco Streaming Inc. | Official Site");
 
   const allow = await allowlistFromPeriod(db, periodId);
   assert.equal(isAllowedHost("northco.invalid", await allow), true);

@@ -114,8 +114,8 @@ test("a fabrication rate above the ceiling closes the gate", async () => {
           model, prompt_version, abstained)
        values (?, ?, ?, ?, 'auditor', 'none', ?, 'm', 'p', ?)`, run.id, job.id, attempt, co, state, abstained);
 
-  insert("unsupported", 1);
-  insert("proposed", 2);
+  await insert("unsupported", 1);
+  await insert("proposed", 2);
   const gate = await evaluateGate(db, pid);
   assert.ok(gate.blockers.some((b) => b.kind === "hallucination_rate"),
     "1 of 2 assessed is 50%, far over the 2% ceiling");
@@ -298,7 +298,7 @@ test("a failed publish leaves no half-written publication behind", async () => {
   const pid = await periodId(db);
   // Remove a table the snapshot writes to AFTER the publication row and the
   // values, so the failure lands mid-transaction rather than before it starts.
-  db.exec("drop table publication_aggregates");
+  await db.exec("drop table publication_aggregates");
   await assert.rejects(
 () => publishPeriod(db, pid));
   assert.equal(

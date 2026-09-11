@@ -213,8 +213,12 @@ export async function mergeCompanies(
 
   let moved = 0;
   let discarded = 0;
-  db.exec("begin");
-  try {
+  // One transaction on ONE connection. `db.exec("begin")` looked like this and
+  // was not: against a pool, begin, every statement and commit can each land
+  // on a different connection -- no atomicity, and a connection returned to
+  // the pool still inside a transaction. The callback's `db` shadows the outer
+  // one on purpose, so nothing in the body can reach past the transaction.
+  await db.tx(async (db) => {
     for (const m of MOVES) {
       // `is` rather than `=`, so a NULL exchange matches a NULL exchange:
       // 143 identifiers have no exchange and would otherwise never match.
@@ -248,11 +252,7 @@ export async function mergeCompanies(
       winner:(await preview).winner, loser:(await preview).loser, moved, discarded,
       frozenRevisionsLeftIntact:(await preview).frozenRevisions,
     }));
-    db.exec("commit");
-  } catch (err) {
-    db.exec("rollback");
-    throw err;
-  }
+  });
   return { moved, discarded, preview };
 }
 

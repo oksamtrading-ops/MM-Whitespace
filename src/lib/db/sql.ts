@@ -39,9 +39,11 @@ export interface Sql {
   /** Multi-statement DDL. Never takes parameters, never takes user input. */
   exec(sql: string): Promise<void>;
   /**
-   * One transaction. The callback gets a handle bound to it; using the outer
-   * handle inside the callback is a bug the Postgres implementation detects,
-   * because there the two are different connections.
+   * One transaction. The callback gets a handle bound to it, and on Postgres
+   * that is a different connection from the outer handle's pool -- so a query
+   * through the outer handle inside the callback runs OUTSIDE the transaction.
+   * Nothing detects that at runtime. Name the callback's parameter `db` and let
+   * it shadow the outer one, which is how every caller here does it.
    */
   tx<T>(fn: (sql: Sql) => Promise<T>): Promise<T>;
   /**

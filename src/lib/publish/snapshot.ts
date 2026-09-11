@@ -71,8 +71,12 @@ export async function publishPeriod(
     overridden: Boolean(opts.overrideReason), banner: null,
   };
 
-  db.exec("begin");
-  try {
+  // One transaction on ONE connection. `db.exec("begin")` looked like this and
+  // was not: against a pool, begin, every statement and commit can each land
+  // on a different connection -- no atomicity, and a connection returned to
+  // the pool still inside a transaction. The callback's `db` shadows the outer
+  // one on purpose, so nothing in the body can reach past the transaction.
+  await db.tx(async (db) => {
     // An amendment is a new revision, never a mutation of the last one.
     const last = await db.get("select coalesce(max(revision), 0) r from period_publications where period_id = ?", periodId) as { r: number };
     const revision = last.r + 1;
@@ -241,11 +245,7 @@ export async function publishPeriod(
             blockers:(await gate).blockers.map((b) => b.detail),
           }));
 
-    db.exec("commit");
-  } catch (err) {
-    db.exec("rollback");
-    throw err;
-  }
+  });
 
   if (opts.overrideReason) {
     result.banner = overrideBanner(opts.overrideReason,(await gate).blockers, stamp());

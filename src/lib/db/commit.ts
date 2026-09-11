@@ -82,8 +82,12 @@ export async function commitPeriod(
     stages: 0, tiers: 0, traces: 0, graduations: 0, preserved: 0,
   };
 
-  db.exec("begin");
-  try {
+  // One transaction on ONE connection. `db.exec("begin")` looked like this and
+  // was not: against a pool, begin, every statement and commit can each land
+  // on a different connection -- no atomicity, and a connection returned to
+  // the pool still inside a transaction. The callback's `db` shadows the outer
+  // one on purpose, so nothing in the body can reach past the transaction.
+  await db.tx(async (db) => {
     // The Admin's defaults are copied ONTO the period at creation and belong
     // to it from then on: a re-commit must not move the threshold a period
     // was published against.
@@ -241,10 +245,6 @@ export async function commitPeriod(
     await db.run(`insert into audit_log (event, actor_id, period_id, detail)
        values ('import_committed', ?, ?, ?)`, opts.actorId ?? null, period.id, JSON.stringify(result));
 
-    db.exec("commit");
-  } catch (err) {
-    db.exec("rollback");
-    throw err;
-  }
+  });
   return result;
 }
