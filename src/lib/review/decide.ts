@@ -10,6 +10,7 @@
  */
 import { decisionStamp } from "../db/stamp.ts";
 import type { Sql } from "../db/sql.ts";
+import { preserveExtract, resolveAfterDecision } from "./resolve.ts";
 
 export type DecisionKind = "accept" | "override" | "flag" | "undo";
 
@@ -172,6 +173,10 @@ export async function recordDecision(db: Sql, opts: RecordOptions): Promise<stri
   if (opts.decision === "override" && opts.overrideValue === undefined) {
     throw new Error("an override requires a value");
   }
+  // Before anything displaces the file's value, keep it: it is what undo restores.
+  if (opts.decision === "accept" || opts.decision === "override") {
+    await preserveExtract(db, opts.periodId, opts.companyId, opts.fieldKey);
+  }
   const row = await db.get(`insert into review_decisions
        (period_id, company_id, field_key, decision, override_value, reason,
         finding_id, finding_attempt, actor_id, bulk, undoes_id, decided_at)
@@ -182,22 +187,18 @@ export async function recordDecision(db: Sql, opts: RecordOptions): Promise<stri
         opts.actorId ?? null, Boolean(opts.bulk), opts.undoesId ?? null,
         decisionStamp()) as { id: string };
 
-  // An accepted or overridden value is promoted into the resolved-value table,
-  // where the conditional upsert protects it from any later extract import.
-  if (opts.decision === "accept" || opts.decision === "override") {
-    const value = opts.decision === "override"
-      ? JSON.stringify(opts.overrideValue)
-      : (await db.get("select proposed_value v from enrichment_findings where id = ?", opts.findingId ?? "") as { v: string } | undefined)?.v ?? null;
-    await db.run(`insert into company_period_field_values as v
-         (period_id, company_id, field_key, value, source, evidence_state, actor_id)
-       values (?, ?, ?, ?, ?, 'asserted', ?)
-       on conflict (period_id, company_id, field_key) do update
-         set value = excluded.value, source = excluded.source,
-             evidence_state = excluded.evidence_state, actor_id = excluded.actor_id,
-             decided_at = current_timestamp
-         where v.frozen_at is null`, opts.periodId, opts.companyId, opts.fieldKey, value,
-          opts.decision === "override" ? "manual_override" : "ai_accepted",
-          opts.actorId ?? null);
+  // The resolved value follows the decisions standing on the field -- an
+  // accept, an override, or, once those are undone, the file's own value --
+  // and the tier follows the value. The conditional upsert in commit.ts still
+  // protects every non-extract value from a later import.
+  if (opts.decision !== "flag") {
+    const target = opts.decision === "undo"
+      ? await db.get("select company_id, field_key from review_decisions where id = ?", opts.undoesId ?? "") as
+          { company_id: string; field_key: string } | undefined
+      : { company_id: opts.companyId, field_key: opts.fieldKey };
+    if (target) {
+      await resolveAfterDecision(db, opts.periodId, target.company_id, target.field_key, opts.actorId ?? null);
+    }
   }
   return row.id;
 }

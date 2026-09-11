@@ -10,7 +10,8 @@ import type { Sql } from "./sql.ts";
 import { classify, deriveFootprint, RULE_SET_VERSION, type Evidence, type Stage } from "../tiering/index.ts";
 import { getNumber, getSetting } from "../settings/index.ts";
 
-const ABROAD = ["AFRICA", "ASIA", "AUS/NZ/PNG", "LATIN AMERICA", "OTHER", "UK/EUROPE", "USA"];
+/** Every region bucket that is not Canada. Review's retier reads the same list. */
+export const ABROAD = ["AFRICA", "ASIA", "AUS/NZ/PNG", "LATIN AMERICA", "OTHER", "UK/EUROPE", "USA"];
 
 export type ParsedCompany = {
   ticker: string; exchange: string; name: string; ordinal: number;
