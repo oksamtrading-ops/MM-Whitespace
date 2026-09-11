@@ -291,6 +291,10 @@ export default function Grid(props: Props) {
               aria-rowindex={i + 2}
               aria-selected={i === index}
               className={`grow${i === index ? " sel" : ""}${r.decided ? " done" : ""}`}
+              /* A click anywhere on the row selects it -- the company name is
+                 where a mouse goes first. Keyboard focus still lands on the
+                 value cell, so the roving index is unchanged. */
+              onClick={() => setIndex(i)}
             >
               {/* The company cell is the ROW HEADER, so every announcement is
                   anchored to a company. */}

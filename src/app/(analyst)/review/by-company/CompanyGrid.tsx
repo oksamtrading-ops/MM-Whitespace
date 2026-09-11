@@ -233,7 +233,10 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                  aria-selected={i === rowIndex}
                  className={`grow${i === rowIndex ? " sel" : ""}`}
                  style={{ gridTemplateColumns: `minmax(200px, 2fr) repeat(${fields.length}, minmax(180px, 1fr))` }}>
-              <span role="rowheader" aria-colindex={1} className="co">{r.companyName}</span>
+              {/* Clicking the company selects its row and keeps the column. */}
+              <span role="rowheader" aria-colindex={1} className="co" onClick={() => setRowIndex(i)}>
+                {r.companyName}
+              </span>
               {r.cells.map((c, j) => (
                 <div
                   key={fields[j].fieldKey}
