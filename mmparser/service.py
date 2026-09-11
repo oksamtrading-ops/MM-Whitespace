@@ -25,7 +25,7 @@ from .ingest import ingest
 
 #: Matches MAX_UPLOAD_BYTES in src/lib/ingest/quarantine.ts. The platform's own
 #: request limit is lower; this is what stops a mistake before it is read.
-MAX_BYTES = 25 * 1024 * 1024
+MAX_BYTES = 4 * 1024 * 1024
 
 #: The first two bytes of every .xlsx, which is a zip archive.
 ZIP_MAGIC = b"PK"

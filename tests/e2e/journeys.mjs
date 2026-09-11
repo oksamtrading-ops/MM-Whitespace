@@ -238,10 +238,16 @@ async function journeys(dbPath) {
   const viewerOnUpload = await get("/upload", viewer.cookie);
   check("a Viewer is refused the upload screen", viewerOnUpload.html.includes("Not permitted"));
 
+  // The parse is made here and read by the server, so both have to open the
+  // same database: the held parse lives in upload_quarantine, not in a folder.
   const { parseUpload } = await import("../../src/lib/ingest/quarantine.ts");
-  const parse = await parseUpload(
+  const { SqliteSql } = await import("../../src/lib/db/sqlite.ts");
+  const { DatabaseSync } = await import("node:sqlite");
+  const shared = new SqliteSql(new DatabaseSync(dbPath));
+  const parse = await parseUpload(shared,
     new Uint8Array(readFileSync(join(ROOT, "tests", "fixtures", "synthetic_whitespace.xlsx"))),
     "synthetic_whitespace.xlsx");
+  await shared.close();
   const report = await get(`/upload/${parse.id}`, analyst.cookie);
   check("the report names the workbook and its company count",
         report.html.includes("synthetic_whitespace.xlsx") &&

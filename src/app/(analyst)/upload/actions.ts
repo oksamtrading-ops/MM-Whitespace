@@ -13,14 +13,15 @@ export type UploadResult = { ok: false; message: string; detail?: string };
  * Nothing is written to the database here: the report precedes the commit.
  */
 export async function uploadWorkbook(_prev: UploadResult | null, form: FormData): Promise<UploadResult> {
-  await requireRole(["analyst", "admin"]);
+  const { db, user } = await requireRole(["analyst", "admin"]);
   const file = form.get("workbook");
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, message: "Choose a workbook first." };
   }
   let id: string;
   try {
-    const parse = await parseUpload(new Uint8Array(await file.arrayBuffer()), file.name);
+    const parse = await parseUpload(db, new Uint8Array(await file.arrayBuffer()), file.name,
+                                    { uploadedBy: user.id });
     id = parse.id;
   } catch (err) {
     if (err instanceof ParseFailed) {
@@ -40,7 +41,7 @@ export async function commitParsed(_prev: CommitResultMessage | null, form: Form
   const { db, user } = await requireRole(["analyst", "admin"]);
   const id = String(form.get("parseId") ?? "");
   const label = String(form.get("label") ?? "").trim();
-  const parse = readParse(id);
+  const parse = await readParse(db, id);
 
   if (!parse) {
     return { ok: false, message: "That parse has expired. Upload the workbook again." };
@@ -62,7 +63,7 @@ export async function commitParsed(_prev: CommitResultMessage | null, form: Form
   } catch (err) {
     return { ok: false, message: (err as Error).message };
   }
-  dropParse(id);
+  await dropParse(db, id);
   // The top bar carries the period and its status.
   revalidatePath("/", "layout");
   redirect("/review");

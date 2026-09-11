@@ -26,7 +26,7 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
   }
 
   const { id } = await params;
-  const parse = readParse(id);
+  const parse = await readParse(ctx.db, id);
   if (!parse) {
     return (
       <Refusal title="That report has gone"

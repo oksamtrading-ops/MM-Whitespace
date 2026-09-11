@@ -44,7 +44,7 @@ class handler(BaseHTTPRequestHandler):
         except ValueError:
             return self._send(400, {"error": "bad Content-Length"})
         try:
-            if length > 25 * 1024 * 1024:
+            if length > 4 * 1024 * 1024:
                 raise Refused(413, "That file is too large.")
             payload = parse_bytes(self.rfile.read(length))
         except Refused as r:
