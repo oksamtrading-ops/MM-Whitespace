@@ -12,29 +12,30 @@ import type { Sql } from "../db/sql.ts";
 import type { Mode } from "./cassette.ts";
 import type { Role } from "../auth/session.ts";
 import { WORKER_SLOTS } from "./ledger.ts";
-import { CONFIRM_ABOVE, type Estimate, type Pass, type Scope } from "./scope.ts";
+import { estimate as estimateFor, parseTickers, type Estimate, type Pass, type Scope } from "./scope.ts";
 import { cassetteDir, createRun } from "./worker.ts";
 
-export { CONFIRM_ABOVE, PASS_COPY, SCOPE_COPY, type Estimate, type Pass, type Scope } from "./scope.ts";
+export {
+  CONFIRM_ABOVE, ESTIMATED_SECONDS_PER_COMPANY, ESTIMATED_USD_PER_COMPANY, PASS_COPY, parseTickers,
+  SCOPE_COPY, type Estimate, type Pass, type Scope,
+} from "./scope.ts";
 
-/**
- * The design's synchronous mid-point (docs/design/06: $0.25–0.45 per company,
- * $0.12–0.25 batched). A placeholder until spike S2 measures a real company;
- * it is here so the screen shows a number that can be wrong out loud rather
- * than no number at all.
- */
-export const ESTIMATED_USD_PER_COMPANY = 0.25;
-/** p95 per-company job on the synchronous path, docs/design/12. */
-export const ESTIMATED_SECONDS_PER_COMPANY = 90;
-
+/** The estimate at this deployment's worker cap. */
 export function estimate(count: number, budgetUsd: number): Estimate {
-  const estimatedUsd = Math.round(count * ESTIMATED_USD_PER_COMPANY * 100) / 100;
-  const estimatedMinutes = Math.ceil((count * ESTIMATED_SECONDS_PER_COMPANY) / WORKER_SLOTS / 60);
-  return {
-    count, estimatedUsd, estimatedMinutes,
-    exceedsBudget: estimatedUsd > budgetUsd,
-    needsTypedCount: count > CONFIRM_ABOVE,
-  };
+  return estimateFor(count, budgetUsd, WORKER_SLOTS);
+}
+
+/** Each company in scope with its ticker, so a scope can be narrowed to named companies. */
+export async function scopeWithTickers(
+  db: Sql, periodId: string, scope: Scope, pass?: Pass,
+): Promise<Array<{ companyId: string; ticker: string }>> {
+  const ids = await scopeCompanies(db, periodId, scope, pass);
+  if (ids.length === 0) return [];
+  // The current ticker interval: a graduation closes one and opens another.
+  const rows = await db.all(`select company_id, value from company_identifiers
+      where scheme = 'root_ticker' and valid_to is null`) as Array<{ company_id: string; value: string }>;
+  const tickerOf = new Map(rows.map((r) => [r.company_id, String(r.value).toUpperCase()]));
+  return ids.map((id) => ({ companyId: id, ticker: tickerOf.get(id) ?? "" }));
 }
 
 /**
@@ -104,6 +105,12 @@ export type StartInput = {
   confirmCount?: number | null;
   /** Live research's pass. Absent in replay, where the recordings are the scope. */
   pass?: Pass;
+  /**
+   * Narrow the scope to these tickers -- a sample run, or one company again.
+   * Every other rule still applies: a ticker outside the scope is refused,
+   * not added.
+   */
+  tickers?: string[];
 };
 
 export async function startRun(
@@ -121,7 +128,17 @@ export async function startRun(
     throw new StartRefused("A full re-run of a period that already has findings is Admin-only.");
   }
 
-  const companies = await scopeCompanies(db, input.periodId, input.scope, input.pass);
+  let companies = await scopeCompanies(db, input.periodId, input.scope, input.pass);
+  const wanted = (input.tickers ?? []).map((t) => t.toUpperCase());
+  if (wanted.length > 0) {
+    const inScope = await scopeWithTickers(db, input.periodId, input.scope, input.pass);
+    const outside = wanted.filter((t) => !inScope.some((c) => c.ticker === t));
+    if (outside.length > 0) {
+      throw new StartRefused(`${outside.join(", ")} ${outside.length === 1 ? "is" : "are"} not in this scope — ` +
+        "not in the period, already researched in this pass, or (pass 2) without a trusted website.");
+    }
+    companies = inScope.filter((c) => wanted.includes(c.ticker)).map((c) => c.companyId);
+  }
   if (companies.length === 0) {
     throw new StartRefused(
       input.pass === "general"
@@ -147,7 +164,8 @@ export async function startRun(
   });
   await db.run(`insert into audit_log (event, actor_id, period_id, detail) values ('run_started', ?, ?, ?)`,
                input.actor.id, input.periodId,
-               JSON.stringify({ runId, scope: input.scope, pass: input.pass ?? null, companies: companies.length,
+               JSON.stringify({ runId, scope: input.scope, pass: input.pass ?? null,
+                                tickers: wanted.length ? wanted : null, companies: companies.length,
                                 budgetUsd: input.budgetUsd, mode: input.mode, estimate: est }));
   return { runId, jobs: jobIds.length, estimate: est };
 }

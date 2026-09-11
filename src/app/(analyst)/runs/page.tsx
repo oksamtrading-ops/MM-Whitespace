@@ -6,7 +6,7 @@ import { readWorkerHealth, type WorkerHealth } from "../../../lib/enrich/health.
 import { WORKER_SLOTS } from "../../../lib/enrich/ledger.ts";
 import { listRuns, PHASE_COPY, type RunStatus } from "../../../lib/enrich/runstatus.ts";
 import {
-  estimate, PASS_COPY, periodHasFindings, runInProgress, SCOPE_COPY, scopeCompanies,
+  estimate, PASS_COPY, periodHasFindings, runInProgress, SCOPE_COPY, scopeWithTickers,
   type Pass, type Scope,
 } from "../../../lib/enrich/start.ts";
 import { enrichmentMode } from "../../../lib/enrich/worker.ts";
@@ -69,7 +69,8 @@ export default async function Runs() {
     const hasFindings = await periodHasFindings(ctx.db, period.id);
     const adminOnly = "A full re-run of a period that already has findings is Admin-only.";
     const offer = async (pass: Pass | null, scope: Scope): Promise<ScopeOffer> => {
-      const n = (await scopeCompanies(ctx.db, period.id, scope, pass ?? undefined)).length;
+      const inScope = await scopeWithTickers(ctx.db, period.id, scope, pass ?? undefined);
+      const n = inScope.length;
       const passCopy = pass ? PASS_COPY[pass] : null;
       return {
         key: `${pass ?? "replay"}:${scope}`, pass, scope,
@@ -78,6 +79,7 @@ export default async function Runs() {
           : SCOPE_COPY[scope].label,
         detail: passCopy ? passCopy.detail : SCOPE_COPY[scope].detail,
         estimate: estimate(n, budget),
+        tickers: inScope.map((c) => c.ticker).filter(Boolean),
         allowed: n > 0 && (scope !== "all" || !hasFindings || ctx.user.role === "admin"),
         why: n === 0
           ? (pass === "general"
@@ -105,7 +107,8 @@ export default async function Runs() {
           <span>{mode.reason}</span>
         </div>
       ) : inProgress ? null : (
-        <StartRunForm periodId={period.id} offers={offers} defaultBudgetUsd={budget} mode={mode.mode} />
+        <StartRunForm periodId={period.id} offers={offers} defaultBudgetUsd={budget} mode={mode.mode}
+                      workerSlots={WORKER_SLOTS} />
       )}
     </Section>
   );

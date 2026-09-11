@@ -2,28 +2,41 @@
 
 import { useActionState, useState } from "react";
 import { start } from "./actions.ts";
-import { CONFIRM_ABOVE, type Estimate, type Pass, type Scope } from "../../../lib/enrich/scope.ts";
+import {
+  CONFIRM_ABOVE, estimate, parseTickers, type Estimate, type Pass, type Scope,
+} from "../../../lib/enrich/scope.ts";
 
 /** One thing the Analyst may start: a scope, and in live mode the pass it belongs to. */
 export type ScopeOffer = {
   key: string; pass: Pass | null; scope: Scope;
   label: string; detail: string;
   estimate: Estimate; allowed: boolean; why?: string;
+  /** Every ticker the scope covers, so a typed list can be counted here. */
+  tickers: string[];
 };
 
 /**
  * The pre-flight estimate, blocking (docs/design/01). Nothing here is the
  * boundary: the action re-derives the scope, the estimate and every refusal.
  */
-export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode }: {
-  periodId: string; offers: ScopeOffer[]; defaultBudgetUsd: number; mode: string;
+export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode, workerSlots }: {
+  periodId: string; offers: ScopeOffer[]; defaultBudgetUsd: number; mode: string; workerSlots: number;
 }) {
   const [state, action, pending] = useActionState(start, null);
   const [key, setKey] = useState<string>(offers.find((o) => o.allowed)?.key ?? offers[0].key);
   const [budget, setBudget] = useState(String(defaultBudgetUsd));
+  const [limit, setLimit] = useState("");
   const chosen = offers.find((o) => o.key === key) ?? offers[0];
   const budgetNumber = Number(budget.replace(/[$,\s]/g, ""));
-  const overBudget = Number.isFinite(budgetNumber) && chosen.estimate.estimatedUsd > budgetNumber;
+
+  // A typed list narrows the scope; a ticker outside it is shown, and refused on submit.
+  const wanted = parseTickers(limit);
+  const outside = wanted.filter((t) => !chosen.tickers.includes(t));
+  const count = wanted.length ? wanted.length - outside.length : chosen.estimate.count;
+  const est = wanted.length
+    ? estimate(count, Number.isFinite(budgetNumber) ? budgetNumber : 0, workerSlots)
+    : chosen.estimate;
+  const overBudget = Number.isFinite(budgetNumber) && est.estimatedUsd > budgetNumber;
 
   return (
     <form action={action} className="commit settings">
@@ -47,6 +60,17 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode 
       </fieldset>
 
       <p className="field">
+        <label htmlFor="tickers">Limit to these tickers <span className="hint">(optional)</span></label>
+        <input id="tickers" name="tickers" value={limit} autoComplete="off" spellCheck={false}
+               placeholder="e.g. AEM, WDO, ELE" onChange={(e) => setLimit(e.target.value)} />
+        <span className="hint">
+          {outside.length
+            ? `Not in this scope: ${outside.join(", ")}. They would be refused.`
+            : "For a sample run, or to research named companies again. Leave empty for the whole scope."}
+        </span>
+      </p>
+
+      <p className="field">
         <label htmlFor="budgetUsd">Budget</label>
         <span className="withunit">
           <span className="unit" aria-hidden="true">$</span>
@@ -59,21 +83,21 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode 
       <div className={`notice${overBudget ? " alert" : ""}`} role="status" aria-live="polite">
         <b>Estimate</b>
         <span>
-          {chosen.estimate.count} {chosen.estimate.count === 1 ? "company" : "companies"}, about{" "}
-          <strong>${chosen.estimate.estimatedUsd.toFixed(2)}</strong> and{" "}
-          <strong>{chosen.estimate.estimatedMinutes} min</strong> at the current worker cap.
+          {est.count} {est.count === 1 ? "company" : "companies"}, about{" "}
+          <strong>${est.estimatedUsd.toFixed(2)}</strong> and{" "}
+          <strong>{est.estimatedMinutes} min</strong> at the current worker cap.
           {overBudget && " That is more than the budget, so the run would halt part-way."}
           {" "}The per-company figure is the design's placeholder until a real company has been measured.
         </span>
       </div>
 
-      {chosen.estimate.needsTypedCount && (
+      {est.needsTypedCount && (
         <p className="field">
           <label htmlFor="confirmCount">Type the company count to confirm</label>
           <input id="confirmCount" name="confirmCount" inputMode="numeric" autoComplete="off"
-                 placeholder={String(chosen.estimate.count)} />
+                 placeholder={String(est.count)} />
           <span className="hint">
-            Required above {CONFIRM_ABOVE} companies. The number is {chosen.estimate.count}.
+            Required above {CONFIRM_ABOVE} companies. The number is {est.count}.
           </span>
         </p>
       )}
@@ -84,7 +108,8 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode 
         )}
       </div>
 
-      <button type="submit" className="btn primary" disabled={pending || !chosen.allowed}>
+      <button type="submit" className="btn primary"
+              disabled={pending || !chosen.allowed || outside.length > 0 || (wanted.length > 0 && count === 0)}>
         {pending ? "Starting…" : "Start run"}
       </button>
       <p className="meta" style={{ marginTop: 12 }}>

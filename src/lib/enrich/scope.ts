@@ -45,3 +45,28 @@ export type Estimate = {
   exceedsBudget: boolean;
   needsTypedCount: boolean;
 };
+
+/**
+ * The design's synchronous mid-point (docs/design/06: $0.25–0.45 per company,
+ * $0.12–0.25 batched). A placeholder until Run 1 measures a real company;
+ * it is here so the screen shows a number that can be wrong out loud rather
+ * than no number at all.
+ */
+export const ESTIMATED_USD_PER_COMPANY = 0.25;
+/** p95 per-company job on the synchronous path, docs/design/12. */
+export const ESTIMATED_SECONDS_PER_COMPANY = 90;
+
+export function estimate(count: number, budgetUsd: number, workerSlots: number): Estimate {
+  const estimatedUsd = Math.round(count * ESTIMATED_USD_PER_COMPANY * 100) / 100;
+  const estimatedMinutes = Math.ceil((count * ESTIMATED_SECONDS_PER_COMPANY) / workerSlots / 60);
+  return {
+    count, estimatedUsd, estimatedMinutes,
+    exceedsBudget: estimatedUsd > budgetUsd,
+    needsTypedCount: count > CONFIRM_ABOVE,
+  };
+}
+
+/** "AEM, wdo  ELE" -> ["AEM", "WDO", "ELE"]. Empty means no limit. */
+export function parseTickers(raw: string): string[] {
+  return [...new Set(raw.split(/[\s,;]+/).map((t) => t.trim().toUpperCase()).filter(Boolean))];
+}

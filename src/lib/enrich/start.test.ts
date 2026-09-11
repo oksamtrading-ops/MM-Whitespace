@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { Sql } from "../db/sql.ts";
 import { drain } from "./drain.ts";
 import {
-  CONFIRM_ABOVE, estimate, scopeCompanies, startRun, StartRefused,
+  CONFIRM_ABOVE, estimate, parseTickers, scopeCompanies, startRun, StartRefused,
 } from "./start.ts";
 import { seedFixtureDatabase } from "../../../tests/cassettes/build_cassettes.mjs";
 
@@ -108,6 +108,21 @@ test("pass 1 covers every company; pass 2 only those with a website the applicat
   await db.run(`insert into company_period_field_values (period_id, company_id, field_key, value, source, evidence_state)
       values (?, ?, 'website', '"https://northco.invalid"', 'ai_accepted', 'asserted')`, periodId, companies[0].id);
   assert.deepEqual(await scopeCompanies(db, periodId, "unresearched", "general"), [companies[0].id]);
+});
+
+test("a run can be narrowed to named tickers, and a ticker outside the scope is refused, not added", async () => {
+  const { db, periodId } = seeded();
+  const analyst = await actor(db, "analyst");
+  assert.deepEqual(parseTickers(" nrth, royl;nrth  "), ["NRTH", "ROYL"]);
+  await assert.rejects(
+    () => startRun(db, { periodId, scope: "unresearched", budgetUsd: 5, mode: "live", actor: analyst,
+                         pass: "identity", tickers: ["NRTH", "ZZZZ"] }),
+    /ZZZZ is not in this scope/);
+  const r = await startRun(db, { periodId, scope: "unresearched", budgetUsd: 5, mode: "live", actor: analyst,
+                                 pass: "identity", tickers: ["nrth"] });
+  assert.equal(r.jobs, 1);
+  const audit = JSON.parse((await db.get("select detail from audit_log where event = 'run_started'") as { detail: string }).detail);
+  assert.deepEqual(audit.tickers, ["NRTH"]);
 });
 
 test("a typed count must match the scope exactly", async () => {
