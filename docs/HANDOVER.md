@@ -193,7 +193,7 @@ npm test && npm run check:auth && npm run check:contrast && npm run build && npm
 
 | Vercel variable (Production) | Value | Note |
 |---|---|---|
-| `MM_DATABASE_URL` | Supabase **session pooler** string | **Sensitive**, unreadable. Host `aws-1-ca-central-1.pooler.supabase.com`, user `postgres.djepptfxdkvmcretnogy` |
+| `MM_DATABASE_URL` | Supabase **transaction pooler** string, port 6543 (since 11 September 2026) | **Sensitive**, unreadable. Host `aws-1-ca-central-1.pooler.supabase.com`, user `postgres.djepptfxdkvmcretnogy` |
 | `MM_AUTH` | `session` | Magic link |
 | `MM_MAIL`, `MM_RESEND_KEY`, `MM_MAIL_FROM` | `resend`, key, `Whitespace <onboarding@resend.dev>` | |
 | `MM_ALLOWED_DOMAINS` | `gmail.com` | Gmail for the pilot |
@@ -299,8 +299,16 @@ in `on conflict … do update set n = table.n + excluded.n`. Booleans are
 numbers for numeric and `count(*)`, 1/0 for booleans — because of the type
 parsers in `src/lib/db/postgres.ts`. `npm run pg:smoke` checks this.
 
-**Supabase: use the session pooler, not `db.djepptfxdkvmcretnogy.supabase.co`**
-— the direct host is IPv6-only and Vercel cannot resolve it.
+**Supabase: use the transaction pooler (port 6543), not
+`db.djepptfxdkvmcretnogy.supabase.co`** — the direct host is IPv6-only and
+Vercel cannot resolve it. The session pooler (5432) admits only 15 clients:
+on 11 September 2026 warm Vercel instances held all 15 idle and every page
+that read the database failed with `EMAXCONNSESSION`. Since then each
+instance's pool holds at most 4 connections, closes them after 5 idle
+seconds, and is attached with `attachDatabasePool`
+(`src/lib/db/postgres.ts`); and `MM_DATABASE_URL` points at port 6543, where
+a client past the limit waits instead of failing. Nothing in the app needs a
+session: the only role switch is `set local role`, inside a transaction.
 
 **Supabase's certificate is private.** It chains to *Supabase Root 2021 CA*,
 embedded in `src/lib/db/supabase_ca.ts` with its provenance; a test pins the
