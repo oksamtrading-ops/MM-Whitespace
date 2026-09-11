@@ -8,12 +8,14 @@
  * the design and it is why the two steps are separate functions here.
  */
 import { createHash } from "node:crypto";
+import { join } from "node:path";
 import type { Sql } from "../db/sql.ts";
 import { gate, type StoredDocument } from "./anchor.ts";
 import { evidenceStrength, type EvidenceInput } from "./evidence.ts";
 import { Cassettes, cassetteKey, type Mode } from "./cassette.ts";
 import {
   claimJobs, claimSlot, ensureSlots, recordSpend, releaseSlot, transition,
+  WORKER_SLOTS, type ClaimedJob,
 } from "./ledger.ts";
 import {
   buildPrompt, egressScan, restrictionsFromCatalog, PROMPT_VERSION,
@@ -24,6 +26,46 @@ import { getNumber } from "../settings/index.ts";
 
 export const SCHEMA_HASH = "findings-v1";
 export const DEFAULT_MODEL = "claude-sonnet-5";
+
+/**
+ * Live mode is not enabled in this build. Flip this only after the risk and
+ * legal review under decision 1 is complete, spike S3 has set the account's
+ * spend limits, and a key is in the environment. The worker refuses below and
+ * the start-run screen refuses before a run exists, from the same constant.
+ */
+export const LIVE_ENABLED = false;
+
+/**
+ * Whether this deployment may research at all, and how.
+ *
+ * Unset means no: a production deployment with no recordings and no live
+ * mode would only ever abandon every job, and a screen that offers a button
+ * whose only outcome is 259 abandoned jobs teaches people the screen lies.
+ * `replay` is for local work and the end-to-end suite, where the fixture
+ * companies have recordings; `live` is the eventual production setting.
+ */
+export function enrichmentMode(
+  raw: string | undefined = process.env.MM_ENRICH_MODE,
+): { mode: Mode; reason: null } | { mode: null; reason: string } {
+  const value = (raw ?? "").trim();
+  if (value === "") {
+    return { mode: null, reason: "MM_ENRICH_MODE is not set, so this deployment does not research. " +
+                                 "Set it to replay for recorded fixtures, or live once live enrichment is enabled." };
+  }
+  if (value === "replay") return { mode: "replay", reason: null };
+  if (value === "live") {
+    return LIVE_ENABLED
+      ? { mode: "live", reason: null }
+      : { mode: null, reason: "MM_ENRICH_MODE=live, but live mode is not enabled in this build " +
+                              "(LIVE_ENABLED in src/lib/enrich/worker.ts). No vendor call has been made." };
+  }
+  return { mode: null, reason: `MM_ENRICH_MODE=${value} is not a mode (replay or live).` };
+}
+
+/** Where recordings live. On a deployment this is whatever was bundled, which may be nothing. */
+export function cassetteDir(): string {
+  return process.env.MM_CASSETTE_DIR ?? join(process.cwd(), "tests", "cassettes");
+}
 
 /** One finding as a recorded response states it, before the gate has run. */
 export type ProposedFinding = {
@@ -61,6 +103,8 @@ export type RunOptions = {
   route?: Route;
   fieldGroup?: string;
   budgetUsd?: number;
+  /** The app_users id of whoever started it; null for a script. */
+  createdBy?: string | null;
 };
 
 export type ResearchOutcome = {
@@ -81,10 +125,10 @@ export async function createRun(
   const budget = opts.budgetUsd ?? await getNumber(db, "default_run_budget_usd", 5);
   if (!(await budget > 0)) throw new Error("a run cannot be created without a budget");
   const run = await db.get(
-    `insert into enrichment_runs (period_id, budget_usd, model, prompt_version, mode)
-     values (?, ?, ?, ?, ?) returning id`,
+    `insert into enrichment_runs (period_id, budget_usd, model, prompt_version, mode, created_by)
+     values (?, ?, ?, ?, ?, ?) returning id`,
     periodId, budget, opts.model ?? DEFAULT_MODEL, PROMPT_VERSION,
-    opts.mode ?? "replay") as { id: string };
+    opts.mode ?? "replay", opts.createdBy ?? null) as { id: string };
 
   const ins = `insert into enrichment_jobs (run_id, company_id, field_group)
      values (?, ?, ?) returning id`;
@@ -107,6 +151,16 @@ export async function publicRow(db: Sql, companyId: string, periodAsOf: string):
   const regionsRow = await db.get(`select value from company_period_field_values
       where company_id = ? and field_key = 'property_regions' limit 1`, companyId) as { value: string } | undefined;
 
+  // A committed period writes every region bucket, empty ones included. An
+  // empty bucket says nothing a prompt should carry, and dropping it is what
+  // makes a committed company and a hand-seeded one build the same prompt --
+  // so a recording answers both, and the cassette key means one thing.
+  const knownRegions: Record<string, string[]> = {};
+  const parsed = regionsRow ? JSON.parse(regionsRow.value) as Record<string, string[]> : {};
+  for (const [region, values] of Object.entries(parsed)) {
+    if (Array.isArray(values) && values.length > 0) knownRegions[region] = values;
+  }
+
   return {
     companyId: c.id,
     canonicalName: c.canonical_name,
@@ -116,7 +170,7 @@ export async function publicRow(db: Sql, companyId: string, periodAsOf: string):
     interlistedVenues: [],
     headOfficeLocation: null,
     headOfficeRegion: null,
-    knownRegions: regionsRow ? JSON.parse(regionsRow.value) : {},
+    knownRegions,
     knownCommodities: [],
     knownWebsite: null,
     periodAsOf,
@@ -146,7 +200,7 @@ async function research(
   });
 
   const mode: Mode = opts.mode ?? "replay";
-  if (mode === "live") {
+  if (mode === "live" && !LIVE_ENABLED) {
     throw new Error(
       "live mode is not enabled in this build. No vendor call has been made. " +
       "Enable it only after the risk and legal review under decision 1 is complete, " +
@@ -305,10 +359,41 @@ export async function hallucinationRate(
   return { unsupported, assessed, rate: assessed === 0 ? 0 : unsupported / assessed };
 }
 
+/**
+ * One CLAIMED job, through to a terminal state.
+ *
+ * The caller holds the slot and the lease; this holds the order of operations.
+ * A research failure dead-letters the job and rethrows, so a drain loop can
+ * record the error and move on while a single-company caller sees it.
+ */
+export async function processJob(
+  db: Sql, runId: string, job: ClaimedJob, periodAsOf: string, opts: RunOptions,
+): Promise<ResearchOutcome> {
+  await transition(db, job.id, "researching", { chargeAttempt: true });
+  const row = await publicRow(db, job.company_id, periodAsOf);
+
+  let body: CassetteBody, attempt: number;
+  try {
+    ({ body, attempt } = await research(db, job.id, row, opts));
+  } catch (err) {
+    await transition(db, job.id, "dead_letter", { error: (err as Error).message });
+    throw err;
+  }
+
+  await transition(db, job.id, "persisting");
+  const findings = await persist(db, runId, job.id, job.company_id, body, attempt, opts);
+  await transition(db, job.id, "completed");
+
+  const budget = await recordSpend(db, runId, body.cost_usd ?? 0);
+  const state = (await db.get("select state from enrichment_jobs where id = ?", job.id) as { state: string }).state;
+
+  return { runId, jobId: job.id, findings, spendUsd: budget.spend, jobState: state };
+}
+
 /** Drive one job from queued to completed. */
 export async function researchOneCompany(
   db: Sql, runId: string, periodAsOf: string, opts: RunOptions): Promise<ResearchOutcome> {
-  await ensureSlots(db, 4);
+  await ensureSlots(db, WORKER_SLOTS);
   const workerId = `worker-${process.pid}-${Date.now()}`;
   const slot = await claimSlot(db, workerId);
   if (slot === null) {
@@ -317,26 +402,7 @@ export async function researchOneCompany(
   try {
     const [job] = await claimJobs(db, runId, workerId, 1);
     if (!job) throw new Error("no claimable job in this run");
-
-    await transition(db, job.id, "researching", { chargeAttempt: true });
-    const row = await publicRow(db, job.company_id, periodAsOf);
-
-    let body: CassetteBody, attempt: number;
-    try {
-      ({ body, attempt } = await research(db, job.id, row, opts));
-    } catch (err) {
-      await transition(db, job.id, "dead_letter", { error: (err as Error).message });
-      throw err;
-    }
-
-    await transition(db, job.id, "persisting");
-    const findings = await persist(db, runId, job.id, job.company_id, body, attempt, opts);
-    await transition(db, job.id, "completed");
-
-    const budget = await recordSpend(db, runId, body.cost_usd ?? 0);
-    const state = (await db.get("select state from enrichment_jobs where id = ?", job.id) as { state: string }).state;
-
-    return { runId, jobId: job.id, findings, spendUsd: budget.spend, jobState: state };
+    return await processJob(db, runId, job, periodAsOf, opts);
   } finally {
     await releaseSlot(db, slot);
   }

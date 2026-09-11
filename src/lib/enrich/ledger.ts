@@ -13,6 +13,14 @@ import type { Sql } from "../db/sql.ts";
 export const LEASE_SECONDS = 120;
 export const HEARTBEAT_SECONDS = 30;
 
+/**
+ * How many workers may hold jobs at once, across every instance. Four is the
+ * design's placeholder until spike S3 sets it from the account's real rate
+ * limits; it is the ceiling on concurrent vendor calls, not on function
+ * instances, and a fifth worker exits at the door rather than queueing.
+ */
+export const WORKER_SLOTS = 4;
+
 export type JobState =
   | "queued" | "claimed" | "researching" | "awaiting_batch"
   | "persisting" | "completed" | "halted" | "dead_letter";
@@ -87,6 +95,55 @@ export async function claimJobs(
     }
   }
   return claimed;
+}
+
+/**
+ * The run a worker should drain next: the oldest one that still has a job it
+ * could claim now. A run whose remaining jobs are all backing off is skipped
+ * rather than waited on, so one throttled run cannot park the worker.
+ */
+export async function nextClaimableRun(db: Sql): Promise<string | null> {
+  const row = await db.get(`select r.id from enrichment_runs r
+      where r.status in ('queued', 'running')
+        and exists (select 1 from enrichment_jobs j
+                     where j.run_id = r.id and j.state = 'queued'
+                       and (j.available_at is null or j.available_at <= ?))
+      order by r.created_at limit ?`, stamp(), 1) as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
+/**
+ * Keep the run's stored status honest about its jobs.
+ *
+ * `queued` becomes `running` the moment a job is taken, and `running` becomes
+ * `completed` when no job is left unfinished -- with `completed_at` set once
+ * and never moved. A halted or failed run is left alone: those are statuses
+ * something decided, and this only reports what the jobs did.
+ */
+export async function settleRun(db: Sql, runId: string): Promise<string> {
+  const run = await db.get("select status from enrichment_runs where id = ?", runId) as
+    { status: string } | undefined;
+  if (!run) throw new Error(`no such run ${runId}`);
+  if (run.status !== "queued" && run.status !== "running") return run.status;
+
+  const n = await db.get(`select
+       sum(case when state in ('completed', 'halted', 'dead_letter') then 0 else 1 end) as unfinished,
+       sum(case when state = 'queued' then 1 else 0 end) as queued,
+       count(*) as total
+     from enrichment_jobs where run_id = ?`, runId) as
+    { unfinished: number | null; queued: number | null; total: number };
+  const unfinished = n.unfinished ?? 0;
+
+  if (n.total > 0 && unfinished === 0) {
+    await db.run(`update enrichment_runs set status = 'completed', completed_at = ?
+        where id = ? and status in ('queued', 'running')`, stamp(), runId);
+    return "completed";
+  }
+  if (run.status === "queued" && (n.queued ?? 0) < n.total) {
+    await db.run("update enrichment_runs set status = 'running' where id = ? and status = 'queued'", runId);
+    return "running";
+  }
+  return run.status;
 }
 
 export async function heartbeat(db: Sql, workerId: string): Promise<number> {

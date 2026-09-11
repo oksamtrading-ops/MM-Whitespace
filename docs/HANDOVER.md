@@ -23,20 +23,44 @@ this whole note before changing anything.
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
 
-## One thing is waiting on Samuel
+## Two things are waiting on Samuel
 
-**The production upload has not been tried through the live site yet.** It is
-built, deployed and tested by every other route (below). Ask Samuel to upload
-`M&M - Whitespace Analysis Q3-2026.xlsx` at https://mm-whitespace.vercel.app/upload.
-The expected result is the validation report — 259 companies, proof totals —
-ending in **"Cannot be committed"**, because Q3-2026 is already published. Then
-confirm in Supabase that a row appeared in `upload_quarantine` and nothing else
-changed:
+**1. The live upload is confirmed from the database side.** Samuel uploaded
+`M&M - Whitespace Analysis Q3-2026.xlsx` on 11 September 2026 at 02:08 UTC.
+The quarantine row's hash matched the local workbook byte for byte, and its
+parse matched a local parse on every one of 7,091 values (the only difference
+is Postgres printing 13 whole-number market caps without a `.0`). Nothing else
+changed: still 1 publication, 259 companies, 3,626 frozen values. The one
+thing unconfirmed is what the screen said at the end — the expected text is
+**"Cannot be committed"**, because Q3-2026 is already published.
+
+**2. Deploy the worker and run the S1 probe.** The research-in-production
+work (item 2 below) is built and checked but **not yet pushed**. Pushing
+`main` deploys it. Before or with the push, apply migrations `0013` and
+`0014` to Supabase and record them in `schema_migrations`. Then:
+
+```bash
+curl -X POST "https://mm-whitespace.vercel.app/api/worker/drain?probe=1" \
+  -H "Authorization: Bearer $MM_CRON_SECRET"
+```
+
+and, after five minutes, read the row it wrote — the gap from `started_at` to
+`last_seen_at` is how long the platform let the invocation live:
 
 ```sql
-select filename, parsed_at, expires_at from upload_quarantine;
-select count(*) from period_publications;   -- still 1
+select started_at, last_seen_at, ended_at, end_reason, deadline_seconds
+  from worker_runs where probe order by started_at desc limit 1;
+select count(*) from cron_ticks where ticked_at > now() - interval '1 hour';  -- expect ~60
 ```
+
+Record both in `docs/decisions/S1-WORKER-SHAPE.md`, which has a table with
+that row still empty.
+
+**Kay could not sign in.** `Kampofo@deloitte.ca` was refused at 00:38 UTC on
+11 September because only `gmail.com` is allowed, and Resend can only deliver
+to `oksamtrading@gmail.com` until a domain is verified (item 6). Kay can only
+get in through a Gmail address inserted into `app_users`. Tell Kay the refusal
+was expected and not a fault.
 
 ## Where everything is
 
@@ -127,11 +151,26 @@ validation report and the commit; the workbook itself is discarded inside the
 request. Proven: the function's payload for the synthetic workbook is identical
 to the local parse. Not yet proven: an upload through the live screen (above).
 
-**Live enrichment is off, and nothing runs research in production.** See
-"What is left".
+**The worker exists and the tick works (built 11 September 2026, uncommitted
+at the time of writing — check `git log`).** Spike S1 found that the
+scheduler calls the tick with `GET` and the route answered `POST` only, so
+**every production tick since deployment returned 405** and nothing recorded
+it. Now: the tick answers both, writes a `cron_ticks` row every minute even
+when idle, and asks one worker over HTTP; `POST /api/worker/drain` answers 202
+and drains after the response for up to `maxDuration = 300`, records itself
+in `worker_runs`, and chains a successor when work remains; `/runs` has a
+"Start a run" form whose refusals live in `src/lib/enrich/start.ts`; and
+`scripts/worker.mjs` runs the same drain as a local process. The decision and
+its measurements are in `docs/decisions/S1-WORKER-SHAPE.md`.
 
-**Checks:** 256 Node tests, 54 Python tests, the authorisation check, the
-colour-contrast check, the build, and 99 end-to-end checks.
+**Research still cannot run in production**, because `MM_ENRICH_MODE` is
+unset there and live mode is not enabled in the build (`LIVE_ENABLED` in
+`src/lib/enrich/worker.ts`). The run screen says exactly that. Setting
+`MM_ENRICH_MODE=replay` in production would only abandon every job, since no
+recording exists for a real company; do not.
+
+**Checks:** 279 Node tests, 54 Python tests, the authorisation check, the
+colour-contrast check, the build, and 113 end-to-end checks.
 
 ```bash
 npm test && npm run check:auth && npm run check:contrast && npm run build && npm run e2e
@@ -147,7 +186,8 @@ npm test && npm run check:auth && npm run check:contrast && npm run build && npm
 | `MM_ALLOWED_DOMAINS` | `gmail.com` | Gmail for the pilot |
 | `MM_PUBLIC_URL` | `https://mm-whitespace.vercel.app` | Written into sign-in links |
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |
-| `MM_CRON_SECRET`, `CRON_SECRET` | same value | The hourly tick in `vercel.json` |
+| `MM_CRON_SECRET`, `CRON_SECRET` | same value | The per-minute tick in `vercel.json`, and the worker endpoint |
+| `MM_ENRICH_MODE` | **unset** | Deliberately. `replay` would abandon every real company; `live` waits on item 3 |
 
 **No variable is set for Preview deployments.** The CLI refused to add a
 preview variable without a git branch. Previews are behind Vercel's login, and
@@ -253,6 +293,15 @@ fingerprint. Never turn verification off.
 
 **A changed Vercel variable needs a new deployment.**
 
+**The scheduler calls the tick with `GET`.** A route that exports `POST` only
+answers 405 to every tick, and nothing tells you. `cron_ticks` on `/runs` is
+the check; the S1 record has the story.
+
+**A client component cannot import a module that reaches `node:fs`.** The
+build fails deep inside Turbopack with "does not support external modules".
+Constants a form needs live in a module with no node imports
+(`src/lib/enrich/scope.ts` is the example).
+
 **The browser redirect must be relative.** `NextResponse.redirect()` builds an
 absolute URL from `request.url`, which can name a different host from the one
 that set the cookie, silently dropping the session.
@@ -271,22 +320,27 @@ it. Never run `git add -A` outside this project's folder.
 
 ## What is left, in order
 
-1. **Confirm the live upload** with Samuel (the section near the top).
-2. **Research in production.** Nothing drains the job queue: `/api/cron/tick`
-   reports `invokedWorker` but invokes nothing, and no screen can start a run.
-   Build a "start run" action and a production worker; spike **S1** decides how
-   the worker runs.
+1. ~~Confirm the live upload~~ — done from the database side (the section
+   near the top); ask Samuel what the screen said.
+2. **Research in production — plumbing done, measurement pending.** The
+   worker, the tick fix, the start-run screen and the S1 decision are built
+   (see "What exists"). Left: push, apply `0013`/`0014` to Supabase, run the
+   probe, read a day of `cron_ticks`, and fill the empty row in
+   `docs/decisions/S1-WORKER-SHAPE.md`.
 3. **Live enrichment.** The model call is written (`callVendor` in
    `src/lib/enrich/client.ts`). It needs an Anthropic API key, `npm install
-   @anthropic-ai/sdk`, spike **S3** (account tier and spend limits), and the
-   refusal in `src/lib/enrich/worker.ts` removed. The **Batch API** is not built:
-   the ledger has an `awaiting_batch` state and nothing submits or polls.
+   @anthropic-ai/sdk`, spike **S3** (account tier and spend limits),
+   `LIVE_ENABLED = true` in `src/lib/enrich/worker.ts`, and then
+   `MM_ENRICH_MODE=live` in Vercel. `WORKER_SLOTS` (4) is a placeholder S3
+   sets. The **Batch API** is not built: the ledger has an `awaiting_batch`
+   state and nothing submits or polls.
 4. **Excel export in the app.** It is only a Python command (`npm run
    export`); it needs a download, and on Vercel the same Python-function
    approach as the parser.
 5. **Retention on Postgres.** `scripts/retention.mjs` works on SQLite only, so
    nothing sweeps production: expired parses, sign-in links and sessions are
-   hidden by their expiry but not deleted.
+   hidden by their expiry but not deleted. (`cron_ticks` prunes itself to a
+   week; `worker_runs` is a few rows a day and has no rule yet.)
 6. **Mail:** buy and verify a domain for this application (Samuel's decision
    and money), then set `MM_MAIL_FROM`; **rotate the Resend key**, which was
    pasted into a chat once.

@@ -2,11 +2,19 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
+import { readWorkerHealth, type WorkerHealth } from "../../../lib/enrich/health.ts";
+import { WORKER_SLOTS } from "../../../lib/enrich/ledger.ts";
 import { listRuns, PHASE_COPY, type RunStatus } from "../../../lib/enrich/runstatus.ts";
+import {
+  estimate, periodHasFindings, runInProgress, scopeCompanies,
+} from "../../../lib/enrich/start.ts";
+import { enrichmentMode } from "../../../lib/enrich/worker.ts";
+import { getNumber } from "../../../lib/settings/index.ts";
 import Facts from "../../_ui/Facts.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
 import { fmtDate, fmtMoney, periodName } from "../../_ui/format.ts";
+import StartRunForm, { type ScopeOffer } from "./StartRunForm.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Runs" };
@@ -47,18 +55,61 @@ export default async function Runs() {
   }
 
   const runs = await listRuns(ctx.db, period.id);
+  const health = await readWorkerHealth(ctx.db);
+  const mode = enrichmentMode();
+  const inProgress = await runInProgress(ctx.db, period.id);
+
+  // The offer is built here so the screen can say what the action would do;
+  // the action rebuilds it, because the screen is not the boundary.
+  let offers: ScopeOffer[] = [];
+  let budget = 0;
+  if (mode.mode !== null && !inProgress) {
+    budget = await getNumber(ctx.db, "default_run_budget_usd", 5);
+    const hasFindings = await periodHasFindings(ctx.db, period.id);
+    const unresearched = (await scopeCompanies(ctx.db, period.id, "unresearched")).length;
+    const all = (await scopeCompanies(ctx.db, period.id, "all")).length;
+    offers = [
+      { scope: "unresearched", estimate: estimate(unresearched, budget), allowed: unresearched > 0,
+        why: "Every company in this period already has a finding or a job in flight." },
+      { scope: "all", estimate: estimate(all, budget),
+        allowed: all > 0 && (!hasFindings || ctx.user.role === "admin"),
+        why: "A full re-run of a period that already has findings is Admin-only." },
+    ];
+  }
+
+  const startSection = (index: number) => (
+    <Section id="start" title="Start a run" index={index}
+             caption={mode.mode === null
+               ? "This deployment cannot research yet."
+               : inProgress
+                 ? "One run at a time. This section returns when the current run finishes."
+                 : "The estimate blocks: scope, spend and duration are shown before anything is queued."}>
+      {mode.mode === null ? (
+        <div className="notice" role="status">
+          <b>Not available</b>
+          <span>{mode.reason}</span>
+        </div>
+      ) : inProgress ? null : (
+        <StartRunForm periodId={period.id} offers={offers} defaultBudgetUsd={budget} mode={mode.mode} />
+      )}
+    </Section>
+  );
+
   if (runs.length === 0) {
     return (
-      <div className="reading rise">
-        <h1>Runs</h1>
-        <p className="sub">
-          No enrichment has run against {periodName(period.label).name}. This build is
-          replay-only: live research needs credentials and the account-tier spike.
-        </p>
-        <p className="empty">
-          When a run starts, this page names what it is doing — queued, running, stalled,
-          awaiting batch, halted, completed, or completed with errors. Never a spinner.
-        </p>
+      <div className="withrail">
+        <div className="reading">
+          <h1 className="rise">Runs</h1>
+          <p className="sub rise">
+            No enrichment has run against {periodName(period.label).name}.
+          </p>
+          {startSection(1)}
+          <p className="empty">
+            When a run starts, this page names what it is doing — queued, running, stalled,
+            awaiting batch, halted, completed, or completed with errors. Never a spinner.
+          </p>
+        </div>
+        <WorkerRail health={health} />
       </div>
     );
   }
@@ -149,8 +200,10 @@ export default async function Runs() {
           </Section>
         )}
 
+        {startSection(5)}
+
         {earlier.length > 0 && (
-          <Section id="earlier" title="Earlier runs" index={5}>
+          <Section id="earlier" title="Earlier runs" index={6}>
             <table>
               <thead>
                 <tr><th>Started</th><th>State</th><th className="n">Jobs</th><th className="n">Spend</th><th>Mode</th></tr>
@@ -186,6 +239,7 @@ export default async function Runs() {
           { label: "Prompt", value: <code>{current.promptVersion}</code> },
           ...(current.createdBy ? [{ label: "Started by", value: current.createdBy }] : []),
         ]} />
+        <WorkerFacts health={health} />
         <p className="meta" style={{ marginTop: 20 }}>
           A stalled or halted run is diagnosed in the runbook, not by restarting it.{" "}
           <Link href="/review" prefetch={false}>Review board →</Link>
@@ -212,6 +266,66 @@ function since(seconds: number | null): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
   if (seconds < 86_400) return `${Math.round(seconds / 3600)}h ago`;
   return `${Math.round(seconds / 86_400)}d ago`;
+}
+
+function ago(stamp: string): string {
+  const iso = stamp.includes("T") ? stamp : stamp.replace(" ", "T");
+  const t = Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(iso.slice(10)) ? iso : `${iso}Z`);
+  return Number.isNaN(t) ? stamp : since(Math.max(0, Math.round((Date.now() - t) / 1000)));
+}
+
+const END_REASON: Record<string, string> = {
+  drained: "drained the queue", deadline: "reached its deadline", no_slot: "found no free slot",
+  no_work: "found nothing to do", probe: "probe", error: "failed", halted: "halted",
+};
+
+/**
+ * Whether the schedule is being delivered and what the workers did with it.
+ * A run that is not moving has two causes and this tells them apart.
+ */
+function WorkerFacts({ health }: { health: WorkerHealth }) {
+  const last = health.recentWorkers.find((w) => !w.probe) ?? null;
+  return (
+    <>
+      <p className="k" style={{ marginTop: 24 }}>Schedule and workers</p>
+      <Facts items={[
+        { label: "Last tick",
+          value: health.lastTick
+            ? `${ago(health.lastTick.at)} — ${health.lastTick.note ?? ""}`
+            : "none recorded" },
+        { label: "Ticks, last 24 h", value: `${health.ticksLast24h} of 1,440` },
+        { label: "Worker cap", value: `${WORKER_SLOTS} slots` },
+        { label: "Last worker",
+          value: last
+            ? `${ago(last.startedAt)} — ${END_REASON[last.endReason ?? ""] ?? (last.endedAt ? last.endReason : "still running")}, ` +
+              `${last.jobsCompleted} done, ${last.jobsFailed} abandoned` +
+              (last.livedSeconds !== null ? `, lived ${last.livedSeconds}s of ${last.deadlineSeconds}s` : "")
+            : "none yet" },
+        ...(health.longestLivedSeconds !== null
+          ? [{ label: "Longest invocation", value: `${health.longestLivedSeconds}s` }]
+          : []),
+      ]} />
+      {health.ledgerMissing ? (
+        <p className="meta">
+          This database predates the worker ledger (migration 0013). Run{" "}
+          <code>node scripts/migrate.mjs</code> against it; until then nothing here can be recorded.
+        </p>
+      ) : !health.lastTick && (
+        <p className="meta">
+          No tick has ever been recorded. Either the schedule is not being delivered, or the
+          deployment predates the tick ledger.
+        </p>
+      )}
+    </>
+  );
+}
+
+function WorkerRail({ health }: { health: WorkerHealth }) {
+  return (
+    <aside className="rail rise" aria-label="Schedule and workers">
+      <WorkerFacts health={health} />
+    </aside>
+  );
 }
 
 /** One bar, segmented by state, with every segment directly labelled. */

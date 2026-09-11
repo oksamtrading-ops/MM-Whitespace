@@ -74,6 +74,32 @@ function issueLinkDirectly(dbPath, email, { expired = false } = {}) {
   return token;
 }
 
+/**
+ * A run, created the way the start-run action creates one -- through the same
+ * library function, with the same refusals -- and then left for the worker.
+ */
+function startRunDirectly(dbPath, email) {
+  try {
+    return execFileSync("node", ["--input-type=module", "-e", `
+      import { DatabaseSync } from "node:sqlite";
+      import { SqliteSql } from "./src/lib/db/sqlite.ts";
+      import { startRun } from "./src/lib/enrich/start.ts";
+      const handle = new DatabaseSync(${JSON.stringify(dbPath)});
+      handle.exec("pragma foreign_keys = on");
+      const db = new SqliteSql(handle);
+      const period = await db.get("select id from periods order by market_cap_as_of desc limit 1");
+      const user = await db.get("select id, role from app_users where email = ?", ${JSON.stringify(email)});
+      const r = await startRun(db, { periodId: period.id, scope: "all", budgetUsd: 25, mode: "replay",
+                                     actor: { id: user.id, role: user.role } });
+      process.stdout.write(r.runId);
+      await db.close();
+    `], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  } catch (err) {
+    console.log(`  startRun failed: ${(err.stderr ?? err.message).toString().trim().split("\n").pop()}`);
+    return null;
+  }
+}
+
 function setActive(dbPath, email, active) {
   execFileSync("node", ["--input-type=module", "-e", `
     import { DatabaseSync } from "node:sqlite";
@@ -476,6 +502,57 @@ async function journeys(dbPath) {
         "the deactivated analyst still reached the review board");
   setActive(dbPath, "analyst@example.invalid", true);
 
+  // 7. A run is started, a worker drains it over HTTP, and the schedule is
+  // recorded. The fixture period already has findings from the seeded review
+  // queue, so the only scope left is a full re-run -- which is Admin-only.
+  console.log("\n7. an enrichment run, end to end");
+  const runsAsAnalyst = await get("/runs", analyst.cookie);
+  check("the run screen offers a scope with its estimate",
+        runsAsAnalyst.html.includes("Start a run") && runsAsAnalyst.html.includes("Estimate"));
+  check("a full re-run of a period with findings is Admin-only, and the screen says so",
+        runsAsAnalyst.html.includes("Admin-only"));
+  const runsAsAdmin = await get("/runs", admin.cookie);
+  // React separates adjacent text segments with a comment node on the server,
+  // so the label and the count are matched loosely.
+  check("an Admin is offered every company in the period",
+        /Every company in the period[\s\S]{0,40}<b>8<\/b>/.test(runsAsAdmin.html));
+
+  // The form posts a server action, which this suite does not drive; the
+  // action's refusals are unit-tested. Start the run the way the action
+  // does, then drive the worker the way the tick does: over HTTP.
+  const runId = startRunDirectly(dbPath, "admin@example.invalid");
+  check("a run was created for the period", Boolean(runId), "startRun threw");
+
+  const noAuth = await fetch(`${BASE}/api/worker/drain`, { method: "POST" });
+  check("the worker refuses a missing bearer", noAuth.status === 401);
+  const asked = await fetch(`${BASE}/api/worker/drain`, {
+    method: "POST", headers: { authorization: `Bearer ${CRON}` } });
+  check("the worker accepts the ask and answers before it drains", asked.status === 202);
+
+  let runsHtml = "";
+  for (let i = 0; i < 80; i++) {
+    runsHtml = (await get("/runs", admin.cookie)).html;
+    if (/<b>Completed( with errors)?<\/b>/.test(runsHtml)) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  check("the run finishes: two companies had recordings, six did not",
+        runsHtml.includes("Completed with errors"), "the run never reached a terminal state");
+  check("abandoned jobs name the reason", runsHtml.includes("cassette miss"));
+  check("the worker's own record says it drained the queue", runsHtml.includes("drained the queue"));
+  check("one run at a time: the start form is withdrawn while a run exists and offered again after",
+        runsHtml.includes("Start a run"));
+
+  // The scheduler calls with GET. The first twelve hours of production ticks
+  // answered 405 to that, which nothing recorded.
+  const tickGet = await fetch(`${BASE}/api/cron/tick`, { headers: { authorization: `Bearer ${CRON}` } });
+  check("the tick answers GET, which is what the scheduler sends", tickGet.status === 200);
+  const tickBody = await tickGet.json();
+  check("a tick with nothing left to do asks for no worker",
+        tickBody.invokedWorker === false && tickBody.note === "nothing to do");
+  const afterTick = (await get("/runs", admin.cookie)).html;
+  check("the tick is recorded on the run screen even though it did nothing",
+        /Ticks, last 24 h/.test(afterTick) && !afterTick.includes("none recorded"));
+
   /* ---------------------------------------- accessibility, six routes */
 
   console.log("\naccessibility obligations on six routes");
@@ -492,6 +569,7 @@ async function journeys(dbPath) {
     ["/publish (viewer, refused)", "/publish", viewer.cookie],
     ["/companies (viewer)", "/companies", viewer.cookie],
     ["/runs (analyst)", "/runs", analyst.cookie],
+    ["/runs (admin, after a run)", "/runs", admin.cookie],
     ["/settings (admin)", "/settings", admin.cookie],
     ["/companies/merge (analyst)", "/companies/merge", analyst.cookie],
     ["/review/by-company (analyst)", "/review/by-company", analyst.cookie],
@@ -530,6 +608,8 @@ try {
     env: { ...process.env, MM_DATABASE: db, MM_DEV_AUTH_SECRET: SECRET,
            MM_CRON_SECRET: CRON, MM_ALLOWED_DOMAINS: "example.invalid",
            MM_AUTH: "session+dev", MM_MAIL: "log",
+           // Journey 7 starts a run. Replay sends nothing anywhere.
+           MM_ENRICH_MODE: "replay",
            NODE_ENV: "development" },
     stdio: "ignore",
   });

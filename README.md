@@ -468,10 +468,33 @@ for an application outside Deloitte's estate.
 A cron firing every minute at a function that runs several hundred seconds
 produces roughly a dozen concurrently live workers; if each applies its own
 concurrency limit, actual concurrency is the product of the two. So the tick
-asks two questions — is there work, is a slot free — and returns. Because it does
+asks two questions — is there work, is a slot free — asks **one** worker to
+start when both are yes, and returns without waiting for it. Because it does
 no work itself, a leaked secret only causes a no-op invocation. The secret is
 compared in constant time, a **missing** header is rejected rather than allowed,
 and an unset server secret fails closed.
+
+It answers `GET` as well as `POST`, because the scheduler calls with `GET` —
+the first twelve hours of production ticks answered 405 and nothing recorded
+it. Every tick now writes a `cron_ticks` row even when it does nothing, and
+the run screen shows the last one and the day's count.
+
+### The worker is a function that outlives its response
+
+`POST /api/worker/drain` answers 202 as soon as it has scheduled itself and
+drains the ledger after the response, for up to its `maxDuration`. It holds
+one slot for its whole life, takes one job at a time, heartbeats its leases,
+stops a minute before the ceiling, and records itself in `worker_runs`. A
+worker that stops with work left asks for a successor; the slot table bounds
+how many can ever be alive. The same `drain()` runs as a plain process with
+`scripts/worker.mjs`, which is the portability claim in the design made
+checkable. `docs/decisions/S1-WORKER-SHAPE.md` records why this shape stays.
+
+**Starting a run** is a form on `/runs`, and every refusal lives in
+`src/lib/enrich/start.ts` rather than the form: the estimate blocks, a scope
+above 50 companies needs its count typed, a full re-run of a period with
+findings is Admin-only, and one run at a time. `MM_ENRICH_MODE` decides
+whether a deployment may research at all; unset, the screen says so.
 
 ### Colour
 

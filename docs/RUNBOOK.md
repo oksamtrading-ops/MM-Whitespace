@@ -15,6 +15,30 @@ screen names the expired leases and the abandoned jobs; the queries below say
 why. The cron tick keeps returning `invokedWorker: false`, or returns `true`
 and nothing changes.
 
+### First, is the schedule being delivered?
+
+A stall has two causes and they need different responses. The rail on
+**/runs** answers this before anything else: **Last tick** says when the
+scheduler last reached the application and what the tick concluded;
+**Ticks, last 24 h** is against the 1,440 a per-minute schedule delivers;
+**Last worker** says what the last invocation did and how long it lived.
+
+| What you see | What it means |
+|---|---|
+| Last tick minutes or hours ago | The schedule is not being delivered. Check `vercel logs --query cron/tick`: a **405** means the route lost its `GET` export; a **401** means `CRON_SECRET` and `MM_CRON_SECRET` differ |
+| Ticks arriving, `invoked` true, no worker run follows | The tick cannot reach the worker. Its note says why: no `MM_PUBLIC_URL`, no secret, or what the worker answered (a **409** is `MM_ENRICH_MODE` unset) |
+| Worker runs ending `error` | The worker itself is failing; `last_error` on the row names it |
+| Worker runs ending `deadline` with `lived` well short of the deadline | The platform ended the invocation early. Run the probe below |
+
+```bash
+curl -X POST "$MM_PUBLIC_URL/api/worker/drain?probe=1" -H "Authorization: Bearer $MM_CRON_SECRET"
+```
+
+A probe holds an invocation open, heartbeating, doing no work, until its
+deadline. Its `worker_runs` row then says how long the platform actually let
+it live. That is the measurement spike S1 reads; docs/decisions/S1-WORKER-SHAPE.md
+records the last one.
+
 ### Diagnose
 
 ```bash
@@ -43,7 +67,13 @@ The tick reaps expired leases every time it runs, so the ordinary fix is to let
 it, or force one:
 
 ```bash
-curl -X POST localhost:3000/api/cron/tick -H "Authorization: Bearer $MM_CRON_SECRET"
+curl localhost:3000/api/cron/tick -H "Authorization: Bearer $MM_CRON_SECRET"
+```
+
+Locally there is no scheduler, so run the worker as a process instead:
+
+```bash
+MM_ENRICH_MODE=replay node scripts/worker.mjs ./period.db
 ```
 
 **An expired lease returns its job to `queued` and charges NO attempt.** That is
