@@ -41,7 +41,7 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
     : undefined;
   const count = wanted.length ? wanted.length - outside.length : chosen.estimate.count;
   const est = wanted.length
-    ? estimate(count, Number.isFinite(budgetNumber) ? budgetNumber : 0, workerSlots)
+    ? estimate(count, Number.isFinite(budgetNumber) ? budgetNumber : 0, workerSlots, chosen.pass)
     : chosen.estimate;
   const overBudget = Number.isFinite(budgetNumber) && est.estimatedUsd > budgetNumber;
 
@@ -104,7 +104,9 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
           <strong>${est.estimatedUsd.toFixed(2)}</strong> and{" "}
           <strong>{est.estimatedMinutes} min</strong> at the current worker cap.
           {overBudget && " That is more than the budget, so the run would halt part-way."}
-          {" "}The per-company figure is the design's placeholder until a real company has been measured.
+          {chosen.pass
+            ? " The per-company figure is Run 1's measured cost for this pass, plus a margin."
+            : " The per-company figure is the design's placeholder."}
         </span>
       </div>
 

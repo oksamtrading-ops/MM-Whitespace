@@ -47,17 +47,29 @@ export type Estimate = {
 };
 
 /**
- * The design's synchronous mid-point (docs/design/06: $0.25–0.45 per company,
- * $0.12–0.25 batched). A placeholder until Run 1 measures a real company;
- * it is here so the screen shows a number that can be wrong out loud rather
- * than no number at all.
+ * What a company costs to research, per pass, measured on Run 1 (11 September
+ * 2026, five companies, live, synchronous): pass 1 $1.25 for 5 ($0.25 each),
+ * pass 2 $0.59 for 5 and $0.42 for 4 ($0.10-0.12 each). Each is the measured
+ * mean plus about 20%, because the start form refuses a run whose estimate
+ * exceeds its budget and a run that halts part-way is wasted. Spend is
+ * recorded per run, not per company, so these are means, not a p95.
+ */
+export const ESTIMATED_USD_PER_COMPANY_BY_PASS: Record<Pass, number> = {
+  identity: 0.30,
+  general: 0.15,
+};
+/**
+ * Replay, which spends nothing, and any run with no pass: the design's
+ * synchronous mid-point (docs/design/06: $0.25-0.45 per company).
  */
 export const ESTIMATED_USD_PER_COMPANY = 0.25;
 /** p95 per-company job on the synchronous path, docs/design/12. */
 export const ESTIMATED_SECONDS_PER_COMPANY = 90;
 
-export function estimate(count: number, budgetUsd: number, workerSlots: number): Estimate {
-  const estimatedUsd = Math.round(count * ESTIMATED_USD_PER_COMPANY * 100) / 100;
+export function estimate(count: number, budgetUsd: number, workerSlots: number,
+                         pass?: Pass | null): Estimate {
+  const perCompany = pass ? ESTIMATED_USD_PER_COMPANY_BY_PASS[pass] : ESTIMATED_USD_PER_COMPANY;
+  const estimatedUsd = Math.round(count * perCompany * 100) / 100;
   const estimatedMinutes = Math.ceil((count * ESTIMATED_SECONDS_PER_COMPANY) / workerSlots / 60);
   return {
     count, estimatedUsd, estimatedMinutes,

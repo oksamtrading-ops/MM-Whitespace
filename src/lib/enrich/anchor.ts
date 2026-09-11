@@ -88,18 +88,78 @@ export function normalizeNumeral(value: string | number): string {
   return m ? m[0].replace(/\.0+$/, "") : "";
 }
 
+/**
+ * The ways a filing states its scale. Run 1 found "(C$ thousands)" -- the form
+ * Agnico Eagle's AIF uses, and a common one -- missing, so a correct fee read
+ * as $8,052 instead of $8,052,000 and was held. A currency prefix inside the
+ * brackets, and "thousands of ... dollars", are now read; "thousands" of
+ * anything else ("(thousands of ounces)", "thousands of hectares") is not.
+ */
+function scalePattern(word: string, extra: string[]): RegExp {
+  const cur = String.raw`(?:[a-z]{0,3}\$\s*)?`;                       // "c$ ", "us$", "$"
+  const ofDollars = String.raw`\s+of\s+(?:[a-z.$]+\s+){0,2}dollars`;  // "of canadian dollars"
+  return new RegExp([
+    String.raw`\bin\s+${word}\b`,
+    // "(c$ thousands)", "(in thousands of us dollars)", "(thousands, except per share)"
+    String.raw`\(\s*${cur}(?:in\s+)?${word}(?:${ofDollars})?\s*(?:[,;][^)]{0,40})?\)`,
+    String.raw`\b${word}${ofDollars}\b`,
+    ...extra,
+  ].join("|"), "gi");
+}
+
 const SCALE_PATTERNS: Array<[RegExp, Scale]> = [
-  [/\bin\s+thousands\b|\(\s*000'?s?\s*\)|\ben\s+milliers\b|\bmilliers\s+de\b/i, "thousands"],
-  [/\bin\s+millions\b|\(\s*millions?\s*\)|\ben\s+millions\b/i, "millions"],
+  [scalePattern("thousands?", [
+    String.raw`\(\s*(?:[a-z]{0,3}\$\s*)?000'?s?\s*\)`, String.raw`\$\s*000'?s\b`,
+    String.raw`\ben\s+milliers\b`, String.raw`\bmilliers\s+de\b`,
+  ]), "thousands"],
+  [scalePattern("millions?", [String.raw`\ben\s+millions\b`]), "millions"],
 ];
 
-/** The scale phrase in force in a document, or near a position within it. */
+/**
+ * The document as the numeric check reads it: normalised, with thousands
+ * separators taken out of numerals so "8,052" is found as 8052.
+ *
+ * Before this, the needle was reduced to digits and the haystack kept its
+ * commas, so no fee of 1,000 or more printed with a separator could ever
+ * anchor (Run 1: every fee held). A comma between digit groups is a separator;
+ * so is a thin or no-break space, which is how French filings group digits.
+ * An ordinary space is NOT, because two table cells -- "421 154" -- must not
+ * become one number. A group that is not exactly three digits is left alone,
+ * so a footnote fused to a figure ("$610,6283") still does not match.
+ */
+export function numericHaystack(text: string): string {
+  // No-break, figure, narrow no-break and thin space -- written as escapes,
+  // because an ordinary space in their place would merge adjacent table cells.
+  const grouped = (text ?? "").replace(/(\d)[\u00A0\u2007\u202F\u2009](?=\d{3}(?!\d))/g, "$1");
+  return normalize(grouped).replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
+}
+
+/**
+ * The scale phrase in force in a document, or at a position within it.
+ *
+ * At a position, the phrase in force is the nearest one before it in the
+ * 3,000 characters above (a table's heading), else the nearest in the 200
+ * after (a footer). The first pattern to match anywhere in the window used to
+ * win, so a "(in millions)" table above a "(C$ thousands)" fee table would
+ * have read the fees as millions.
+ */
 export function detectScale(text: string, near?: number): Scale | null {
-  const haystack = near === undefined
-    ? text
-    : text.slice(Math.max(0, near - 3000), near + 200);
-  for (const [re, scale] of SCALE_PATTERNS) if (re.test(haystack)) return scale;
-  return null;
+  if (near === undefined) {
+    for (const [re, scale] of SCALE_PATTERNS) if (text.search(re) !== -1) return scale;
+    return null;
+  }
+  const lo = Math.max(0, near - 3000);
+  const window = text.slice(lo, near + 200);
+  const at = near - lo;
+  let best: { scale: Scale; distance: number } | null = null;
+  for (const [re, scale] of SCALE_PATTERNS) {
+    for (const m of window.matchAll(re)) {
+      // Before the figure is always nearer in the sense that matters than after it.
+      const distance = m.index <= at ? at - m.index : 1_000_000 + (m.index - at);
+      if (!best || distance < best.distance) best = { scale, distance };
+    }
+  }
+  return best?.scale ?? null;
 }
 
 /**
@@ -171,7 +231,7 @@ export type NumericClaim = {
  * phrase actually in force at that point in the document.
  */
 export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorResult {
-  const hay = normalize(doc.text);
+  const hay = numericHaystack(doc.text);
   const labels = (FIELD_LABELS[claim.fieldKey] ?? []).map(normalize).filter(Boolean);
 
   // The figure as printed: the asserted value divided back down by its scale.
@@ -204,7 +264,9 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
 
       // Scale is checked against the document, not taken on the model's word.
       // This alone prevents thousandfold errors.
-      const docScale = detectScale(doc.text, at) ?? "units";
+      // Read from the same string the position was found in: an offset into
+      // the normalised text is not an offset into the raw one.
+      const docScale = detectScale(hay, at) ?? "units";
       if (docScale !== scale) {
         continue;
       }
@@ -235,7 +297,10 @@ function indexOfNumeral(hay: string, needle: string, from: number): number {
     const before = at === 0 ? "" : hay[at - 1];
     const after = hay[at + needle.length] ?? "";
     const boundedBefore = !/[\d.]/.test(before);
-    const boundedAfter = !/[\d]/.test(after);
+    // A full stop after a figure ends a sentence; followed by a digit it is a
+    // decimal point, and 1234.5 is not 1234. The same for a decimal comma.
+    const boundedAfter = !/\d/.test(after)
+      && !(/[.,]/.test(after) && /\d/.test(hay[at + needle.length + 1] ?? ""));
     if (boundedBefore && boundedAfter) return at;
     i = at + 1;
   }

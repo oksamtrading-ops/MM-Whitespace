@@ -87,6 +87,12 @@ test("the estimate blocks: over budget is refused, and a large scope needs its c
   assert.equal(estimate(CONFIRM_ABOVE, 1000).needsTypedCount, false);
   assert.equal(big.exceedsBudget, false);
   assert.ok(big.estimatedMinutes >= 1);
+
+  // Live estimates are per pass, from Run 1: the fields pass costs about half
+  // the identity pass, so one flat figure over-refused pass 2 runs.
+  assert.equal(estimate(10, 1000, "identity").estimatedUsd, 3);
+  assert.equal(estimate(10, 1000, "general").estimatedUsd, 1.5);
+  assert.equal(estimate(10, 1000).estimatedUsd, 2.5, "replay keeps the design's figure");
 });
 
 test("pass 1 covers every company; pass 2 only those with a website the application trusts", async () => {

@@ -199,3 +199,112 @@ test("the anchor always names the document it was verified against", async () =>
   });
   assert.equal(v.anchor.documentHash, "sha256:zzz");
 });
+
+// --- Run 1, 11 September 2026: every fee held --------------------------------
+// The passages below are the real text the application fetched, from the
+// issuers' own filings, trimmed to the fee disclosure. Each was held as
+// anchor_mismatch in production; the first three are correct and must anchor.
+
+const ZW = "\u200B";  // the zero-width spaces Agnico's HTML puts between cells
+
+/** Agnico Eagle, 2025 AIF: a table headed "(C$ thousands)". */
+const AGNICO = `External Auditor Service Fees Ernst & Young LLP has served as the Company’s independent public auditor for each of the fiscal years ended December 31, 2025 and 2024. Fees paid to Ernst & Young LLP in 2025 and 2024 are set out below. ${ZW} ${ZW} ${ZW} ${ZW} Year Ended December 31 ${ZW} ${ZW} ${ZW} ${ZW} ${ZW} 2025 ${ZW} ${ZW} 2024 ${ZW} ${ZW} ${ZW} ${ZW} ${ZW} (C$ thousands) ${ZW} ${ZW} Audit fees ${ZW} ${ZW} ${ZW} ${ZW} 8,052 ${ZW} ${ZW} ${ZW} ${ZW} ${ZW} 9,088 ${ZW} ${ZW} ${ZW} Audit-related fees (1) ${ZW} ${ZW} 421 ${ZW} 154 Tax fees (2) ${ZW} ${ZW} ${ZW} ${ZW} 382 ${ZW} ${ZW} ${ZW} ${ZW} ${ZW} 915`;
+
+/** Elemental Altus, 2025 40-F: the fee in a sentence, in dollars. */
+const ELEMENTAL = "fees billed to the Registrant for professional services rendered by PwC and its affiliates during the fiscal years ended December 31, 2025 and 2024, respectively, are detailed below. Audit Fees PWC’s agreed upon fees for audit services for the fiscal years ended December 31, 2025 and December 31, 2024 were US$517,116 and US$212,082, respectively. Audit-Related Fees PwC’s fees incurred";
+
+/** Nouveau Monde, 2024 AIF (the PDF's text layer): years across, dollars. */
+const NOUVEAU_MONDE = `EXTERNAL AUDITOR SERVICE FEES
+The following table sets out the service fees invoiced by PricewaterhouseCoopers LLP (“PwC”) for the fiscal
+years ended December 31, 2023 and December 31, 2024:
+2023 2024
+Audit Fees(1) $387,566 $353,190
+Audit-Related Fees(2) $6,691 $5,979
+Tax Fees(3) - -
+All Other Fees(4) $90,785 $1,440
+Total $485,042 $360,608`;
+
+/** Wesdome: a footnote marker fused onto each figure by the text layer. */
+const WESDOME = `Audit Fees Audit-Related Fees Tax Fees All Other Fees Total
+December 31, 2025 $610,6283 $49,8344 - $450,000 $1,110,462`;
+
+test("Run 1: a fee under \"(C$ thousands)\" anchors at that scale", async () => {
+  assert.equal(detectScale(AGNICO), "thousands");
+  const audit = anchorNumeric(
+    { value: 8_052_000, scale: "thousands", fiscalYear: 2025, fieldKey: "audit_fee" }, doc(AGNICO));
+  assert.equal(audit.mode, "proximity", audit.reason ?? "");
+  assert.equal(audit.matched?.numeral, "8052");
+  const tax = anchorNumeric(
+    { value: 382_000, scale: "thousands", fiscalYear: 2025, fieldKey: "tax_fee" }, doc(AGNICO));
+  assert.equal(tax.mode, "proximity", tax.reason ?? "");
+
+  // And the thousandfold misreading is still refused: $8,052 in units is wrong.
+  const units = anchorNumeric(
+    { value: 8_052, scale: "units", fiscalYear: 2025, fieldKey: "audit_fee" }, doc(AGNICO));
+  assert.equal(units.mode, "label_only");
+});
+
+test("Run 1: a comma-grouped fee in a sentence anchors", async () => {
+  // The needle was reduced to 517116 and the document kept 517,116, so no fee
+  // of 1,000 or more printed with a separator could ever be found.
+  const r = anchorNumeric(
+    { value: 517_116, scale: "units", fiscalYear: 2025, fieldKey: "audit_fee" }, doc(ELEMENTAL));
+  assert.equal(r.mode, "proximity", r.reason ?? "");
+  assert.ok(["audit fees", "fees for audit services"].includes(r.matched?.label ?? ""));
+});
+
+test("Run 1: a fee in a PDF table in dollars anchors, and a fabricated one does not", async () => {
+  const right = gate({
+    fieldKey: "audit_fee",
+    numeric: { value: 353_190, scale: "units", fiscalYear: 2024, fieldKey: "audit_fee" },
+    document: doc(NOUVEAU_MONDE),
+  });
+  assert.equal(right.state, "proposed", right.reason ?? "");
+  // A plausible fee nowhere in the table is still held.
+  const invented = gate({
+    fieldKey: "audit_fee",
+    numeric: { value: 353_910, scale: "units", fiscalYear: 2024, fieldKey: "audit_fee" },
+    document: doc(NOUVEAU_MONDE),
+  });
+  assert.equal(invented.state, "anchor_mismatch");
+});
+
+test("Run 1: a figure with a footnote fused onto it is still not proof", async () => {
+  // "$610,6283" is $610,628 and footnote 3 -- but it might as well be 6,106,283.
+  // The gate cannot tell, so a person must: held, not proposed.
+  const r = anchorNumeric(
+    { value: 610_628, scale: "units", fiscalYear: 2025, fieldKey: "audit_fee" }, doc(WESDOME));
+  assert.notEqual(r.mode, "proximity");
+});
+
+test("digit grouping: separators come out, adjacent cells stay apart", async () => {
+  const d = (t: string) => doc(`Audit fees for 2025 (in thousands) ${t}`);
+  const claim = { value: 1_234_000, scale: "thousands" as const, fiscalYear: 2025, fieldKey: "audit_fee" };
+  assert.equal(anchorNumeric(claim, d("1,234")).mode, "proximity");
+  assert.equal(anchorNumeric(claim, d("1\u00A0234")).mode, "proximity", "French grouping, no-break space");
+  assert.equal(anchorNumeric(claim, d("1\u202F234")).mode, "proximity", "narrow no-break space");
+  // Two table cells separated by an ordinary space are two numbers.
+  assert.notEqual(anchorNumeric(claim, d("1 234")).mode, "proximity");
+  // A decimal is not a grouping: 1,234.5 thousands is not 1,234 thousands.
+  assert.notEqual(anchorNumeric(claim, d("1,234.5")).mode, "proximity");
+});
+
+test("detectScale reads currency-prefixed and long-form headings, not other quantities", async () => {
+  for (const s of ["(C$ thousands)", "(US$ thousands)", "($ thousands)", "(in thousands of US dollars)",
+                   "(thousands of Canadian dollars)", "(thousands, except per share amounts)",
+                   "expressed in thousands of Canadian dollars", "(C$000s)", "$000s"]) {
+    assert.equal(detectScale(s), "thousands", s);
+  }
+  for (const s of ["(C$ millions)", "(US$ millions, except where noted)", "millions of US dollars"]) {
+    assert.equal(detectScale(s), "millions", s);
+  }
+  for (const s of ["(thousands of ounces)", "thousands of hectares of claims", "(millions of tonnes)"]) {
+    assert.equal(detectScale(s), null, s);
+  }
+});
+
+test("detectScale at a position takes the heading nearest above it", async () => {
+  const text = `Revenue (in millions) 1,200 ... Fees paid to the auditor (C$ thousands) Audit fees 8,052`;
+  assert.equal(detectScale(text, text.indexOf("8,052")), "thousands");
+  assert.equal(detectScale(text, text.indexOf("1,200")), "millions");
+});

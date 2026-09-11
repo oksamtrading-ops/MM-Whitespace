@@ -16,13 +16,14 @@ import { estimate as estimateFor, parseTickers, type Estimate, type Pass, type S
 import { cassetteDir, createRun } from "./worker.ts";
 
 export {
-  CONFIRM_ABOVE, ESTIMATED_SECONDS_PER_COMPANY, ESTIMATED_USD_PER_COMPANY, PASS_COPY, parseTickers,
+  CONFIRM_ABOVE, ESTIMATED_SECONDS_PER_COMPANY, ESTIMATED_USD_PER_COMPANY,
+  ESTIMATED_USD_PER_COMPANY_BY_PASS, PASS_COPY, parseTickers,
   SCOPE_COPY, type Estimate, type Pass, type Scope,
 } from "./scope.ts";
 
 /** The estimate at this deployment's worker cap. */
-export function estimate(count: number, budgetUsd: number): Estimate {
-  return estimateFor(count, budgetUsd, WORKER_SLOTS);
+export function estimate(count: number, budgetUsd: number, pass?: Pass | null): Estimate {
+  return estimateFor(count, budgetUsd, WORKER_SLOTS, pass);
 }
 
 /** Each company in scope with its ticker, so a scope can be narrowed to named companies. */
@@ -148,7 +149,7 @@ export async function startRun(
           : "This period has no companies.");
   }
 
-  const est = estimate(companies.length, input.budgetUsd);
+  const est = estimate(companies.length, input.budgetUsd, input.pass);
   if (est.needsTypedCount && input.confirmCount !== est.count) {
     throw new StartRefused(`This scope is ${est.count} companies. Type that number to confirm it.`);
   }

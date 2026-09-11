@@ -1,9 +1,9 @@
 # Handover — Mining Whitespace Intelligence Tool
 
 > **Status at 11 September 2026.** Built, deployed, published once, ingests a
-> workbook in production, and has a working tick and worker. Research itself
-> waits on live enrichment. To start a new session, paste everything below the
-> line into it.
+> workbook in production, and researches live: Run 1 (five companies, $2.26)
+> is done and its findings wait in review. To start a new session, paste
+> everything below the line into it.
 
 ---
 
@@ -341,18 +341,23 @@ it. Never run `git add -A` outside this project's folder.
    tick fix, the start-run screen and the S1 decision are built and measured
    (see "What exists"). Left: read a day of `cron_ticks` (the section near
    the top). Research itself waits on item 3.
-3. **Live enrichment — built, tested, switched off.** S3 is done (Scale tier,
+3. **Live enrichment — on, and Run 1 is done.** S3 is done (Scale tier,
    `WORKER_SLOTS` stays 4; results in `docs/decisions/S3-ACCOUNT-LIMITS.md`).
-   The two-pass pipeline is built (`docs/decisions/RESEARCH-PIPELINE.md`).
-   Everything before Run 1 is done: migration `0015` applied, settings in
-   Vercel, decision 1's scope confirmed, live switched on. The worker at
-   `maxDuration = 800` probed at 720 of 720 s. **Run 1 is next**: five named
-   tickers — AEM, WDO, ELE, NOU, RDS — using the start form's ticker limit;
-   pass 1, review the websites and EDGAR values, then pass 2, then review.
-   Record the real cost per company and replace the $0.25 placeholder in
-   `src/lib/enrich/scope.ts`. The
-   **Batch API** is not built: the ledger has an `awaiting_batch` state and
-   nothing submits or polls.
+   The two-pass pipeline and Run 1's results are in
+   `docs/decisions/RESEARCH-PIPELINE.md`: AEM, WDO, ELE, NOU and RDS, $2.26
+   across three runs, pass 1 $0.25 a company and pass 2 $0.10–0.12. The start
+   form now estimates per pass from those figures. Run 1 found every fee held
+   by three defects in the anchoring check, since fixed. Left, in order:
+   - **Samuel reviews Run 1** on `/review`: websites and EDGAR values from
+     pass 1, fields from pass 2. Elemental's head office really is Littleton,
+     Colorado; there is no reject, so Override or Flag anything wrong.
+   - **Re-run the fees**, if Samuel wants them: pass 2, "every eligible
+     company", tickers AEM, ELE, NOU, WDO, about $0.60. Findings are not
+     re-checked in place; a new run makes new ones.
+   - **Run 2: 25 companies**, then all 259 (about $95 synchronously), then the
+     **Batch API** at half price — not built: the ledger has an
+     `awaiting_batch` state and nothing submits or polls.
+   - A per-company cost on each job, so the estimate can use a p95.
 4. **Excel export in the app.** It is only a Python command (`npm run
    export`); it needs a download, and on Vercel the same Python-function
    approach as the parser.

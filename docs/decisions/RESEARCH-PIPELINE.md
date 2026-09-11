@@ -70,8 +70,14 @@ nowhere or go wrong, all now fixed and tested:
 Measured prices (11 September 2026): Opus 5 $5/$25 per million tokens,
 Sonnet 5 $2/$10, web search $10 per 1,000 searches. Discovery runs on Opus 5
 with up to six searches; extraction on Sonnet 5 over about 25,000 tokens of
-windows. The design's estimate of roughly $0.25 a company a pass stands until
-Run 1 measures it; every run records its real cost per job.
+windows.
+
+**Measured on Run 1:** pass 1 costs **$0.25** a company and pass 2 **$0.10–0.12**,
+so a company researched end to end costs about $0.36. The start form now
+estimates each pass separately at the measured mean plus about 20% ($0.30 and
+$0.15, `src/lib/enrich/scope.ts`). At that rate all 259 companies cost about
+$95 synchronously, inside the design's $65–115. Spend is recorded per run,
+not per company, so there is no per-company p95 yet.
 
 ## Rollout
 
@@ -87,6 +93,60 @@ Run 1 measures it; every run records its real cost per job.
   the application downloading issuer sites and EDGAR.
 - Migration `0015` applied to Supabase.
 - Run 1's five: AEM, WDO, ELE, NOU, RDS.
+
+## Run 1 — 11 September 2026: the research worked, and the fee check did not
+
+Five companies, $2.26 in all, across three runs that completed. Two more were
+halted by the organisation's spend limit before spending anything (S3).
+
+| Run | Pass | Companies | Cost | Findings | Proposed |
+|---|---|---|---|---|---|
+| `c00ee419` | 1 — identity | AEM, WDO, ELE, NOU, RDS | $1.25 | 16 | 14 |
+| `f6ccf163` | 2 — fields | the same five | $0.59 | 45 | 18 |
+| `039cc2c9` | 2 — fields, again after fixes | AEM, WDO, ELE, NOU | $0.42 | 36 | 26 |
+
+**What it found that the workbook did not have.** Wesdome changed auditor
+from Grant Thornton to Ernst & Young. Elemental Altus's head office is
+Littleton, Colorado — from EDGAR, and confirmed by its own 40-F. On the second
+pass 2, every non-fee field for the four companies came back proposed.
+
+**Every fee was held.** Of eight fee findings on the second pass 2, four were
+right and held only because of three defects in `src/lib/enrich/anchor.ts`,
+now fixed and tested against the production passages:
+
+1. **No comma-grouped figure could ever anchor.** The claimed value was reduced
+   to digits (`517116`) and looked for in text that still read `517,116`. Every
+   fee of $1,000 or more printed with a separator was held — which is every
+   fee. The check now takes separators out of the document's numerals too: a
+   comma, or the no-break and thin spaces French filings group digits with,
+   between exactly three digits. An ordinary space does not count, so two
+   table cells stay two numbers, and a decimal point stops a match.
+2. **"(C$ thousands)" was not read as a scale.** Agnico Eagle's table used it;
+   only "in thousands" and "(000s)" were known. The check now reads a currency
+   before the word, "thousands of … dollars", and "(C$000s)" — and still not
+   "(thousands of ounces)".
+3. **The scale in force was the first one found, not the nearest.** A table in
+   millions above a fee table in thousands would have read the fees as
+   millions. The nearest heading above the figure now wins.
+
+Against the stored documents, Agnico ($8,052,000 audit, $382,000 tax) and
+Elemental (US$517,116 audit) now anchor, and so does Nouveau Monde's $353,190
+if claimed for fiscal 2024 — the only AIF found was 2024's, and its table has
+no 2025 column. The other four stay held, correctly:
+
+- **Wesdome's audit fee** is right but unprovable by the check: its PDF's text
+  layer fuses footnote markers onto figures, and `$610,6283` ($610,628, note 3)
+  cannot be told from $6,106,283. Note 3 splits the fee between Grant Thornton
+  ($163,882) and Ernst & Young ($446,746) — the auditor change, in the numbers.
+- **Elemental's and Nouveau Monde's tax fees** are nil, printed "nil" and "-".
+  The check anchors figures, not words for zero.
+- **Wesdome's tax fee** was an abstention.
+
+**A limit worth knowing.** The check requires the figure, a fee label and the
+claimed year within 400 characters of each other. In a table with a column
+per year, both years sit in that window, so it does not prove the figure came
+from the claimed year's column. Review is where that is caught; the excerpt
+on each finding shows the row.
 
 ## Deliberately not in this build
 

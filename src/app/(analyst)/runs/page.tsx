@@ -78,7 +78,7 @@ export default async function Runs() {
           ? `${passCopy.label}: ${scope === "all" ? "every eligible company" : "not yet done"}`
           : SCOPE_COPY[scope].label,
         detail: passCopy ? passCopy.detail : SCOPE_COPY[scope].detail,
-        estimate: estimate(n, budget),
+        estimate: estimate(n, budget, pass),
         tickers: inScope.map((c) => c.ticker).filter(Boolean),
         allowed: n > 0 && (scope !== "all" || !hasFindings || ctx.user.role === "admin"),
         why: n === 0
