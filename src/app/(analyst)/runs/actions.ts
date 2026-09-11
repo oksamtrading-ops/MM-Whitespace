@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { kickWorker } from "../../../lib/enrich/kick.ts";
-import { startRun, StartRefused, type Scope } from "../../../lib/enrich/start.ts";
+import { startRun, StartRefused, type Pass, type Scope } from "../../../lib/enrich/start.ts";
 import { enrichmentMode } from "../../../lib/enrich/worker.ts";
 
 export type StartResult = { ok: false; message: string };
@@ -25,6 +25,10 @@ export async function start(_prev: StartResult | null, form: FormData): Promise<
 
   const periodId = String(form.get("periodId") ?? "");
   const scope: Scope = String(form.get("scope") ?? "") === "all" ? "all" : "unresearched";
+  const passRaw = String(form.get("pass") ?? "");
+  const pass: Pass | undefined = passRaw === "identity" || passRaw === "general" ? passRaw : undefined;
+  // Live research is always one pass or the other; replay has no passes.
+  if (mode.mode === "live" && !pass) return { ok: false, message: "Choose pass 1 or pass 2." };
   const budgetUsd = Number(String(form.get("budgetUsd") ?? "").replace(/[$,\s]/g, ""));
   const typed = String(form.get("confirmCount") ?? "").trim();
   const confirmCount = typed === "" ? null : Number(typed);
@@ -39,6 +43,7 @@ export async function start(_prev: StartResult | null, form: FormData): Promise<
     await startRun(db, {
       periodId, scope, budgetUsd, mode: mode.mode,
       actor: { id: user.id, role: user.role }, confirmCount,
+      pass: mode.mode === "live" ? pass : undefined,
     });
   } catch (err) {
     if (err instanceof StartRefused) return { ok: false, message: err.message };

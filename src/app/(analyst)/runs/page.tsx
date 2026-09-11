@@ -6,7 +6,8 @@ import { readWorkerHealth, type WorkerHealth } from "../../../lib/enrich/health.
 import { WORKER_SLOTS } from "../../../lib/enrich/ledger.ts";
 import { listRuns, PHASE_COPY, type RunStatus } from "../../../lib/enrich/runstatus.ts";
 import {
-  estimate, periodHasFindings, runInProgress, scopeCompanies,
+  estimate, PASS_COPY, periodHasFindings, runInProgress, SCOPE_COPY, scopeCompanies,
+  type Pass, type Scope,
 } from "../../../lib/enrich/start.ts";
 import { enrichmentMode } from "../../../lib/enrich/worker.ts";
 import { getNumber } from "../../../lib/settings/index.ts";
@@ -66,15 +67,29 @@ export default async function Runs() {
   if (mode.mode !== null && !inProgress) {
     budget = await getNumber(ctx.db, "default_run_budget_usd", 5);
     const hasFindings = await periodHasFindings(ctx.db, period.id);
-    const unresearched = (await scopeCompanies(ctx.db, period.id, "unresearched")).length;
-    const all = (await scopeCompanies(ctx.db, period.id, "all")).length;
-    offers = [
-      { scope: "unresearched", estimate: estimate(unresearched, budget), allowed: unresearched > 0,
-        why: "Every company in this period already has a finding or a job in flight." },
-      { scope: "all", estimate: estimate(all, budget),
-        allowed: all > 0 && (!hasFindings || ctx.user.role === "admin"),
-        why: "A full re-run of a period that already has findings is Admin-only." },
-    ];
+    const adminOnly = "A full re-run of a period that already has findings is Admin-only.";
+    const offer = async (pass: Pass | null, scope: Scope): Promise<ScopeOffer> => {
+      const n = (await scopeCompanies(ctx.db, period.id, scope, pass ?? undefined)).length;
+      const passCopy = pass ? PASS_COPY[pass] : null;
+      return {
+        key: `${pass ?? "replay"}:${scope}`, pass, scope,
+        label: passCopy
+          ? `${passCopy.label}: ${scope === "all" ? "every eligible company" : "not yet done"}`
+          : SCOPE_COPY[scope].label,
+        detail: passCopy ? passCopy.detail : SCOPE_COPY[scope].detail,
+        estimate: estimate(n, budget),
+        allowed: n > 0 && (scope !== "all" || !hasFindings || ctx.user.role === "admin"),
+        why: n === 0
+          ? (pass === "general"
+              ? "No company has a trusted website with pass 2 still to do. Accept websites from pass 1 in review."
+              : "Every company in scope has been researched or has a job in flight.")
+          : adminOnly,
+      };
+    };
+    offers = mode.mode === "live"
+      ? [await offer("identity", "unresearched"), await offer("general", "unresearched"),
+         await offer("identity", "all"), await offer("general", "all")]
+      : [await offer(null, "unresearched"), await offer(null, "all")];
   }
 
   const startSection = (index: number) => (

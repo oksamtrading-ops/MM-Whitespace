@@ -138,9 +138,21 @@ export type Extracted = {
 };
 
 export type Extractors = {
-  pdf: (bytes: Uint8Array) => Extracted;
+  /** May be asynchronous: real PDF parsers are. */
+  pdf: (bytes: Uint8Array) => Extracted | Promise<Extracted>;
   html: (bytes: Uint8Array) => Extracted;
+  text: (bytes: Uint8Array) => Extracted;
 };
+
+/**
+ * Plain text and JSON, kept as sent. The HTML stripper would collapse the
+ * whitespace and drop anything between angle brackets, and an EDGAR record is
+ * anchored against by exact substring.
+ */
+export function defaultTextExtractor(bytes: Uint8Array): Extracted {
+  const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  return { text, pageCount: 1, extractor: "text", extractorVersion: "1.0.0" };
+}
 
 /** Strip scripts, styles, and markup. Embedded scripts never reach storage. */
 export function defaultHtmlExtractor(bytes: Uint8Array): Extracted {
@@ -283,11 +295,13 @@ export async function fetchDocument(
       throw new FetchRefused("no_pdf_extractor", current.href,
         "a PDF extractor must be supplied; text is extracted server-side under a timeout");
     }
-    extracted = extractors.pdf(response.body);
+    extracted = await extractors.pdf(response.body);
     if (extracted.pageCount > MAX_PAGES) {
       throw new FetchRefused("too_many_pages", current.href,
         `${extracted.pageCount} pages exceeds ${MAX_PAGES}`);
     }
+  } else if (type === "text") {
+    extracted = (extractors.text ?? defaultTextExtractor)(response.body);
   } else {
     extracted = (extractors.html ?? defaultHtmlExtractor)(response.body);
   }
@@ -316,6 +330,8 @@ export async function fetchDocument(
     docType: type,
     // The chars-per-page gate runs BEFORE the document is sent anywhere, so a
     // scanned filing produces a distinct state rather than garbage findings.
-    hasTextLayer: charsPerPage >= 100,
+    // A PDF is the only thing that can be scanned: a short web page is short,
+    // not an image, and marking it textless would refuse every terse homepage.
+    hasTextLayer: type !== "pdf" || charsPerPage >= 100,
   };
 }

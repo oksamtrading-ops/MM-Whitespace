@@ -124,7 +124,11 @@ export const FIELD_LABELS: Record<string, string[]> = {
 };
 
 export function hasTextLayer(doc: StoredDocument): boolean {
+  // The fetcher knows the document's type and the gate does not: its verdict
+  // stands either way. Characters per page are only worked out here for a
+  // document stored without one.
   if (doc.hasTextLayer === false) return false;
+  if (doc.hasTextLayer === true) return true;
   const cpp = doc.charsPerPage
     ?? (doc.pageCount ? (doc.charCount ?? doc.text.length) / doc.pageCount : null);
   if (cpp === null || cpp === undefined) return (doc.text ?? "").trim().length > 0;

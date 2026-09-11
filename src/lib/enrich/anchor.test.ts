@@ -150,8 +150,12 @@ Audit fees for 2025 were 1412000 in aggregate across the group.`);
 });
 
 test("a scanned filing is its own state, not a rejection", async () => {
-  const scanned = doc("  \n \n ", { pageCount: 40, charCount: 6, charsPerPage: 0.15 });
+  // No stored verdict, so characters per page decide.
+  const scanned = doc("  \n \n ", { pageCount: 40, charCount: 6, charsPerPage: 0.15, hasTextLayer: undefined });
   assert.equal(hasTextLayer(scanned), false);
+  // And a fetcher's verdict stands: it knows a short web page from a scanned PDF.
+  assert.equal(hasTextLayer(doc("Northco", { charsPerPage: 7, hasTextLayer: true })), true);
+  assert.equal(hasTextLayer(doc("x".repeat(500), { hasTextLayer: false })), false);
   const v = gate({ fieldKey: "audit_fee", excerpt: "anything", document: scanned });
   assert.equal(v.state, "no_text_layer");
   assert.equal(v.bulkAcceptable, false);

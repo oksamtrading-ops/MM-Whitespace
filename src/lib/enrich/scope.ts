@@ -6,6 +6,22 @@
  */
 export type Scope = "unresearched" | "all";
 
+/** Live research's two passes, website first. See src/lib/enrich/live.ts. */
+export type Pass = "identity" | "general";
+
+export const PASS_COPY: Record<Pass, { label: string; detail: string }> = {
+  identity: {
+    label: "Pass 1 — identity",
+    detail: "Official website, SEC registration, fiscal year-end and head office, and the filings pass 2 " +
+            "will read. A website only unlocks pass 2 once it is accepted in review.",
+  },
+  general: {
+    label: "Pass 2 — fields",
+    detail: "Stage, auditor, tenure, change of auditor, fees and the rest, read from filings on the " +
+            "company's own website and SEC EDGAR. Only companies with a trusted website.",
+  },
+};
+
 export const SCOPE_COPY: Record<Scope, { label: string; detail: string }> = {
   unresearched: {
     label: "Companies not yet researched",

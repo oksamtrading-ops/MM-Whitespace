@@ -23,10 +23,15 @@ import { enrichmentMode } from "../../../../lib/enrich/worker.ts";
 
 export const dynamic = "force-dynamic";
 
-/** Vercel Pro with Fluid compute allows up to 800. Raise after S1 measures 300 holding. */
-export const maxDuration = 300;
-/** What the drain loop budgets for itself: the margin is for the job in flight. */
-export const DRAIN_DEADLINE_SECONDS = 240;
+/**
+ * Vercel Pro's ceiling with Fluid compute. S1 measured a probe living its full
+ * 240 of 240 s at maxDuration 300; live research needs the room. Probe again.
+ */
+export const maxDuration = 800;
+/** The drain loop's own clock, leaving the platform a margin. */
+export const DRAIN_DEADLINE_SECONDS = 720;
+/** No new job starts with less than this left: a live job runs for minutes. */
+export const RESERVE_SECONDS = 240;
 
 // @public-endpoint authorises with a constant-time bearer secret, not a role
 export async function POST(request: Request) {
@@ -46,7 +51,8 @@ export async function POST(request: Request) {
   const host = process.env.VERCEL_REGION ?? "local";
   after(async () => {
     const outcome = await drain(handle, {
-      deadlineSeconds: DRAIN_DEADLINE_SECONDS, mode: mode.mode ?? "replay", probe, host,
+      deadlineSeconds: DRAIN_DEADLINE_SECONDS, reserveSeconds: probe ? 0 : RESERVE_SECONDS,
+      mode: mode.mode ?? "replay", probe, host,
     });
     if (!probe && outcome.workRemains && outcome.reason === "deadline") {
       await kickWorker({ origin: url.origin });

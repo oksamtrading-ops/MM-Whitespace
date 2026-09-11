@@ -23,6 +23,9 @@ import {
   type PublicCompanyRow, type Route,
 } from "./prompt.ts";
 import { buildAllowlist, type FetchedDocument } from "./fetch.ts";
+import { researchLive, sdkVendor, type CandidateDoc, type LiveBody, type LiveDeps, type Pass } from "./live.ts";
+import { extractPdf } from "./pdf.ts";
+import { nodeHttp, nodeResolve } from "./transport.ts";
 import { getNumber } from "../settings/index.ts";
 
 export const SCHEMA_HASH = "findings-v1";
@@ -55,10 +58,19 @@ export function enrichmentMode(
   }
   if (value === "replay") return { mode: "replay", reason: null };
   if (value === "live") {
-    return LIVE_ENABLED
-      ? { mode: "live", reason: null }
-      : { mode: null, reason: "MM_ENRICH_MODE=live, but live mode is not enabled in this build " +
-                              "(LIVE_ENABLED in src/lib/enrich/worker.ts). No vendor call has been made." };
+    if (!LIVE_ENABLED) {
+      return { mode: null, reason: "MM_ENRICH_MODE=live, but live mode is not enabled in this build " +
+                                   "(LIVE_ENABLED in src/lib/enrich/worker.ts). No vendor call has been made." };
+    }
+    // Refuse at the door rather than abandon every company for the same
+    // missing setting one job at a time.
+    const missing = [
+      !process.env.ANTHROPIC_API_KEY && "ANTHROPIC_API_KEY",
+      !process.env.MM_SEC_CONTACT && "MM_SEC_CONTACT (SEC EDGAR requires a contact)",
+    ].filter(Boolean);
+    return missing.length
+      ? { mode: null, reason: `Live research needs ${missing.join(" and ")} set in this deployment.` }
+      : { mode: "live", reason: null };
   }
   return { mode: null, reason: `MM_ENRICH_MODE=${value} is not a mode (replay or live).` };
 }
@@ -106,6 +118,8 @@ export type RunOptions = {
   budgetUsd?: number;
   /** The app_users id of whoever started it; null for a script. */
   createdBy?: string | null;
+  /** Injected live dependencies. Tests only; production builds them from the environment. */
+  live?: LiveDeps;
 };
 
 export type ResearchOutcome = {
@@ -162,6 +176,16 @@ export async function publicRow(db: Sql, companyId: string, periodAsOf: string):
     if (Array.isArray(values) && values.length > 0) knownRegions[region] = values;
   }
 
+  // Public values the application already holds -- the workbook's or an
+  // accepted one -- so research starts from them rather than rediscovering.
+  const known = async (key: string): Promise<string | null> => {
+    const r = await db.get(`select value from company_period_field_values
+        where company_id = ? and field_key = ? limit 1`, companyId, key) as { value: string } | undefined;
+    if (!r) return null;
+    try { const v = JSON.parse(r.value); return typeof v === "string" && v.trim() ? v.trim() : null; }
+    catch { return null; }
+  };
+
   return {
     companyId: c.id,
     canonicalName: c.canonical_name,
@@ -169,13 +193,42 @@ export async function publicRow(db: Sql, companyId: string, periodAsOf: string):
     rootTicker: ident?.value ?? "",
     exchange: ident?.exchange ?? "",
     interlistedVenues: [],
-    headOfficeLocation: null,
-    headOfficeRegion: null,
+    headOfficeLocation: await known("head_office_location"),
+    headOfficeRegion: await known("head_office_region"),
     knownRegions,
     knownCommodities: [],
-    knownWebsite: null,
+    knownWebsite: await known("website"),
     periodAsOf,
   };
+}
+
+/**
+ * The live pipeline's dependencies, from the environment. Refuses rather than
+ * starting a run that would fail on every company for the same missing thing.
+ */
+export async function defaultLiveDeps(db: Sql): Promise<LiveDeps> {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set; no vendor call can be made");
+  if (!process.env.MM_SEC_CONTACT) {
+    throw new Error("MM_SEC_CONTACT is not set. SEC EDGAR refuses requests without a contact in the User-Agent.");
+  }
+  const catalog = await db.all("select key, label, classification from field_catalog") as
+    Array<{ key: string; label: string; classification: string }>;
+  return {
+    vendor: await sdkVendor(),
+    fetch: { http: nodeHttp, resolve: nodeResolve, extractors: { pdf: extractPdf } },
+    store: (doc) => storeDocument(db, doc),
+    restrictions: restrictionsFromCatalog(catalog),
+  };
+}
+
+/** What pass 1 found for this company, so pass 2 reads it instead of searching again. */
+async function priorCandidates(db: Sql, companyId: string): Promise<CandidateDoc[] | null> {
+  const row = await db.get(`select r.raw from enrichment_job_results r
+      join enrichment_jobs j on j.id = r.job_id
+     where j.company_id = ? and j.field_group = 'identity'
+     order by r.created_at desc limit 1`, companyId) as { raw: string } | undefined;
+  if (!row) return null;
+  try { return (JSON.parse(row.raw) as LiveBody).candidates ?? null; } catch { return null; }
 }
 
 /**
@@ -183,7 +236,9 @@ export async function publicRow(db: Sql, companyId: string, periodAsOf: string):
  * here, and nothing downstream may read anything but the stored row.
  */
 async function research(
-  db: Sql, jobId: string, row: PublicCompanyRow, opts: RunOptions): Promise<{ body: CassetteBody; attempt: number }> {
+  db: Sql, jobId: string, row: PublicCompanyRow, opts: RunOptions,
+  fieldGroup = "general"): Promise<{ body: CassetteBody; attempt: number }> {
+  if ((opts.mode ?? "replay") === "live") return researchLiveJob(db, jobId, row, opts, fieldGroup);
   const route: Route = opts.route ?? "extract_general";
   const model = opts.model ?? DEFAULT_MODEL;
   const prompt = buildPrompt(route, row);
@@ -201,12 +256,6 @@ async function research(
   });
 
   const mode: Mode = opts.mode ?? "replay";
-  if (mode === "live" && !LIVE_ENABLED) {
-    throw new Error(
-      "live mode is not enabled in this build. No vendor call has been made. " +
-      "Enable it only after the risk and legal review under decision 1 is complete, " +
-      "and with a key present.");
-  }
   const cassettes = new Cassettes(opts.cassetteDir, mode);
   const rec = cassettes.read(key);
   const body = rec.response as CassetteBody;
@@ -217,6 +266,37 @@ async function research(
      values (?, ?, ?, ?, ?, ?)`, jobId, attempt, JSON.stringify(body), rec.key,
         JSON.stringify(rec.usage ?? {}), rec.verbatimTurn ?? null);
 
+  return { body, attempt };
+}
+
+/**
+ * Live research for one job. Refuses in a build without LIVE_ENABLED unless
+ * the caller injected its own dependencies -- which is how the tests drive the
+ * whole pipeline with a fake vendor and a fake network, and nothing else can.
+ *
+ * The result is stored raw before anything is derived from it, as a recording
+ * is: a crash after the calls costs a re-derivation, not a second bill.
+ */
+async function researchLiveJob(
+  db: Sql, jobId: string, row: PublicCompanyRow, opts: RunOptions, fieldGroup: string,
+): Promise<{ body: CassetteBody; attempt: number }> {
+  if (!LIVE_ENABLED && !opts.live) {
+    throw new Error(
+      "live mode is not enabled in this build. No vendor call has been made. " +
+      "Enable it only after the risk and legal review under decision 1 is complete, " +
+      "and with a key present.");
+  }
+  const deps = opts.live ?? await defaultLiveDeps(db);
+  const pass: Pass = fieldGroup === "identity" ? "identity" : "general";
+  const body = await researchLive({
+    pass, row, website: row.knownWebsite,
+    priorCandidates: pass === "general" ? await priorCandidates(db, row.companyId) : null,
+  }, deps);
+
+  const attempt = ((await db.get("select coalesce(max(attempt), 0) a from enrichment_job_results where job_id = ?", jobId) as { a: number }).a) + 1;
+  await db.run(`insert into enrichment_job_results (job_id, attempt, raw, request_id, usage, verbatim_turn)
+     values (?, ?, ?, ?, ?, ?)`, jobId, attempt, JSON.stringify(body), `live-${pass}`,
+        JSON.stringify(body.usage ?? {}), null);
   return { body, attempt };
 }
 
@@ -242,8 +322,10 @@ async function persist(
 
   const out: ResearchOutcome["findings"] = [];
   for (const f of body.findings) {
-    const doc = f.document_hash ? docs.get(f.document_hash) ?? null
-              : (body.documents?.length ? docs.get([...docs.keys()][0])! : null);
+    // A finding is checked against the document it names and no other. One
+    // that names none is unverified -- source_unreachable, the manual queue --
+    // never quietly checked against whatever else the job happened to fetch.
+    const doc = f.document_hash ? docs.get(f.document_hash) ?? null : null;
 
     // An abstention is not put through the gate: there is no claim to anchor,
     // and routing it to `unsupported` would inflate the hallucination rate that
@@ -433,7 +515,7 @@ export async function processJob(
 
   let body: CassetteBody, attempt: number;
   try {
-    ({ body, attempt } = await research(db, job.id, row, opts));
+    ({ body, attempt } = await research(db, job.id, row, opts, job.field_group));
   } catch (err) {
     throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
   }

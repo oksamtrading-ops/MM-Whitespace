@@ -252,6 +252,21 @@ export function cellLabel(row: Row, fieldLabel: string): string {
 export function formatValue(value: unknown): string {
   if (value === null || value === undefined) return "no value";
   if (typeof value === "string") return value;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const o = value as Record<string, unknown>;
+    // The two structured researched fields read as sentences, not as the
+    // keys that happen to be true -- "registrant" alone drops the form.
+    if ("registrant" in o) {
+      return o.registrant
+        ? `SEC registrant${o.form ? `, files ${o.form}` : ""}${o.cik ? ` (CIK ${o.cik})` : ""}`
+        : "not an SEC registrant";
+    }
+    if ("changed" in o) {
+      return o.changed
+        ? `changed${o.date ? ` ${o.date}` : ""}${o.previous_auditor ? ` from ${o.previous_auditor}` : ""}`
+        : "no change in 24 months";
+    }
+  }
   if (typeof value === "object") {
     const on = Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => v === true).map(([k]) => k.replace(/_/g, " "));

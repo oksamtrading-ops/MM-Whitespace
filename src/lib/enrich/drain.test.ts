@@ -80,6 +80,16 @@ test("a worker stops at its deadline and reports that work remains", async () =>
   assert.equal(out.workRemains, true, "the caller uses this to ask for a successor");
 });
 
+test("a worker starts no job without its reserve left, so the platform never cuts one off", async () => {
+  const { db, periodId, companies } = seeded();
+  await createRun(db, periodId, companies.map((c) => c.id), { cassetteDir: CASSETTE_DIR });
+  // 200 seconds left against a 240-second reserve: nothing is claimed.
+  const out = await drain(db, { ...opts, deadlineSeconds: 200, reserveSeconds: 240 });
+  assert.equal(out.reason, "deadline");
+  assert.equal(out.jobsCompleted, 0);
+  assert.equal(out.workRemains, true);
+});
+
 test("a worker with no free slot exits at the door and holds nothing", async () => {
   const { db, periodId, companies } = seeded();
   await createRun(db, periodId, companies.map((c) => c.id), { cassetteDir: CASSETTE_DIR });

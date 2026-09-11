@@ -26,11 +26,20 @@ test("a database that predates the ledger is adopted, not replayed", async () =>
   // Erase the ledger to stand in for a database made before it existed.
   db.exec("drop table schema_migrations");
 
+  // Adoption covers the prefix ending at the last migration whose table is
+  // present. 0002 sits inside that prefix, so it is adopted, not replayed --
+  // replaying it would violate a unique constraint. A data-only migration AFTER
+  // the last table-creating one (0015) cannot be recognised that way, so it
+  // runs again; that is why such a migration must be idempotent.
+  const catalogBefore = db.prepare("select count(*) n from field_catalog").get() as { n: number };
   const again = applySchema(db);
-  assert.deepEqual(again.applied, [],
-    "0002 only inserts rows, so replaying it would violate a unique constraint");
-  const rows = db.prepare("select count(*) n from field_catalog").get() as { n: number };
-  assert.ok(rows.n > 0);
+  const createsTable = (f: string) =>
+    /create\s+table/i.test(readFileSync(join(MIGRATIONS_DIR, f), "utf8"));
+  assert.ok(!again.applied.includes("0002_seed_catalog.sql"), "0002 is adopted, never replayed");
+  assert.deepEqual(again.applied.filter(createsTable), [], "no table-creating migration is replayed");
+  const catalogAfter = db.prepare("select count(*) n from field_catalog").get() as { n: number };
+  assert.equal(catalogAfter.n, catalogBefore.n, "re-running a data-only migration changes nothing");
+  assert.deepEqual(applySchema(db).applied, [], "and once recorded, nothing runs twice");
 });
 
 test("a migration the database has not had is applied to it", async () => {

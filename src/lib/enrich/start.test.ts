@@ -89,6 +89,27 @@ test("the estimate blocks: over budget is refused, and a large scope needs its c
   assert.ok(big.estimatedMinutes >= 1);
 });
 
+test("pass 1 covers every company; pass 2 only those with a website the application trusts", async () => {
+  const { db, periodId, companies } = seeded();
+  const analyst = await actor(db, "analyst");
+  assert.equal((await scopeCompanies(db, periodId, "unresearched", "identity")).length, 2);
+  assert.deepEqual(await scopeCompanies(db, periodId, "unresearched", "general"), []);
+  await assert.rejects(
+    () => startRun(db, { periodId, scope: "unresearched", budgetUsd: 5, mode: "live", actor: analyst, pass: "general" }),
+    /Accept websites from pass 1 first/);
+
+  const r = await startRun(db, { periodId, scope: "unresearched", budgetUsd: 5, mode: "live", actor: analyst, pass: "identity" });
+  const groups = await db.all("select distinct field_group from enrichment_jobs where run_id = ?", r.runId) as Array<{ field_group: string }>;
+  assert.deepEqual(groups.map((g) => g.field_group), ["identity"]);
+  // Pass 1 in flight: not offered again.
+  assert.deepEqual(await scopeCompanies(db, periodId, "unresearched", "identity"), []);
+
+  // An accepted website makes that company eligible for pass 2, and only that one.
+  await db.run(`insert into company_period_field_values (period_id, company_id, field_key, value, source, evidence_state)
+      values (?, ?, 'website', '"https://northco.invalid"', 'ai_accepted', 'asserted')`, periodId, companies[0].id);
+  assert.deepEqual(await scopeCompanies(db, periodId, "unresearched", "general"), [companies[0].id]);
+});
+
 test("a typed count must match the scope exactly", async () => {
   const { db, periodId } = seeded();
   const analyst = await actor(db, "analyst");

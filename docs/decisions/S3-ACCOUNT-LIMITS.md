@@ -140,7 +140,7 @@ its wording.
 | Cost of step 4 | $0.00025 (16 in, 4 out, on each model) | Step 4 output |
 | A real 401 from the live API | `authentication_error`, "invalid x-api-key", no `retry-after`; `classifyError` said **HALT** | Step 4's first attempt, a mis-pasted key |
 | Retention configuration | | Console → Privacy |
-| Self-set limit error, captured | | Step 6 output, verbatim |
-| `classifyError` on the captured error | | Step 6 output — must be HALT |
-| Requests that landed past the limit | | Step 6 output |
-| `WORKER_SLOTS` decided | | |
+| Self-set limit error, captured | **Not tripped.** 40 requests, ~$1.61, all accepted, against the `mm-s3-throwaway` workspace, 11 September 2026 | Step 6 output |
+| `classifyError` on the captured error | Not exercised live; the documented 400 is pinned verbatim in `client.test.ts` and `route.test.ts` | — |
+| Requests that landed past the limit | Unknown — either the limit was set above $1.61 or spend is counted with a delay. **Treat the workspace limit as a backstop that can overshoot; the run's own budget in the application is the precise control** | Step 6 output |
+| `WORKER_SLOTS` decided | **4** | Step 4 |

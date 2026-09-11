@@ -155,13 +155,29 @@ in `worker_runs`, and chains a successor when work remains; `/runs` has a
 `scripts/worker.mjs` runs the same drain as a local process. The decision and
 its measurements are in `docs/decisions/S1-WORKER-SHAPE.md`.
 
-**Research still cannot run in production**, because `MM_ENRICH_MODE` is
-unset there and live mode is not enabled in the build (`LIVE_ENABLED` in
-`src/lib/enrich/worker.ts`). The run screen says exactly that. Setting
-`MM_ENRICH_MODE=replay` in production would only abandon every job, since no
-recording exists for a real company; do not.
+**Live research is built and tested, and switched off** (approved 11
+September 2026; `docs/decisions/RESEARCH-PIPELINE.md`). Two passes, website
+first: pass 1 finds and verifies the website, reads SEC EDGAR for registrant
+status, fiscal year-end and head office, and lists the filings; pass 2 reads
+those filings from the trusted domain and EDGAR for every field, with a
+verbatim quote the anchoring gate re-checks. Three new fields: fiscal
+year-end, auditor since, auditor change (24 months), SEC registrant
+(migration `0015`). Code: `src/lib/enrich/live.ts` (orchestration),
+`edgar.ts`, `transport.ts` (real network, DNS-rebinding guard), `pdf.ts`
+(unpdf). Tests drive both passes end to end with a fake vendor and fake
+network, including a fabricated fee that the gate rejects.
 
-**Checks:** 279 Node tests, 54 Python tests, the authorisation check, the
+**It still cannot run in production**: `LIVE_ENABLED` is false in the build,
+`MM_ENRICH_MODE` is unset, and `MM_SEC_CONTACT` is not set. The run screen
+says exactly which. Setting `MM_ENRICH_MODE=replay` in production would only
+abandon every job, since no recording exists for a real company; do not.
+
+**Review now reaches the tier** (`src/lib/review/resolve.ts`). Accepting a
+stage re-runs the classifier; undo restores the file's value; decisions amend
+a published period's working values (the published revision never moves).
+Before this, none of the three was true.
+
+**Checks:** 311 Node tests, 54 Python tests, the authorisation check, the
 colour-contrast check, the build, and 113 end-to-end checks.
 
 ```bash
@@ -180,7 +196,8 @@ npm test && npm run check:auth && npm run check:contrast && npm run build && npm
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |
 | `MM_CRON_SECRET`, `CRON_SECRET` | same value | The per-minute tick in `vercel.json`, and the worker endpoint |
 | `MM_ENRICH_MODE` | **unset** | Deliberately. `replay` would abandon every real company; `live` waits on item 3 |
-| `ANTHROPIC_API_KEY` | model key | **Sensitive**, added 11 September 2026. Unused until `LIVE_ENABLED` is true. Should come from a dedicated workspace with its own spend limit (S3 step 3) |
+| `ANTHROPIC_API_KEY` | model key | **Sensitive**, added 11 September 2026, from workspace `mm-whitespace-prod` (`wrkspc_01W9ytyaac9BqDzPzLkxNAKT`) with a $100/month limit. Unused until `LIVE_ENABLED` is true |
+| `MM_SEC_CONTACT` | **not set yet** | A contact email for SEC EDGAR's required User-Agent. Live mode refuses to start without it |
 
 **No variable is set for Preview deployments.** The CLI refused to add a
 preview variable without a git branch. Previews are behind Vercel's login, and
@@ -319,24 +336,15 @@ it. Never run `git add -A` outside this project's folder.
    tick fix, the start-run screen and the S1 decision are built and measured
    (see "What exists"). Left: read a day of `cron_ticks` (the section near
    the top). Research itself waits on item 3.
-3. **Live enrichment.** The model call is written (`callVendor` in
-   `src/lib/enrich/client.ts`), the SDK is installed (`@anthropic-ai/sdk`
-   0.125.0) and `ANTHROPIC_API_KEY` is in Vercel. Left: **spike S3**, which
-   is a checklist for Samuel in `docs/decisions/S3-ACCOUNT-LIMITS.md` with a
-   probe script (`scripts/s3_probe.mjs`); then `LIVE_ENABLED = true` in
-   `src/lib/enrich/worker.ts` and `MM_ENRICH_MODE=live` in Vercel. Preparing
-   S3 found that `classifyError` recognised **neither** real spend-limit
-   error; fixed and tested against the documented bodies. A research failure
-   is now routed by `routeFailure` in `src/lib/enrich/worker.ts`: retryable →
-   back to the queue after the vendor's `retry-after` or an exponential
-   backoff (a 529 charges no attempt); halt → the whole run stops with the
-   vendor's message as its reason; anything else → abandoned. **What live
-   mode still lacks is the pipeline itself**: `research()` has no live
-   branch — discovery (web search for candidate filings), fetching them
-   through `fetch.ts` (which has no PDF extractor yet), extraction with
-   structured output, and mapping the answer into findings. That is the next
-   build. The **Batch API** is not built: the ledger has an `awaiting_batch`
-   state and nothing submits or polls.
+3. **Live enrichment — built, tested, switched off.** S3 is done (Scale tier,
+   `WORKER_SLOTS` stays 4; results in `docs/decisions/S3-ACCOUNT-LIMITS.md`).
+   The two-pass pipeline is built (`docs/decisions/RESEARCH-PIPELINE.md`).
+   Before Run 1 (five companies): apply migration `0015` to Supabase; set
+   `MM_SEC_CONTACT` in Vercel; confirm decision 1's scope covers web search
+   and fetching issuer sites and EDGAR; then `LIVE_ENABLED = true` and
+   `MM_ENRICH_MODE=live`. Re-probe the worker at `maxDuration = 800`. The
+   **Batch API** is not built: the ledger has an `awaiting_batch` state and
+   nothing submits or polls.
 4. **Excel export in the app.** It is only a Python command (`npm run
    export`); it needs a download, and on Vercel the same Python-function
    approach as the parser.

@@ -1,0 +1,629 @@
+/**
+ * Live research: two passes, website first.
+ *
+ * Approved 11 September 2026. The model DISCOVERS; the application FETCHES,
+ * checks and quotes; a person ACCEPTS. Nothing here writes a value -- every
+ * result is a proposal the review workspace shows with its source and quote.
+ *
+ *   Pass 1, identity. For every company: find the official website, the SEC
+ *   registration if there is one, and the recent filings. The website is
+ *   verified by fetching the homepage and finding the company named on it;
+ *   the SEC record is fetched from EDGAR and its name must match. A website
+ *   only unlocks fetching once an Analyst accepts it (or it came from the
+ *   workbook) -- the model never widens what the application trusts.
+ *
+ *   Pass 2, fields. For a company with a known website: fetch the filings from
+ *   that domain and from EDGAR, keep only documents that name the company,
+ *   cut windows around what each field needs, and extract every field with
+ *   a verbatim quote. The anchoring gate then checks each quote against the
+ *   stored document, exactly as it does for a recording.
+ *
+ * SEDAR+ is legally excluded (decision 1). It is blocked in the search tool,
+ * and never on any allowlist.
+ */
+import { detectScale } from "./anchor.ts";
+import { ROUTE_CONFIG } from "./client.ts";
+import { asStored, edgarFindings, edgarIndexDocuments, lookupEdgar, normalizeName, SEC_HOST } from "./edgar.ts";
+import { fetchDocument, type FetchDeps, type FetchedDocument } from "./fetch.ts";
+import { buildPrompt, egressScan, type PublicCompanyRow, type RestrictionSet } from "./prompt.ts";
+import type { Pass } from "./scope.ts";
+import type { CassetteBody, ProposedFinding } from "./worker.ts";
+
+export type { Pass } from "./scope.ts";
+
+/**
+ * Hosts that serve issuers' investor-relations documents on the issuer's
+ * behalf. A document there is still refused unless it names the company.
+ */
+export const IR_PLATFORM_HOSTS = ["q4cdn.com"];
+/** Never searched, never fetched. Decision 1. */
+export const EXCLUDED_DOMAINS = ["sedarplus.ca", "sedarplus.com", "sedar.com"];
+
+const MAX_DOCUMENTS = 5;
+const WINDOW_CHARS = 1200;
+const MAX_CHARS_PER_DOCUMENT = 30_000;
+const MAX_CHARS_TOTAL = 100_000;
+
+/* ------------------------------------------------------------- the vendor */
+
+/** The one method the pipeline needs. The SDK in production; a fake in tests. */
+export type Vendor = { create(request: Record<string, unknown>): Promise<VendorMessage> };
+export type VendorMessage = {
+  content: Array<Record<string, unknown>>;
+  stop_reason: string | null;
+  stop_details?: { category?: string | null } | null;
+  usage: {
+    input_tokens?: number; output_tokens?: number;
+    cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null;
+    cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } | null;
+    server_tool_use?: { web_search_requests?: number } | null;
+  };
+};
+
+export async function sdkVendor(): Promise<Vendor> {
+  // Dynamic, so the test suite and replay never load the SDK.
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  // Five minutes a request; the SDK's own retries cover a dropped connection,
+  // and routeFailure decides everything after that.
+  const client = new Anthropic({ timeout: 5 * 60_000, maxRetries: 2 });
+  return { create: (request) => client.messages.create(request as never) as unknown as Promise<VendorMessage> };
+}
+
+/** $/MTok, from the published price list, 11 September 2026. */
+export const PRICES: Record<string, { in: number; out: number; cw5: number; cw1h: number; cr: number }> = {
+  "claude-opus-5": { in: 5, out: 25, cw5: 6.25, cw1h: 10, cr: 0.5 },
+  "claude-sonnet-5": { in: 2, out: 10, cw5: 2.5, cw1h: 4, cr: 0.2 },
+};
+export const WEB_SEARCH_USD = 0.01;
+
+/** Usage and cost across every call a job makes. */
+export class Meter {
+  usage: Record<string, number> = {};
+  cost = 0;
+  add(model: string, u: VendorMessage["usage"]): void {
+    const p = PRICES[model] ?? PRICES["claude-opus-5"];
+    const cw5 = u.cache_creation?.ephemeral_5m_input_tokens ?? 0;
+    // Without the breakdown, price every cache write at the dearer 1-hour rate.
+    const cw1h = u.cache_creation?.ephemeral_1h_input_tokens ?? ((u.cache_creation_input_tokens ?? 0) - cw5);
+    const searches = u.server_tool_use?.web_search_requests ?? 0;
+    this.cost += ((u.input_tokens ?? 0) * p.in + (u.output_tokens ?? 0) * p.out +
+                  cw5 * p.cw5 + Math.max(0, cw1h) * p.cw1h + (u.cache_read_input_tokens ?? 0) * p.cr) / 1e6
+               + searches * WEB_SEARCH_USD;
+    for (const [k, v] of Object.entries({
+      input_tokens: u.input_tokens, output_tokens: u.output_tokens,
+      cache_read_input_tokens: u.cache_read_input_tokens, cache_creation_input_tokens: u.cache_creation_input_tokens,
+      web_search_requests: searches, requests: 1,
+    })) this.usage[k] = (this.usage[k] ?? 0) + (Number(v) || 0);
+  }
+}
+
+export type LiveDeps = {
+  vendor: Vendor;
+  fetch: FetchDeps;
+  /** Persist a fetched document's text (worker.storeDocument). */
+  store: (doc: FetchedDocument) => Promise<unknown>;
+  restrictions: RestrictionSet;
+};
+
+/** Every request passes the egress scan first; a hit throws and nothing is sent. */
+async function call(deps: LiveDeps, meter: Meter, request: Record<string, unknown>): Promise<VendorMessage> {
+  egressScan(request, deps.restrictions);
+  const msg = await deps.vendor.create(request);
+  meter.add(String(request.model), msg.usage ?? {});
+  // A refusal arrives as HTTP 200. Read nothing from it.
+  if (msg.stop_reason === "refusal") {
+    throw new Error(`the model declined (${msg.stop_details?.category ?? "no category given"})`);
+  }
+  return msg;
+}
+
+/* -------------------------------------------------------------- discovery */
+
+export type CandidateDoc = {
+  url: string; kind: DocKind; fiscal_year: number | null; title: string;
+  provenance: "search_result" | "reported" | "edgar";
+};
+export type DocKind =
+  | "annual_information_form" | "annual_financial_statements" | "annual_mdna" | "information_circular"
+  | "change_of_auditor" | "interim_report" | "news_release" | "sec_annual_report" | "other";
+
+const DOC_KINDS: DocKind[] = [
+  "annual_information_form", "annual_financial_statements", "annual_mdna", "information_circular",
+  "change_of_auditor", "interim_report", "news_release", "sec_annual_report", "other",
+];
+/** What to read first. The circular carries auditor, tenure and fees; the AIF carries stage and head office. */
+const KIND_PRIORITY: DocKind[] = [
+  "information_circular", "annual_information_form", "change_of_auditor", "annual_financial_statements",
+  "sec_annual_report", "annual_mdna", "interim_report", "news_release", "other",
+];
+
+const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: "null" }] });
+
+const REPORT_TOOL = {
+  name: "report_sources",
+  description:
+    "Report what you found. Call this exactly once, at the end. Use null where you found nothing; " +
+    "an honest null is a correct answer and a guess is not.",
+  strict: true,
+  input_schema: {
+    type: "object",
+    properties: {
+      official_website: { ...nullable({ type: "string" }),
+        description: "The company's own website, as https://host. Not a directory, news or exchange page." },
+      sec_cik: { ...nullable({ type: "string" }),
+        description: "The company's SEC Central Index Key if it files with the SEC, digits only." },
+      documents: {
+        type: "array",
+        description: "Its most recent primary documents, newest first. URLs exactly as you found them.",
+        items: {
+          type: "object",
+          properties: {
+            url: { type: "string" },
+            kind: { type: "string", enum: DOC_KINDS },
+            fiscal_year: nullable({ type: "integer" }),
+            title: { type: "string" },
+          },
+          required: ["url", "kind", "fiscal_year", "title"],
+          additionalProperties: false,
+        },
+      },
+      notes: { type: "string", description: "One or two sentences on anything uncertain." },
+    },
+    required: ["official_website", "sec_cik", "documents", "notes"],
+    additionalProperties: false,
+  },
+};
+
+const DISCOVERY_RULES = `
+Find, for the company named in the message:
+1. Its official website.
+2. Whether it files with the US SEC, and its CIK if so.
+3. Its most recent annual information form, audited annual financial statements, annual MD&A,
+   management information circular, and any change-of-auditor notice or reporting package from the
+   last 24 months.
+
+Prefer the company's own website and SEC EDGAR. SEDAR+ must not be used. Do not state facts about the
+company; another step reads the documents. Report with report_sources, once, at the end.`.trim();
+
+export type Discovery = { report: { official_website: string | null; sec_cik: string | null;
+  documents: Array<Omit<CandidateDoc, "provenance">>; notes: string };
+  seenUrls: Set<string>; seenHosts: Set<string> };
+
+export function hostOf(url: string): string | null {
+  try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return null; }
+}
+const canonicalUrl = (u: string) => { try { const x = new URL(u); x.hash = ""; return x.href.replace(/\/$/, ""); } catch { return u; } };
+
+/** Every URL that appeared in a search result or a search citation, wherever it sits in the response. */
+export function collectSearchUrls(node: unknown, into: Set<string>): void {
+  if (Array.isArray(node)) { for (const n of node) collectSearchUrls(n, into); return; }
+  if (!node || typeof node !== "object") return;
+  const o = node as Record<string, unknown>;
+  if ((o.type === "web_search_result" || o.type === "web_search_result_location") && typeof o.url === "string") {
+    into.add(canonicalUrl(o.url));
+  }
+  for (const v of Object.values(o)) if (v && typeof v === "object") collectSearchUrls(v, into);
+}
+
+export async function discover(row: PublicCompanyRow, deps: LiveDeps, meter: Meter): Promise<Discovery> {
+  const cfg = ROUTE_CONFIG.discovery;
+  const prompt = buildPrompt("discovery", row);
+  const system = [{ type: "text", text: `${prompt.stablePrefix}\n\n${DISCOVERY_RULES}`,
+                    cache_control: { type: "ephemeral", ttl: "1h" } }];
+  // A constant tools block: a per-company domain list here would rebuild the
+  // cache for every company (docs/design/06).
+  const tools = [
+    { type: "web_search_20260209", name: "web_search", max_uses: 6, blocked_domains: EXCLUDED_DOMAINS },
+    REPORT_TOOL,
+  ];
+  const messages: Array<Record<string, unknown>> = [{ role: "user", content: prompt.userContent }];
+  const seenUrls = new Set<string>();
+
+  for (let turn = 0; turn < 6; turn++) {
+    const msg = await call(deps, meter, {
+      model: cfg.model, max_tokens: 16000, thinking: { type: "adaptive" },
+      output_config: { effort: cfg.effort }, system, tools, messages,
+    });
+    collectSearchUrls(msg.content, seenUrls);
+    const report = msg.content.find((b) => b.type === "tool_use" && b.name === "report_sources");
+    if (report) {
+      const seenHosts = new Set([...seenUrls].map(hostOf).filter((h): h is string => Boolean(h)));
+      return { report: report.input as Discovery["report"], seenUrls, seenHosts };
+    }
+    if (msg.stop_reason === "max_tokens") throw new Error("discovery ran out of output tokens before reporting");
+    messages.push({ role: "assistant", content: msg.content });
+    // A paused server-side loop resumes on its own when the turn is resent.
+    if (msg.stop_reason !== "pause_turn") {
+      messages.push({ role: "user", content: "Call report_sources now with what you found. Use null where you found nothing." });
+    }
+  }
+  throw new Error("discovery did not report its sources within six turns");
+}
+
+/* ---------------------------------------------------------- identity pass */
+
+/** Does this text name the company -- its core name, or its ticker as a word? */
+export function namesCompany(text: string, row: Pick<PublicCompanyRow, "canonicalName" | "rootTicker">): number {
+  const core = normalizeName(row.canonicalName);
+  const hay = normalizeName(text.slice(0, 400_000));
+  if (core && hay.includes(core)) {
+    // Index into the ORIGINAL text, for a quote that anchors.
+    const first = core.split(" ")[0];
+    const at = text.toLowerCase().indexOf(first);
+    return at >= 0 ? at : 0;
+  }
+  const t = row.rootTicker.trim();
+  if (t.length >= 2) {
+    const m = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).exec(text);
+    if (m) return m.index;
+  }
+  return -1;
+}
+
+/** A verbatim slice of the text around an index, trimmed to whole words. */
+export function quoteAround(text: string, at: number, width = 220): string {
+  const start = Math.max(0, at - 40);
+  const slice = text.slice(start, start + width);
+  return slice.replace(/^\S*\s/, "").replace(/\s\S*$/, "").trim() || slice.trim();
+}
+
+async function verifyWebsite(
+  proposed: string | null, row: PublicCompanyRow, seenHosts: Set<string>, deps: LiveDeps,
+): Promise<{ finding: ProposedFinding; doc: FetchedDocument | null }> {
+  const host = proposed ? hostOf(proposed.startsWith("http") ? proposed : `https://${proposed}`) : null;
+  if (!host) {
+    return { finding: { field_key: "website", value: null, abstained: true,
+      abstention_reason: "no official website found" }, doc: null };
+  }
+  const value = `https://${host}`;
+  if (!seenHosts.has(host) || EXCLUDED_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) {
+    // Proposed but never seen in a search result: nothing to check it against.
+    return { finding: { field_key: "website", value, source_url: value, source_tier: 5,
+      model_self_confidence: null, evidence_excerpt: null }, doc: null };
+  }
+  let doc: FetchedDocument;
+  try {
+    // A verification fetch: this one host, the homepage, nothing else.
+    doc = await fetchDocument(value, new Set([host]), deps.fetch);
+  } catch {
+    return { finding: { field_key: "website", value, source_url: value, source_tier: 2,
+      evidence_excerpt: null }, doc: null };
+  }
+  const at = namesCompany(doc.text, row);
+  if (at < 0) {
+    // Fetched, and the company is not named on it. Not a fabrication -- the
+    // site may render its name as an image -- but not verified either, so it
+    // names no document and goes to an Analyst unanchored.
+    return { finding: { field_key: "website", value, source_url: doc.finalUrl, source_tier: 2,
+      evidence_excerpt: null }, doc: null };
+  }
+  return {
+    finding: {
+      field_key: "website", value, source_url: doc.finalUrl, source_tier: 2,
+      document_hash: doc.contentHash, document_age_days: 0,
+      evidence_excerpt: quoteAround(doc.text, at),
+      // The homepage naming the company is one corroboration; search is the other.
+      corroborating_sources: 2,
+    },
+    doc,
+  };
+}
+
+export type LiveJob = {
+  pass: Pass;
+  row: PublicCompanyRow;
+  /** The website the application already trusts: the workbook's, or an accepted one. */
+  website: string | null;
+  /** Documents pass 1 found, reused by pass 2 instead of searching again. */
+  priorCandidates: CandidateDoc[] | null;
+};
+
+export type LiveBody = CassetteBody & { candidates?: CandidateDoc[]; notes?: string[] };
+
+export async function identityPass(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<LiveBody> {
+  const found = await discover(job.row, deps, meter);
+  const findings: ProposedFinding[] = [];
+  const documents: NonNullable<CassetteBody["documents"]> = [];
+  const notes: string[] = [];
+  if (found.report.notes) notes.push(found.report.notes);
+
+  let verifiedHost: string | null = job.website ? hostOf(job.website) : null;
+  if (!job.website) {
+    const w = await verifyWebsite(found.report.official_website, job.row, found.seenHosts, deps);
+    findings.push(w.finding);
+    if (w.doc) { await deps.store(w.doc); documents.push(asStored(w.doc)); }
+    if (w.finding.evidence_excerpt) verifiedHost = hostOf(String(w.finding.value));
+  }
+
+  const candidates: CandidateDoc[] = (found.report.documents ?? [])
+    .filter((d) => DOC_KINDS.includes(d.kind))
+    .map((d) => ({ ...d, provenance: found.seenUrls.has(canonicalUrl(d.url)) ? "search_result" as const : "reported" as const }));
+
+  const edgar = await lookupEdgar({ name: job.row.canonicalName, ticker: job.row.rootTicker },
+                                  found.report.sec_cik, deps.fetch);
+  if (edgar) {
+    await deps.store(edgar.doc);
+    documents.push(asStored(edgar.doc));
+    const fromEdgar = edgarFindings(edgar.record, edgar.doc);
+    // EDGAR's own record of the website corroborates the verified one.
+    const website = findings.find((f) => f.field_key === "website");
+    if (website && verifiedHost && edgar.record.website && hostOf(edgar.record.website) === verifiedHost) {
+      website.corroborating_sources = (website.corroborating_sources ?? 0) + 1;
+    }
+    findings.push(...fromEdgar);
+    if (edgar.record.latestAnnual) {
+      candidates.push({ url: edgar.record.latestAnnual.url, kind: "sec_annual_report",
+        fiscal_year: Number(edgar.record.latestAnnual.filed.slice(0, 4)) - 1, title: edgar.record.latestAnnual.form,
+        provenance: "edgar" });
+      for (const url of await edgarIndexDocuments(edgar.record.latestAnnual.indexUrl, deps.fetch)) {
+        candidates.push({ url, kind: "sec_annual_report", fiscal_year: null, title: "annual report exhibit", provenance: "edgar" });
+      }
+    }
+  } else {
+    findings.push({ field_key: "sec_registrant", value: null, abstained: true,
+      abstention_reason: "EDGAR has no registrant whose name matches this company" });
+  }
+
+  return { findings, documents, usage: meter.usage, cost_usd: meter.cost, candidates, notes };
+}
+
+/* ------------------------------------------------------------ fields pass */
+
+/** Where in a filing each field's evidence lives. */
+const WINDOW_PATTERNS: RegExp[] = [
+  /independent auditor|chartered professional accountants|auditors? of the (company|corporation)|appointed .{0,40}auditor|auditor since|nomination de l.auditeur/gi,
+  /audit fees|audit-related fees|tax fees|all other fees|external auditor service fees|honoraires/gi,
+  /commercial production|producing mine|production decision|construction decision|feasibility study|preliminary economic assessment|exploration[- ]stage|development[- ]stage|royalt(y|ies)|streaming/gi,
+  /head office|registered office|principal (executive )?office|si[eè]ge social/gi,
+  /(fiscal|financial) year|years? ended|exercice/gi,
+  /change of auditor|reporting package|successor auditor|former auditor|resign(ed|ation) as auditor/gi,
+];
+
+/** The cover and every window that matters, verbatim, merged and capped. */
+export function windowsOf(text: string): string {
+  const spans: Array<[number, number]> = [[0, Math.min(text.length, 3000)]];
+  for (const re of WINDOW_PATTERNS) {
+    let hits = 0;
+    for (const m of text.matchAll(re)) {
+      spans.push([Math.max(0, m.index! - WINDOW_CHARS), Math.min(text.length, m.index! + WINDOW_CHARS)]);
+      if (++hits >= 6) break;
+    }
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const s of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s[0] <= last[1]) last[1] = Math.max(last[1], s[1]);
+    else merged.push([...s]);
+  }
+  let out = "";
+  for (const [a, b] of merged) {
+    const piece = text.slice(a, b);
+    if (out.length + piece.length > MAX_CHARS_PER_DOCUMENT) break;
+    out += (out ? "\n[...]\n" : "") + piece;
+  }
+  return out;
+}
+
+export const EXTRACTED_FIELDS = [
+  "stage_evidence_state", "auditor", "auditor_since", "auditor_change", "fiscal_year_end",
+  "head_office_location", "head_office_region", "audit_fee", "tax_fee",
+] as const;
+
+const EXTRACTION_SCHEMA = {
+  type: "object",
+  properties: {
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          field_key: { type: "string", enum: EXTRACTED_FIELDS },
+          document_index: nullable({ type: "integer" }),
+          evidence_excerpt: nullable({ type: "string" }),
+          abstained: { type: "boolean" },
+          abstention_reason: nullable({ type: "string" }),
+          self_confidence: { type: "number" },
+          text_value: nullable({ type: "string" }),
+          year_value: nullable({ type: "integer" }),
+          stage: nullable({
+            type: "object",
+            properties: {
+              exploration: nullable({ type: "boolean" }), development: nullable({ type: "boolean" }),
+              production: nullable({ type: "boolean" }), royalty_streaming: nullable({ type: "boolean" }),
+            },
+            required: ["exploration", "development", "production", "royalty_streaming"],
+            additionalProperties: false,
+          }),
+          auditor_change: nullable({
+            type: "object",
+            properties: {
+              changed: { type: "boolean" }, date: nullable({ type: "string" }),
+              previous_auditor: nullable({ type: "string" }),
+            },
+            required: ["changed", "date", "previous_auditor"],
+            additionalProperties: false,
+          }),
+          fee: nullable({
+            type: "object",
+            properties: {
+              amount: { type: "number" },
+              scale: { type: "string", enum: ["units", "thousands", "millions"] },
+              fiscal_year: nullable({ type: "integer" }),
+              currency: nullable({ type: "string" }),
+            },
+            required: ["amount", "scale", "fiscal_year", "currency"],
+            additionalProperties: false,
+          }),
+        },
+        required: ["field_key", "document_index", "evidence_excerpt", "abstained", "abstention_reason",
+                   "self_confidence", "text_value", "year_value", "stage", "auditor_change", "fee"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["findings"],
+  additionalProperties: false,
+};
+
+const EXTRACTION_RULES = `
+Return one finding for EVERY field listed, in this form:
+- stage_evidence_state: the stage object. production = commercial production declared or revenue
+  from mining; development = construction decision or feasibility-stage project; exploration =
+  exploration properties; royalty_streaming = royalty or stream interests. true, false, or null
+  where the documents do not say.
+- auditor: text_value, the firm's name as printed.
+- auditor_since: year_value, the year the current auditor was first appointed.
+- auditor_change: whether the auditor changed in the 24 months before the period date. If it did
+  not, quote the passage that establishes the current auditor's tenure; if nothing does, abstain.
+- fiscal_year_end: text_value as MM-DD.
+- head_office_location: text_value, the city. head_office_region: text_value, "Province or State,
+  Country".
+- audit_fee, tax_fee: fee, the most recent fiscal year, with the amount EXACTLY as printed and the
+  scale the table states (units, thousands or millions).
+
+evidence_excerpt must be copied character for character from the document it cites, at most 300
+characters, and document_index must name that document. If the documents do not state a value,
+set abstained true and say why. Abstaining is a correct answer; a guess is not.`.trim();
+
+/** Canonical firm names, as the auditors table spells them. */
+const AUDITOR_NAMES: Array<[RegExp, string]> = [
+  [/deloitte/i, "Deloitte"], [/pricewaterhouse|\bpwc\b/i, "PwC"], [/\bkpmg\b/i, "KPMG"],
+  [/ernst\s*&\s*young|\bey\b/i, "Ernst & Young"], [/\bbdo\b/i, "BDO"], [/grant thornton/i, "Grant Thornton"],
+  [/\bmnp\b/i, "MNP"], [/davidson/i, "Davidson & Company"], [/mcgovern/i, "McGovern Hurley"],
+  [/crowe/i, "Crowe MacKay"], [/kingston ross/i, "Kingston Ross Pasnak"], [/\bms partners\b/i, "MS Partners"],
+  [/d\s*\+\s*h/i, "D+H Group"], [/zeifmans/i, "Zeifmans"], [/smythe/i, "Smythe"], [/\bdntw\b/i, "DNTW"],
+];
+export function canonicalAuditor(name: string): string {
+  return AUDITOR_NAMES.find(([re]) => re.test(name))?.[1] ?? name.trim();
+}
+
+const SCALE: Record<string, number> = { units: 1, thousands: 1_000, millions: 1_000_000 };
+
+type Extracted = {
+  field_key: typeof EXTRACTED_FIELDS[number]; document_index: number | null; evidence_excerpt: string | null;
+  abstained: boolean; abstention_reason: string | null; self_confidence: number;
+  text_value: string | null; year_value: number | null;
+  stage: Record<string, boolean | null> | null;
+  auditor_change: { changed: boolean; date: string | null; previous_auditor: string | null } | null;
+  fee: { amount: number; scale: "units" | "thousands" | "millions"; fiscal_year: number | null; currency: string | null } | null;
+};
+
+/** One extraction item as a proposed finding, citing the document it names. */
+export function toFinding(e: Extracted, docs: FetchedDocument[]): ProposedFinding | null {
+  const doc = e.document_index !== null ? docs[e.document_index] ?? null : null;
+  const base: ProposedFinding = {
+    field_key: e.field_key, value: null,
+    evidence_excerpt: e.evidence_excerpt, model_self_confidence: e.self_confidence,
+    abstained: e.abstained, abstention_reason: e.abstention_reason,
+    source_url: doc?.finalUrl ?? null, source_tier: doc?.sourceTier ?? 5,
+    document_hash: doc?.contentHash ?? null, document_age_days: null,
+    corroborating_sources: doc ? 1 : 0,
+  };
+  if (e.abstained) return base;
+  switch (e.field_key) {
+    case "stage_evidence_state":
+      return e.stage ? { ...base, value: e.stage } : null;
+    case "auditor":
+      return e.text_value ? { ...base, value: canonicalAuditor(e.text_value) } : null;
+    case "auditor_since":
+      return e.year_value ? { ...base, value: e.year_value } : null;
+    case "auditor_change":
+      return e.auditor_change ? { ...base, value: e.auditor_change } : null;
+    case "fiscal_year_end":
+      return e.text_value && /^\d{2}-\d{2}$/.test(e.text_value) ? { ...base, value: e.text_value } : null;
+    case "head_office_location": case "head_office_region":
+      return e.text_value ? { ...base, value: e.text_value.trim() } : null;
+    case "audit_fee": case "tax_fee": {
+      if (!e.fee) return null;
+      const units = e.fee.amount * SCALE[e.fee.scale];
+      return { ...base, value: units,
+               numeric: { value: units, scale: e.fee.scale, fiscalYear: e.fee.fiscal_year ?? undefined } };
+    }
+  }
+  return null;
+}
+
+function rankCandidates(candidates: CandidateDoc[], allow: Set<string>): CandidateDoc[] {
+  const allowed = (url: string) => {
+    const h = hostOf(url);
+    return Boolean(h) && [...allow].some((a) => h === a || h!.endsWith(`.${a}`));
+  };
+  const seen = new Set<string>();
+  return candidates
+    .filter((c) => allowed(c.url))
+    .filter((c) => { const k = canonicalUrl(c.url); if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) =>
+      (KIND_PRIORITY.indexOf(a.kind) - KIND_PRIORITY.indexOf(b.kind)) ||
+      ((b.fiscal_year ?? 0) - (a.fiscal_year ?? 0)) ||
+      // Seen in a search result beats merely reported: a transcribed URL may not exist.
+      ((a.provenance === "reported" ? 1 : 0) - (b.provenance === "reported" ? 1 : 0)));
+}
+
+export async function fieldsPass(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<LiveBody> {
+  const siteHost = job.website ? hostOf(job.website) : null;
+  if (!siteHost) {
+    throw new Error("the fields pass needs a website the application trusts; run the identity pass and accept its website first");
+  }
+  const allow = new Set([siteHost, SEC_HOST, ...IR_PLATFORM_HOSTS]);
+  const notes: string[] = [];
+
+  let candidates = job.priorCandidates ?? [];
+  if (candidates.length === 0) {
+    const found = await discover(job.row, deps, meter);
+    candidates = (found.report.documents ?? []).map((d) => ({ ...d,
+      provenance: found.seenUrls.has(canonicalUrl(d.url)) ? "search_result" as const : "reported" as const }));
+  }
+
+  const docs: FetchedDocument[] = [];
+  for (const c of rankCandidates(candidates, allow)) {
+    if (docs.length >= MAX_DOCUMENTS) break;
+    let doc: FetchedDocument;
+    try {
+      doc = await fetchDocument(c.url, allow, deps.fetch);
+    } catch (err) {
+      notes.push(`not fetched: ${c.url} (${(err as Error).message.slice(0, 120)})`);
+      continue;
+    }
+    if (!doc.hasTextLayer) { notes.push(`no text layer: ${c.url}`); continue; }
+    // The worst output this system can produce is a well-cited fee from the
+    // wrong company's filing. A document that does not name the company is
+    // not this company's document.
+    if (namesCompany(doc.text, job.row) < 0) { notes.push(`does not name the company: ${c.url}`); continue; }
+    await deps.store(doc);
+    docs.push(doc);
+  }
+  if (docs.length === 0) {
+    return { findings: [], documents: [], usage: meter.usage, cost_usd: meter.cost, notes };
+  }
+
+  let budget = MAX_CHARS_TOTAL;
+  const blocks = docs.map((d, i) => {
+    const w = windowsOf(d.text).slice(0, Math.max(0, budget));
+    budget -= w.length;
+    return { type: "text", text: `<document index="${i}" url="${d.finalUrl}">\n${w}\n</document>` };
+  });
+
+  const cfg = ROUTE_CONFIG.extract_general;
+  const prompt = buildPrompt("extract_general", job.row);
+  const msg = await call(deps, meter, {
+    model: cfg.model, max_tokens: 16000, thinking: { type: "adaptive" },
+    output_config: { effort: cfg.effort, format: { type: "json_schema", schema: EXTRACTION_SCHEMA } },
+    system: [{ type: "text", text: `${prompt.stablePrefix}\n\n${EXTRACTION_RULES}`,
+               cache_control: { type: "ephemeral", ttl: "1h" } }],
+    messages: [{ role: "user", content: [...blocks, { type: "text", text: prompt.userContent }] }],
+  });
+  if (msg.stop_reason === "max_tokens") throw new Error("extraction ran out of output tokens");
+  const text = msg.content.filter((b) => b.type === "text").map((b) => String(b.text)).join("");
+  let parsed: { findings: Extracted[] };
+  try { parsed = JSON.parse(text); } catch { throw new Error("extraction did not return valid JSON"); }
+
+  const findings = parsed.findings.map((e) => toFinding(e, docs)).filter((f): f is ProposedFinding => f !== null);
+  const documents = docs.map((d) => asStored(d, detectScale(d.text) ?? null));
+  return { findings, documents, usage: meter.usage, cost_usd: meter.cost, notes };
+}
+
+export async function researchLive(job: LiveJob, deps: LiveDeps): Promise<LiveBody> {
+  const meter = new Meter();
+  return job.pass === "identity" ? identityPass(job, deps, meter) : fieldsPass(job, deps, meter);
+}

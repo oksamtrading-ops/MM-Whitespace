@@ -31,6 +31,12 @@ export type EndReason =
 export type DrainOptions = {
   /** Wall clock this invocation may use. Leave a margin under the platform's ceiling. */
   deadlineSeconds: number;
+  /**
+   * Do not START a job unless this much time remains. A live job -- a search,
+   * several filings, an extraction -- runs for minutes, and one the platform
+   * cuts off mid-way costs its calls and gets requeued to pay for them again.
+   */
+  reserveSeconds?: number;
   mode: Mode;
   cassetteDir?: string;
   workerId?: string;
@@ -115,7 +121,7 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
     let emptyClaims = 0;
     try {
       for (;;) {
-        if (now() >= deadline) { reason = "deadline"; break; }
+        if (now() + (opts.reserveSeconds ?? 0) * 1000 >= deadline) { reason = "deadline"; break; }
 
         const runId = await nextClaimableRun(db);
         if (!runId) { reason = completed + failed > 0 ? "drained" : "no_work"; break; }
