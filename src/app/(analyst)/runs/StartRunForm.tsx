@@ -32,6 +32,13 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
   // A typed list narrows the scope; a ticker outside it is shown, and refused on submit.
   const wanted = parseTickers(limit);
   const outside = wanted.filter((t) => !chosen.tickers.includes(t));
+  // When the tickers belong to another option -- typically "every eligible
+  // company", because they have already had this pass -- say which, rather
+  // than only that they are refused. Run 1: "not yet done" was selected for
+  // four companies that had just had pass 2, and the button greyed out.
+  const covering = outside.length
+    ? offers.find((o) => o.key !== chosen.key && o.allowed && outside.every((t) => o.tickers.includes(t)))
+    : undefined;
   const count = wanted.length ? wanted.length - outside.length : chosen.estimate.count;
   const est = wanted.length
     ? estimate(count, Number.isFinite(budgetNumber) ? budgetNumber : 0, workerSlots)
@@ -65,7 +72,17 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
                placeholder="e.g. AEM, WDO, ELE" onChange={(e) => setLimit(e.target.value)} />
         <span className="hint">
           {outside.length
-            ? `Not in this scope: ${outside.join(", ")}. They would be refused.`
+            ? covering
+              ? <>
+                  {`${outside.join(", ")} ${outside.length === 1 ? "is" : "are"} not in the selected option. `}
+                  {covering.pass === chosen.pass && chosen.scope === "unresearched"
+                    ? "They have already had this pass. "
+                    : ""}
+                  <button type="button" className="btn quiet" onClick={() => setKey(covering.key)}>
+                    Switch to “{covering.label}”
+                  </button>
+                </>
+              : `Not in any option here: ${outside.join(", ")}. Check the tickers, or that pass 2 companies have an accepted website.`
             : "For a sample run, or to research named companies again. Leave empty for the whole scope."}
         </span>
       </p>
