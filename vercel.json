@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/parse.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{node_modules/**,.next/**,src/**,tests/**,docs/**,scripts/**,supabase/**,public/**,**/*.test.py,**/test_*.py}"
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/tick",

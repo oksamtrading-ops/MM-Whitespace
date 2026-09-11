@@ -76,6 +76,29 @@ def render(report, companies, verbose=False):
     return 1 if blocking else 0
 
 
+def to_payload(companies, report):
+    """The parse as the commit step reads it.
+
+    One definition, used by the command line and by the upload function that
+    runs in production, so a period committed from either path is built from
+    byte-identical input.
+    """
+    proofs = report.get("proofs") or {}
+    return {
+        "period": report.get("period"),
+        # region_provenance is exported: the commit step needs it to write
+        # the fact assertion, which is what makes a re-upload safe.
+        "companies": list(companies.values()),
+        "report": {
+            "blocking": [f._asdict() for f in report["blocking"]],
+            "warnings": [f._asdict() for f in report["warnings"]],
+            "info": [f._asdict() for f in report["info"]],
+            "proofs": {k: v for k, v in proofs.items() if k != "totals"},
+            "totals": {k: list(v) for k, v in (proofs.get("totals") or {}).items()},
+        },
+    }
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Parse a whitespace workbook and validate it.")
     ap.add_argument("workbook")
@@ -86,23 +109,8 @@ def main(argv=None):
     companies, report = ingest(args.workbook)
 
     if args.json:
-        payload = {
-            "period": report.get("period"),
-            # region_provenance is exported: the commit step needs it to write
-            # the fact assertion, which is what makes a re-upload safe.
-            "companies": list(companies.values()),
-            "report": {
-                "blocking": [f._asdict() for f in report["blocking"]],
-                "warnings": [f._asdict() for f in report["warnings"]],
-                "info": [f._asdict() for f in report["info"]],
-                "proofs": {k: v for k, v in (report.get("proofs") or {}).items()
-                           if k != "totals"},
-                "totals": {k: list(v) for k, v in
-                           ((report.get("proofs") or {}).get("totals") or {}).items()},
-            },
-        }
         with open(args.json, "w") as fh:
-            json.dump(payload, fh, indent=2, default=str)
+            json.dump(to_payload(companies, report), fh, indent=2, default=str)
         print("wrote %s (%d companies)" % (args.json, len(companies)))
 
     return render(report, companies, args.verbose)
