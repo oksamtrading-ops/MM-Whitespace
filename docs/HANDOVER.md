@@ -180,6 +180,7 @@ npm test && npm run check:auth && npm run check:contrast && npm run build && npm
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |
 | `MM_CRON_SECRET`, `CRON_SECRET` | same value | The per-minute tick in `vercel.json`, and the worker endpoint |
 | `MM_ENRICH_MODE` | **unset** | Deliberately. `replay` would abandon every real company; `live` waits on item 3 |
+| `ANTHROPIC_API_KEY` | model key | **Sensitive**, added 11 September 2026. Unused until `LIVE_ENABLED` is true. Should come from a dedicated workspace with its own spend limit (S3 step 3) |
 
 **No variable is set for Preview deployments.** The CLI refused to add a
 preview variable without a git branch. Previews are behind Vercel's login, and
@@ -319,12 +320,17 @@ it. Never run `git add -A` outside this project's folder.
    (see "What exists"). Left: read a day of `cron_ticks` (the section near
    the top). Research itself waits on item 3.
 3. **Live enrichment.** The model call is written (`callVendor` in
-   `src/lib/enrich/client.ts`). It needs an Anthropic API key, `npm install
-   @anthropic-ai/sdk`, spike **S3** (account tier and spend limits),
-   `LIVE_ENABLED = true` in `src/lib/enrich/worker.ts`, and then
-   `MM_ENRICH_MODE=live` in Vercel. `WORKER_SLOTS` (4) is a placeholder S3
-   sets. The **Batch API** is not built: the ledger has an `awaiting_batch`
-   state and nothing submits or polls.
+   `src/lib/enrich/client.ts`), the SDK is installed (`@anthropic-ai/sdk`
+   0.125.0) and `ANTHROPIC_API_KEY` is in Vercel. Left: **spike S3**, which
+   is a checklist for Samuel in `docs/decisions/S3-ACCOUNT-LIMITS.md` with a
+   probe script (`scripts/s3_probe.mjs`); then `LIVE_ENABLED = true` in
+   `src/lib/enrich/worker.ts` and `MM_ENRICH_MODE=live` in Vercel. Preparing
+   S3 found that `classifyError` recognised **neither** real spend-limit
+   error; fixed and tested against the documented bodies. Live research is
+   also not wired through `classifyError` yet — `research()` throws before
+   it — so the retry/halt/dead-letter routing has to be connected when live
+   mode is turned on. The **Batch API** is not built: the ledger has an
+   `awaiting_batch` state and nothing submits or polls.
 4. **Excel export in the app.** It is only a Python command (`npm run
    export`); it needs a download, and on Vercel the same Python-function
    approach as the parser.

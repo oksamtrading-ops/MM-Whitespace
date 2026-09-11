@@ -95,21 +95,39 @@ export function assertOutputModeIsLegal(config: RouteConfig): void {
 export type Classification = "retry" | "halt" | "dead_letter";
 
 /**
- * Both spend-limit error shapes route to HALT, not retry -- including the 400
- * that a self-set spend limit produces, which a naive classifier treats as
- * permanent-but-retryable-elsewhere and which would otherwise fail every
- * remaining company in the run one at a time.
+ * Both spend-limit error shapes route to HALT, not retry and not dead letter.
+ * The shapes, verbatim from the API documentation (11 September 2026):
+ *
+ *   A limit YOU set, org or workspace: HTTP 400, invalid_request_error,
+ *   "You have reached your specified [workspace ]API usage limits. ..."
+ *   Every reasonable classifier calls a 400 permanent, so without this the
+ *   first trip mid-run dead-letters every remaining company one at a time.
+ *
+ *   The TIER's monthly cap: HTTP 429, rate_limit_error -- the same type as an
+ *   ordinary rate limit -- with error.details.error_code =
+ *   "enforced_spend_limit_reached" and no retry-after. Retrying fails until
+ *   the first of next month.
+ *
+ * The error_code is matched first because it is the documented discriminator;
+ * the message patterns cover the 400, which carries no code.
  */
 export function classifyError(err: unknown): Classification {
-  const e = err as { status?: number; error?: { error?: { type?: string; message?: string } };
-                     message?: string; name?: string };
+  const e = err as {
+    status?: number;
+    error?: { error?: { type?: string; message?: string; details?: { error_code?: string } } };
+    message?: string; name?: string;
+  };
   const status = e?.status;
   const type = e?.error?.error?.type ?? "";
+  const code = e?.error?.error?.details?.error_code ?? "";
   const message = `${e?.error?.error?.message ?? ""} ${e?.message ?? ""}`.toLowerCase();
 
   const spendLimited =
+    code === "enforced_spend_limit_reached" ||
     type === "billing_error" ||
-    /credit balance|spend limit|quota|billing/.test(message);
+    status === 402 ||
+    /you have reached your (specified )?(workspace )?api usage limits/.test(message) ||
+    /credit balance/.test(message);
   if (spendLimited) return "halt";
 
   if (status === 429) return "retry";

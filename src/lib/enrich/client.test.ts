@@ -62,13 +62,48 @@ test("the fees route keeps citations and gives up structured output", async () =
   assert.equal(ROUTE_CONFIG.extract_fees.structured, false);
 });
 
-test("spend-limit errors halt the run; they are never retried", async () => {
-  // The 400 shape a self-set spend limit produces. A naive classifier calls
-  // this permanent and fails every remaining company one at a time.
-  assert.equal(classifyError({ status: 400, error: { error: { type: "billing_error",
-    message: "Your credit balance is too low" } } }), "halt");
-  assert.equal(classifyError({ status: 429, error: { error: { type: "rate_limit_error",
-    message: "spend limit reached for this workspace" } } }), "halt");
+/**
+ * The error bodies below are VERBATIM from platform.claude.com/docs/en/api/
+ * rate-limits and /errors, read 11 September 2026. An earlier version of this
+ * test used invented messages ("spend limit reached for this workspace"),
+ * matched them, and passed -- while the real messages matched nothing and
+ * would have dead-lettered every company one at a time. Spike S3 replaces
+ * these with bodies captured from the account itself.
+ */
+const body = (type: string, message: string, details?: Record<string, string>) =>
+  ({ type: "error", error: { type, message, ...(details ? { details } : {}) },
+     request_id: "req_018EeWyXxfu5pfWkrYcMdjWG" });
+
+test("a spend limit you set is a 400 invalid_request_error, and it halts", async () => {
+  assert.equal(classifyError({ status: 400, error: body("invalid_request_error",
+    "You have reached your specified API usage limits. You will regain access on " +
+    "2026-10-01 at 00:00 UTC.") }), "halt");
+  // The workspace variant: one word longer, and the one the pilot will hit.
+  assert.equal(classifyError({ status: 400, error: body("invalid_request_error",
+    "You have reached your specified workspace API usage limits. You will regain " +
+    "access on 2026-10-01 at 00:00 UTC.") }), "halt");
+});
+
+test("the tier's monthly spend cap is a 429 with no retry-after, and it halts", async () => {
+  // Same type as a rate limit. The error_code is the only reliable difference.
+  assert.equal(classifyError({ status: 429, error: body("rate_limit_error",
+    "You have reached your API usage limits: your organization has crossed its monthly " +
+    "API usage threshold, set based on your organization's API tier. You will regain " +
+    "access on 2026-09-01 at 00:00 UTC.",
+    { error_code: "enforced_spend_limit_reached" }) }), "halt");
+  // And by the error_code alone, should the wording change.
+  assert.equal(classifyError({ status: 429, error: body("rate_limit_error", "",
+    { error_code: "enforced_spend_limit_reached" }) }), "halt");
+});
+
+test("billing and credit problems halt: every job would fail the same way", async () => {
+  assert.equal(classifyError({ status: 402, error: body("billing_error",
+    "There's an issue with your billing or payment information.") }), "halt");
+  assert.equal(classifyError({ status: 400, error: body("invalid_request_error",
+    "Your credit balance is too low to access the Anthropic API.") }), "halt");
+});
+
+test("ordinary failures keep their ordinary classes", async () => {
 
   // Ordinary rate limiting is retryable.
   assert.equal(classifyError({ status: 429, error: { error: { type: "rate_limit_error",
