@@ -4,26 +4,61 @@
  *   node scripts/publish_period.mjs ./period.db              # evaluate only
  *   node scripts/publish_period.mjs ./period.db --publish
  *   node scripts/publish_period.mjs ./period.db --publish --override "reason"
+ *
+ * With no path, it publishes the database the application itself would read --
+ * MM_DATABASE_URL, DATABASE_URL or POSTGRES_URL -- through the same code the
+ * Publish button runs:
+ *
+ *   node scripts/publish_period.mjs --publish --override "reason" --actor admin@example
+ *
+ * `--actor` names the Admin the publication is recorded against. Without it an
+ * override is recorded with nobody behind it, which the audit trail exists to
+ * prevent.
  */
 import { DatabaseSync } from "node:sqlite";
 import { evaluateGate } from "../src/lib/publish/gate.ts";
 import { publishPeriod, PublishBlocked, readPublished } from "../src/lib/publish/snapshot.ts";
 import { SqliteSql } from "../src/lib/db/sqlite.ts";
+import { databaseUrl, openSql } from "../src/lib/db/open.ts";
 
-const [dbPath, ...rest] = process.argv.slice(2);
-if (!dbPath) {
-  console.error("usage: node scripts/publish_period.mjs <period.db> [--publish] [--override <reason>]");
+const args = process.argv.slice(2);
+const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : null; };
+const dbPath = args[0] && !args[0].startsWith("--") ? args[0] : null;
+const doPublish = args.includes("--publish");
+const overrideReason = flag("--override");
+const actorEmail = flag("--actor");
+
+let db;
+if (dbPath) {
+  const handle = new DatabaseSync(dbPath);
+  handle.exec("pragma foreign_keys = on");
+  db = new SqliteSql(handle);
+} else if (databaseUrl()) {
+  db = openSql();
+} else {
+  console.error("usage: node scripts/publish_period.mjs [period.db] [--publish] " +
+                "[--override <reason>] [--actor <email>]\n" +
+                "  with no path, set MM_DATABASE_URL to publish the application's database");
   process.exit(2);
 }
-const doPublish = rest.includes("--publish");
-const oi = rest.indexOf("--override");
-const overrideReason = oi >= 0 ? rest[oi + 1] : null;
 
-const handle = new DatabaseSync(dbPath);
-handle.exec("pragma foreign_keys = on");
-const db = new SqliteSql(handle);
-const period = handle.prepare("select id, label, status from periods order by rowid desc limit 1").get();
+// The newest period by its as-of date: rowid exists only in SQLite.
+const period = await db.get(
+  "select id, label, status from periods order by market_cap_as_of desc limit 1");
+console.log(`database: ${db.dialect}`);
 console.log(`period: ${period.label}  (${period.status})\n`);
+
+let actorId = null;
+if (actorEmail) {
+  const actor = await db.get(
+    "select id, role, is_active from app_users where lower(email) = lower(?)", actorEmail);
+  if (!actor || !actor.is_active || actor.role !== "admin") {
+    console.error(`--actor ${actorEmail} is not an active Admin; only an Admin may publish ` +
+                  "through a closed gate");
+    process.exit(1);
+  }
+  actorId = actor.id;
+}
 
 const gate = await evaluateGate(db, period.id);
 const pad = (s, n) => String(s).padEnd(n);
@@ -46,6 +81,7 @@ if (doPublish) {
   try {
     const r = await publishPeriod(db, period.id, {
       overrideReason,
+      actorId,
       amendmentReason: overrideReason ? null : "re-publish",
     });
     console.log(`\n  published revision ${r.revision}: ${r.companies} companies, ` +
@@ -70,4 +106,4 @@ if (doPublish) {
     throw err;
   }
 }
-handle.close();
+await db.close();
