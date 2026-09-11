@@ -91,7 +91,8 @@ export type ProposedFinding = {
   field_key: string;
   value: unknown;
   evidence_excerpt?: string | null;
-  numeric?: { value: number; scale: "units" | "thousands" | "millions"; fiscalYear?: number } | null;
+  numeric?: { value: number; scale: "units" | "thousands" | "millions"; fiscalYear?: number;
+             currency?: string | null } | null;
   model_self_confidence?: number | null;
   abstained?: boolean;
   abstention_reason?: string | null;
@@ -348,9 +349,19 @@ async function persist(
           fieldKey: f.field_key,
           excerpt: f.evidence_excerpt ?? null,
           numeric: f.numeric ? { ...f.numeric, fieldKey: f.field_key } : null,
+          stage: f.field_key === "stage_evidence_state" && f.value && typeof f.value === "object"
+            ? f.value as Record<string, boolean | null> : null,
           document: doc,
           sourceReachable: doc !== null,
         });
+
+    // A fee the model gave no currency, where the document states one beside
+    // the figure: take the document's word, which is the one the gate checked.
+    const stated = "matched" in verdict.anchor ? verdict.anchor.matched?.currency : undefined;
+    const value = f.value && typeof f.value === "object" && "amount" in (f.value as object) &&
+      !(f.value as { currency?: string | null }).currency && stated
+      ? { ...(f.value as object), currency: stated }
+      : f.value;
 
     const ev: EvidenceInput = {
       sourceTier: f.source_tier ?? 5,
@@ -369,7 +380,7 @@ async function persist(
           anchor_document_hash, evidence_excerpt, scale_token, abstained,
           abstention_reason, state, model, prompt_version)
        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       returning id`, runId, jobId, attempt, companyId, f.field_key, JSON.stringify(f.value ?? null),
+       returning id`, runId, jobId, attempt, companyId, f.field_key, JSON.stringify(value ?? null),
           score.strength, score.version, JSON.stringify(score.components),
           f.model_self_confidence ?? null, verdict.anchor.mode,
           verdict.anchor.start, verdict.anchor.end, verdict.anchor.documentHash,

@@ -1,4 +1,5 @@
 /* Display formatting. Server-rendered only, so no hydration drift. */
+import { formatMoney } from "../../lib/format/fields.ts";
 
 const DATE = new Intl.DateTimeFormat("en-CA", { day: "numeric", month: "short", year: "numeric" });
 
@@ -33,17 +34,15 @@ export function agoLabel(days: number): string {
 }
 
 /**
- * Money as one string.
+ * Research spend, as one string: "US$21.40".
  *
- * Written as {"$"}{n} in JSX it becomes two text nodes with a comment marker
- * between them, so the page reads "$<!-- -->21.40" to anything looking at the
- * markup. One expression, one node.
+ * The model vendor bills in US dollars, and on pages that also show Canadian
+ * market caps a bare "$" would not say which. Written as {"$"}{n} in JSX it
+ * would also become two text nodes with a comment marker between them. One
+ * expression, one node.
  */
-const MONEY = new Intl.NumberFormat("en-CA", {
-  style: "currency", currency: "USD", currencyDisplay: "narrowSymbol",
-});
 export function fmtMoney(n: number): string {
-  return MONEY.format(n);
+  return formatMoney(n, "USD", { cents: true });
 }
 
 export function fmtInt(n: number): string {

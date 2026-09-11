@@ -10,6 +10,7 @@
  * may look at the draft, and is told that is what they are looking at.
  */
 import type { Sql } from "../db/sql.ts";
+import { formatFieldValue } from "../format/fields.ts";
 import { resolveCompanyId } from "../identity/merge.ts";
 
 export type Provenance =
@@ -61,32 +62,9 @@ export const SOURCE_LABEL: Record<string, string> = {
 /** Fields that have their own place on the page and are not repeated in the table. */
 const HEADLINE = new Set(["company_name", "root_ticker", "exchange", "tier", "footprint"]);
 
+/** A value as the profile shows it. The one formatter every page uses. */
 export function formatProfileValue(fieldKey: string, raw: unknown): string {
-  if (raw === null || raw === undefined) return "—";
-  if (fieldKey === "market_cap_cad" && typeof raw === "number") {
-    return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD",
-                                            maximumFractionDigits: 0 }).format(raw);
-  }
-  if (fieldKey === "property_regions" && raw && typeof raw === "object" && !Array.isArray(raw)) {
-    // Only the regions with something in them; eight empty buckets is noise.
-    const held = Object.entries(raw as Record<string, unknown>)
-      .filter(([, v]) => Array.isArray(v) && v.length > 0)
-      .map(([region, v]) => `${titleish(region)}: ${(v as string[]).join(", ")}`);
-    return held.length ? held.join(" · ") : "No properties recorded";
-  }
-  if (Array.isArray(raw)) return raw.length ? raw.join(", ") : "—";
-  if (typeof raw === "boolean") return raw ? "Yes" : "No";
-  if (typeof raw === "object") {
-    const on = Object.entries(raw as Record<string, unknown>).filter(([, v]) => v === true);
-    return on.length ? on.map(([k]) => k.replace(/_/g, " ")).join(" + ") : "—";
-  }
-  return String(raw);
-}
-
-/** "LATIN AMERICA" reads as a region, not a shout. Short all-caps tokens stay. */
-function titleish(region: string): string {
-  return region.split(/([ /])/).map((part) =>
-    /^[A-Z]{1,3}$/.test(part) ? part : part.charAt(0) + part.slice(1).toLowerCase()).join("");
+  return formatFieldValue(fieldKey, raw);
 }
 
 function parseJson(text: unknown): unknown {

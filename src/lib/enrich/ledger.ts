@@ -197,7 +197,7 @@ export async function recordSpend(db: Sql, runId: string, usd: number): Promise<
   await db.run("update enrichment_runs set spend_usd = spend_usd + ? where id = ?", usd, runId);
   const state = await budgetState(db, runId);
   if (state.halt) {
-    await haltRun(db, runId, `budget exhausted: ${state.spend.toFixed(2)} of ${state.budget.toFixed(2)}`);
+    await haltRun(db, runId, `budget exhausted: US$${state.spend.toFixed(2)} of US$${state.budget.toFixed(2)}`);
   }
   return state;
 }

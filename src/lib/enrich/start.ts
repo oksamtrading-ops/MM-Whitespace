@@ -154,8 +154,8 @@ export async function startRun(
     throw new StartRefused(`This scope is ${est.count} companies. Type that number to confirm it.`);
   }
   if (est.exceedsBudget) {
-    throw new StartRefused(`The estimate is $${est.estimatedUsd.toFixed(2)} against a budget of ` +
-                           `$${input.budgetUsd.toFixed(2)}. A run that halts part-way is wasted; ` +
+    throw new StartRefused(`The estimate is US$${est.estimatedUsd.toFixed(2)} against a budget of ` +
+                           `US$${input.budgetUsd.toFixed(2)}. A run that halts part-way is wasted; ` +
                            "raise the budget or narrow the scope.");
   }
 

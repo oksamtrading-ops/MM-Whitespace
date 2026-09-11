@@ -148,6 +148,37 @@ per year, both years sit in that window, so it does not prove the figure came
 from the claimed year's column. Review is where that is caught; the excerpt
 on each finding shows the row.
 
+## After revision 2 — what Run 1's review exposed, and what changed
+
+**Radisson was published as a royalty company.** Its stage finding set
+royalty/streaming true on a quote that said only "an exploration and
+development project". The gate checked the quote was real, not that it
+supported the flags, and royalty outranks development, so Tier 4 went out in
+revision 2. Two changes:
+
+- **The quote must name the stage that decides the tier** — production, then
+  royalty or streaming, then development, then exploration, in English or
+  French. Otherwise the finding is held for a person (`anchor_mismatch`), never
+  bulk-accepted. Only the deciding stage is checked: Agnico's quote about
+  production need not also mention exploration. The prompt now says the same.
+- **Overrides are read as the field's value, never stored as typed text.**
+  The override box starts from the displayed value; a stage edited to
+  "exploration + development" used to be stored as that string, which tiering
+  reads as no stage at all. `src/lib/format/fields.ts` formats and parses every
+  field, the round trip is tested for each, and text that cannot be read is
+  refused with how to write it.
+
+**Fees now carry their currency and fiscal year** —
+`{amount, currency, fiscal_year}`, shown as "C$8,052,000 (FY2025)" or
+"US$517,116". The model already reported both and the application dropped
+them. The gate now checks the currency where the document states one (the
+figure's own prefix, or a heading such as "(C$ thousands)"), and ignores a
+currency merely mentioned nearby. Fees accepted before this read
+"(currency not recorded)" until re-researched.
+
+**Money says which dollar everywhere:** C$ for market caps and the dashboard
+threshold, US$ for research spend and budgets (the vendor bills in USD).
+
 ## Deliberately not in this build
 
 - **Property regions and commodities** are not re-extracted: the workbook has

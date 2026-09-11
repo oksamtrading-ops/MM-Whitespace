@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  anchorNumeric, detectScale, gate, hasTextLayer, normalize, normalizeNumeral,
-  type StoredDocument,
+  anchorNumeric, detectCurrency, detectScale, gate, hasTextLayer, normalize, normalizeNumeral,
+  numericHaystack, type StoredDocument,
 } from "./anchor.ts";
 
 /** A fee table as filings actually print one: label and figure not contiguous. */
@@ -307,4 +307,65 @@ test("detectScale at a position takes the heading nearest above it", async () =>
   const text = `Revenue (in millions) 1,200 ... Fees paid to the auditor (C$ thousands) Audit fees 8,052`;
   assert.equal(detectScale(text, text.indexOf("8,052")), "thousands");
   assert.equal(detectScale(text, text.indexOf("1,200")), "millions");
+});
+
+// --- Run 1: Radisson published as a royalty company ---------------------------
+
+const RADISSON = "The O’Brien Gold Project is an exploration and development project centred on the historic O’Brien Gold Mine located in the Abitibi region of Québec on the prolific Larder Lake-Cadillac Break (“LLCB”).";
+
+test("a stage whose quote does not name the deciding stage is held, not proposed", async () => {
+  const stageGate = (stage: Record<string, boolean | null>, excerpt: string) =>
+    gate({ fieldKey: "stage_evidence_state", excerpt, stage, document: doc(excerpt) });
+
+  // What the model proposed for Radisson: royalty true on a quote about exploration and development.
+  const radisson = stageGate({ exploration: true, development: true, production: false, royalty_streaming: true }, RADISSON);
+  assert.equal(radisson.state, "anchor_mismatch");
+  assert.equal(radisson.bulkAcceptable, false);
+  assert.match(radisson.reason ?? "", /royalty or stream, the stage that decides the tier/);
+
+  // Without the royalty flag the same quote supports development, which then decides.
+  assert.equal(stageGate({ exploration: true, development: true, production: false, royalty_streaming: false }, RADISSON).state,
+               "proposed");
+  // The other four of Run 1, as accepted: each quote names its deciding stage.
+  assert.equal(stageGate({ production: true, development: true, exploration: true, royalty_streaming: true },
+    "In 2025, the Company had payable gold production of 3,447,367 ounces of gold").state, "proposed",
+    "a producer's quote about production need not also mention the rest");
+  assert.equal(stageGate({ production: true, development: false, exploration: true, royalty_streaming: false },
+    "Wesdome is a Canadian-focused gold producer with two high-grade underground mine and milling assets").state, "proposed");
+  assert.equal(stageGate({ production: false, development: true, exploration: true, royalty_streaming: false },
+    "The Company specializes in exploration, evaluation and development of mineral properties located in Québec").state, "proposed");
+  assert.equal(stageGate({ production: null, development: null, exploration: null, royalty_streaming: true },
+    "ELEMENTAL ROYALTY CORPORATION").state, "proposed");
+  // French filings name stages in French.
+  assert.equal(stageGate({ production: false, development: true, exploration: true, royalty_streaming: false },
+    "La Société se consacre à la mise en valeur de ses propriétés au Québec").state, "proposed");
+});
+
+test("a fee claimed in a currency the document contradicts is held; a bare $ decides nothing", async () => {
+  const usd = anchorNumeric({ value: 517_116, scale: "units", fiscalYear: 2025, fieldKey: "audit_fee", currency: "USD" },
+                            doc(ELEMENTAL));
+  assert.equal(usd.mode, "proximity", usd.reason ?? "");
+  assert.equal(usd.matched?.currency, "USD");
+  const cad = anchorNumeric({ value: 517_116, scale: "units", fiscalYear: 2025, fieldKey: "audit_fee", currency: "CAD" },
+                            doc(ELEMENTAL));
+  assert.equal(cad.mode, "label_only");
+  assert.match(cad.reason ?? "", /in USD where it appears, not CAD/);
+
+  // Agnico's heading says C$; the model saying CAD agrees.
+  assert.equal(anchorNumeric({ value: 8_052_000, scale: "thousands", fiscalYear: 2025, fieldKey: "audit_fee",
+                               currency: "CAD" }, doc(AGNICO)).mode, "proximity");
+  // Nouveau Monde prints only "$": nothing to contradict the model's CAD.
+  assert.equal(anchorNumeric({ value: 353_190, scale: "units", fiscalYear: 2024, fieldKey: "audit_fee",
+                               currency: "CAD" }, doc(NOUVEAU_MONDE)).mode, "proximity");
+});
+
+test("currency comes from the figure's prefix or a heading, never from a mention nearby", async () => {
+  const at = (text: string, figure: string) => {
+    const hay = numericHaystack(text);
+    return detectCurrency(hay, hay.indexOf(figure));
+  };
+  assert.equal(at("Gold averaged US$2,000 an ounce. Audit Fees(1) $387,566 $353,190", "353190"), null);
+  assert.equal(at("All amounts are expressed in Canadian dollars. Audit fees $412,000", "412000"), "CAD");
+  assert.equal(at("(in thousands of U.S. dollars) Audit fees 412", "412"), "USD");
+  assert.equal(at("Audit fees C$ 1,200", "1200"), "CAD");
 });

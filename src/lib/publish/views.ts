@@ -16,6 +16,8 @@
  * would have caught the 258-versus-259 discrepancy on its own screen.
  */
 
+import { formatMoney } from "../format/fields.ts";
+
 export type Bucket = { bucket: string; sub: string; n: number };
 export type Aggregates = Record<string, Bucket[]>;
 
@@ -296,8 +298,8 @@ export function thresholdNote(
   current: number, prior: number | null, currency: string,
 ): string | null {
   if (prior === null || prior === current) return null;
-  return `The threshold changed from ${currency} ${prior.toLocaleString()} to ` +
-         `${currency} ${current.toLocaleString()} this period. Movements below are ` +
+  return `The threshold changed from ${formatMoney(prior, currency)} to ` +
+         `${formatMoney(current, currency)} this period. Movements below are ` +
          `parameter-driven, not price-driven, and are listed separately.`;
 }
 

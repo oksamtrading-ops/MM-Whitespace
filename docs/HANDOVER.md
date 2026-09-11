@@ -363,7 +363,14 @@ it. Never run `git add -A` outside this project's folder.
      against its own AIF's Saint-Michel-des-Saints (pending).
    - **Then publish revision 2.** A company page reads the published revision,
      for everyone, so nothing accepted shows until then; an Analyst or Admin
-     sees a "Not yet published" notice naming what changed.
+     sees a "Not yet published" notice naming what changed. *Done, 11
+     September 2026.*
+   - **Correct Radisson and publish revision 3.** Revision 2 has Radisson at
+     Tier 4 as a royalty company on a quote that never mentions a royalty
+     (RESEARCH-PIPELINE.md, "After revision 2"). Override its stage in review
+     as "exploration + development" (Tier 5). Re-research the fees first if
+     they should carry currency and year: pass 2, every eligible company,
+     tickers AEM, ELE, NOU, WDO, about US$0.60.
    - **Re-run the fees**, if Samuel wants them: pass 2, "every eligible
      company", tickers AEM, ELE, NOU, WDO, about $0.60. Findings are not
      re-checked in place; a new run makes new ones.

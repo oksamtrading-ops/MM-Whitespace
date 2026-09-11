@@ -16,7 +16,8 @@ import Ledger from "../../_ui/Ledger.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
 import Facts from "../../_ui/Facts.tsx";
-import { fmtCompact, fmtDate, periodName } from "../../_ui/format.ts";
+import { fmtDate, periodName } from "../../_ui/format.ts";
+import { formatMoney } from "../../../lib/format/fields.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Dashboard" };
@@ -120,7 +121,7 @@ export default async function Dashboard() {
 
   const publishedOn = fmtDate(snap.publication.published_at);
   const { name: periodTitle } = periodName(period.label);
-  const threshold = `${period.threshold_currency} ${fmtCompact(Number(period.threshold_amount))}`;
+  const threshold = formatMoney(Number(period.threshold_amount), period.threshold_currency, { compact: true });
 
   return (
     <div className="withrail">

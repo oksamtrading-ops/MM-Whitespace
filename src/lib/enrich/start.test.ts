@@ -80,7 +80,7 @@ test("the estimate blocks: over budget is refused, and a large scope needs its c
   const analyst = await actor(db, "analyst");
   await assert.rejects(
     () => startRun(db, { periodId, scope: "unresearched", budgetUsd: 0.10, mode: "replay", actor: analyst }),
-    /estimate is \$0\.50 against a budget of \$0\.10/);
+    /estimate is US\$0\.50 against a budget of US\$0\.10/);
 
   const big = estimate(CONFIRM_ABOVE + 1, 1000);
   assert.equal(big.needsTypedCount, true);

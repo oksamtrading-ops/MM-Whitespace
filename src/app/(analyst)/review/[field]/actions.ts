@@ -14,6 +14,7 @@ import {
   extractedFact,
   bulkConfirmation, partitionForBulkAccept, recordDecision, undoLast,
 } from "../../../../lib/review/decide.ts";
+import { parseFieldInput } from "../../../../lib/format/fields.ts";
 import { fieldRows } from "../../../../lib/review/queue.ts";
 
 export type ActionResult = { ok: boolean; message: string };
@@ -44,8 +45,13 @@ export async function decide(form: FormData): Promise<ActionResult> {
         return { ok: false, message: "The workbook asserts no value for this field, so there is nothing to keep." };
       }
       overrideValue =fact.value;
-    } else {
-      overrideValue = rawOverride === null ? undefined : String(rawOverride);
+    } else if (rawOverride !== null) {
+      // Read as the field's own value, never stored as whatever was typed: a
+      // stage typed as text used to be stored as text, which tiering reads as
+      // "no stage". What cannot be read is refused, with how to write it.
+      const parsed = parseFieldInput(fieldKey, String(rawOverride));
+      if (!parsed.ok) return { ok: false, message: parsed.message };
+      overrideValue = parsed.value;
     }
   }
 

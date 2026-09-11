@@ -40,11 +40,13 @@ test("period labels and thresholds are shortened for display", async () => {
   assert.equal(fmtCompact(750), "750");
 });
 
-test("money is one string, not a symbol beside a number", async () => {
+test("money is one string, not a symbol beside a number, and says which dollar", async () => {
   // React splits {"$"}{n} into two text nodes with a comment marker between
   // them, so the markup reads "$<!-- -->21.40" and nothing can match on it.
-  assert.equal(fmtMoney(21.4), "$21.40");
-  assert.equal(fmtMoney(25), "$25.00");
-  assert.equal(fmtMoney(0), "$0.00");
-  assert.equal(fmtMoney(1234.5), "$1,234.50");
+  // Spend is billed in US dollars; a bare "$" beside Canadian market caps
+  // would not say so.
+  assert.equal(fmtMoney(21.4), "US$21.40");
+  assert.equal(fmtMoney(25), "US$25.00");
+  assert.equal(fmtMoney(0), "US$0.00");
+  assert.equal(fmtMoney(1234.5), "US$1,234.50");
 });

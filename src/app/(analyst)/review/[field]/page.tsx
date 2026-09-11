@@ -51,7 +51,7 @@ export default async function FieldReview(
   const rows: GridRow[] = await Promise.all(raw.map(async (r) => ({
     companyId: r.companyId,
     companyName: r.companyName,
-    value: r.abstained ? "abstained" : formatValue(r.proposedValue),
+    value: r.abstained ? "abstained" : formatValue(r.proposedValue, r.fieldKey),
     band: r.band,
     strength: r.evidenceStrength,
     state: r.findingState,
@@ -64,7 +64,7 @@ export default async function FieldReview(
     anchorMode: r.anchorMode,
     findingId: r.findingId,
     findingAttempt: r.findingAttempt,
-    extractValue: r.extractValue === null ? null : formatValue(r.extractValue),
+    extractValue: r.extractValue === null ? null : formatValue(r.extractValue, r.fieldKey),
     cellLabel: cellLabel(r, catalogue.label),
     tierNote: await tierConsequence(ctx.db, period.id, r),
   })));

@@ -238,7 +238,8 @@ test("PASS 2: filings from the trusted domain only, the wrong company's filing r
   assert.deepEqual(JSON.parse(by.auditor_change.proposed_value), { changed: false, date: null, previous_auditor: null });
   assert.equal(by.audit_fee.state, "proposed");
   assert.equal(by.audit_fee.anchor_mode, "proximity", "412 under an in-thousands header, label in another cell");
-  assert.equal(JSON.parse(by.audit_fee.proposed_value), 412000);
+  assert.deepEqual(JSON.parse(by.audit_fee.proposed_value), { amount: 412000, currency: "CAD", fiscal_year: 2025 },
+                   "the fee keeps its currency and its year");
   assert.notEqual(by.tax_fee.state, "proposed", "265 appears nowhere in the circular");
   assert.equal(by.stage_evidence_state.state, "abstained");
 });

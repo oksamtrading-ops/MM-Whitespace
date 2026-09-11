@@ -22,6 +22,7 @@
  * and never on any allowlist.
  */
 import { detectScale } from "./anchor.ts";
+import { currencyCode } from "../format/fields.ts";
 import { ROUTE_CONFIG } from "./client.ts";
 import { asStored, edgarFindings, edgarIndexDocuments, lookupEdgar, normalizeName, SEC_HOST } from "./edgar.ts";
 import { fetchDocument, type FetchDeps, type FetchedDocument } from "./fetch.ts";
@@ -470,8 +471,11 @@ const EXTRACTION_RULES = `
 Return one finding for EVERY field listed, in this form:
 - stage_evidence_state: the stage object. production = commercial production declared or revenue
   from mining; development = construction decision or feasibility-stage project; exploration =
-  exploration properties; royalty_streaming = royalty or stream interests. true, false, or null
-  where the documents do not say.
+  exploration properties; royalty_streaming = royalty or stream interests the company holds as a
+  business. true only where a document says so; false where it says otherwise; null where it does
+  not say. The evidence_excerpt must name the most advanced stage you set true (production, then
+  royalty or streaming, then development, then exploration): a quote about exploration does not
+  support royalty_streaming.
 - auditor: text_value, the firm's name as printed.
 - auditor_since: year_value, the year the current auditor was first appointed.
 - auditor_change: whether the auditor changed in the 24 months before the period date. If it did
@@ -480,7 +484,11 @@ Return one finding for EVERY field listed, in this form:
 - head_office_location: text_value, the city. head_office_region: text_value, "Province or State,
   Country".
 - audit_fee, tax_fee: fee, the most recent fiscal year, with the amount EXACTLY as printed and the
-  scale the table states (units, thousands or millions).
+  scale the table states (units, thousands or millions). fiscal_year is the year of the column or
+  sentence the amount is for, not the year of the filing. currency is the ISO code (CAD, USD, AUD,
+  GBP, EUR) the amount is in: from its own symbol (C$, US$), the table heading, or the document's
+  statement of reporting currency. A Canadian issuer's plain "$" with no other currency stated is
+  CAD. null only if nothing in the documents says.
 
 evidence_excerpt must be copied character for character from the document it cites, at most 300
 characters, and document_index must name that document. If the documents do not state a value,
@@ -550,8 +558,13 @@ export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFind
     case "audit_fee": case "tax_fee": {
       if (!e.fee) return null;
       const units = e.fee.amount * SCALE[e.fee.scale];
-      return { ...base, value: units,
-               numeric: { value: units, scale: e.fee.scale, fiscalYear: e.fee.fiscal_year ?? undefined } };
+      // The fee keeps its currency and year: "C$8,052,000 (FY2025)" and
+      // "US$517,116" are different amounts, and Run 1's "$353,190" was a 2024
+      // fee on a 2025 period. The gate checks the currency where the
+      // document states one.
+      const currency = currencyCode(e.fee.currency);
+      return { ...base, value: { amount: units, currency, fiscal_year: e.fee.fiscal_year ?? null },
+               numeric: { value: units, scale: e.fee.scale, fiscalYear: e.fee.fiscal_year ?? undefined, currency } };
     }
   }
   return null;

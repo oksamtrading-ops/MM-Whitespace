@@ -5,6 +5,7 @@ import { start } from "./actions.ts";
 import {
   CONFIRM_ABOVE, estimate, parseTickers, type Estimate, type Pass, type Scope,
 } from "../../../lib/enrich/scope.ts";
+import { formatMoney } from "../../../lib/format/fields.ts";
 
 /** One thing the Analyst may start: a scope, and in live mode the pass it belongs to. */
 export type ScopeOffer = {
@@ -90,7 +91,7 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
       <p className="field">
         <label htmlFor="budgetUsd">Budget</label>
         <span className="withunit">
-          <span className="unit" aria-hidden="true">$</span>
+          <span className="unit" aria-hidden="true">US$</span>
           <input id="budgetUsd" name="budgetUsd" value={budget} required inputMode="decimal"
                  autoComplete="off" onChange={(e) => setBudget(e.target.value)} />
         </span>
@@ -101,7 +102,7 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
         <b>Estimate</b>
         <span>
           {est.count} {est.count === 1 ? "company" : "companies"}, about{" "}
-          <strong>${est.estimatedUsd.toFixed(2)}</strong> and{" "}
+          <strong>{formatMoney(est.estimatedUsd, "USD", { cents: true })}</strong> and{" "}
           <strong>{est.estimatedMinutes} min</strong> at the current worker cap.
           {overBudget && " That is more than the budget, so the run would halt part-way."}
           {chosen.pass

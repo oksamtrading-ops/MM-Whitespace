@@ -50,7 +50,7 @@ export type AnchorResult = {
   documentHash: string | null;
   /** Why it failed, when it did. Never a silent drop. */
   reason?: string;
-  matched?: { numeral?: string; label?: string; year?: string };
+  matched?: { numeral?: string; label?: string; year?: string; currency?: string };
 };
 
 const SCALE_MULTIPLIER: Record<Scale, number> = {
@@ -163,6 +163,50 @@ export function detectScale(text: string, near?: number): Scale | null {
 }
 
 /**
+ * The currency a figure is in, where the document says so -- in one of two
+ * places only:
+ *
+ *   its own prefix      "US$517,116", "C$ 8,052"
+ *   a heading above it  "(C$ thousands)", "(in thousands of US dollars)",
+ *                       "expressed in Canadian dollars"
+ *
+ * A currency merely mentioned nearby -- "gold at US$2,000 an ounce" above a
+ * fee table in Canadian dollars -- is neither, and must not overrule the
+ * table. A bare "$" says nothing, so a filing that only writes "$" has no
+ * currency here and the claim stands on the model's reading. Run on the
+ * normalised haystack, like detectScale.
+ */
+const CURRENCY_TOKEN: Array<[RegExp, string]> = [
+  [/^(?:u\.?s\.?\s?\$|usd|u\.?s\.? dollars?|united states dollars?)$/, "USD"],
+  [/^(?:c\$|ca\$|cdn\$|can\$|cad|canadian dollars?|dollars? canadiens?)$/, "CAD"],
+  [/^(?:a\$|au\$|aud|australian dollars?)$/, "AUD"],
+  [/^(?:£|gbp|pounds? sterling)$/, "GBP"],
+  [/^(?:€|eur|euros?)$/, "EUR"],
+];
+const TOKEN = String.raw`u\.?s\.?\s?\$|usd|c\$|ca\$|cdn\$|can\$|cad|a\$|au\$|aud|£|gbp|€|eur`;
+const DOLLARS = String.raw`(?:canadian|u\.?s\.?|united states|australian) dollars?|dollars? canadiens?`;
+const PREFIX_RE = new RegExp(String.raw`(?:^|[^a-z])(${TOKEN})\s?$`);
+const HEADING_RE = new RegExp(
+  String.raw`\(\s*(?:in\s+)?(${TOKEN})\s*(?:thousands?|millions?|000'?s?)?[^)]{0,40}\)` +
+  String.raw`|\((?:in\s+)?(?:thousands?|millions?)\s+of\s+(${DOLLARS}|${TOKEN})[^)]{0,40}\)` +
+  String.raw`|(?:expressed|stated|presented|reported|amounts?(?: are)?|all amounts(?: are)?)\s+in\s+(?:thousands\s+of\s+|millions\s+of\s+)?(${DOLLARS})`,
+  "g");
+
+function codeOf(token: string): string | null {
+  const t = token.trim();
+  return CURRENCY_TOKEN.find(([re]) => re.test(t))?.[1] ?? null;
+}
+
+export function detectCurrency(text: string, near: number): string | null {
+  const prefix = text.slice(Math.max(0, near - 8), near).match(PREFIX_RE);
+  if (prefix) return codeOf(prefix[1]);
+  const lo = Math.max(0, near - 3000);
+  let nearest: string | null = null;
+  for (const m of text.slice(lo, near).matchAll(HEADING_RE)) nearest = codeOf(m[1] ?? m[2] ?? m[3] ?? "");
+  return nearest;
+}
+
+/**
  * Controlled bilingual label lists. Quebec issuers file in French, so an
  * English-only list silently fails on a real subset of the population.
  */
@@ -219,6 +263,8 @@ export type NumericClaim = {
   scale: Scale;
   fiscalYear?: number | string | null;
   fieldKey: string;
+  /** ISO code the finding says the figure is in; checked where the document says. */
+  currency?: string | null;
 };
 
 /**
@@ -245,6 +291,7 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
   ];
 
   let sawLabel = false;
+  let currencyClash: string | null = null;
   for (const { needle, scale } of candidates) {
     if (!needle) continue;
     let from = 0;
@@ -270,11 +317,18 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
       if (docScale !== scale) {
         continue;
       }
+      // The currency too, where the document states one: US$517,116 claimed
+      // as Canadian dollars is a different amount, and the page would say C$.
+      const docCurrency = detectCurrency(hay, at);
+      if (claim.currency && docCurrency && docCurrency !== claim.currency.toUpperCase()) {
+        currencyClash = `the figure is in ${docCurrency} where it appears, not ${claim.currency.toUpperCase()}`;
+        continue;
+      }
       if (label && yearHit) {
         return {
           mode: "proximity", start: at, end: at + needle.length,
           documentHash: doc.contentHash,
-          matched: { numeral: needle, label, year: yearStr ?? undefined },
+          matched: { numeral: needle, label, year: yearStr ?? undefined, currency: docCurrency ?? undefined },
         };
       }
     }
@@ -282,7 +336,7 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
 
   if (sawLabel || labels.some((l) => hay.includes(l))) {
     return { mode: "label_only", start: null, end: null, documentHash: doc.contentHash,
-             reason: "the label appears but the figure does not, at the declared scale" };
+             reason: currencyClash ?? "the label appears but the figure does not, at the declared scale" };
   }
   return { mode: "none", start: null, end: null, documentHash: doc.contentHash,
            reason: "neither the figure nor a controlled label appears in the document" };
@@ -310,6 +364,8 @@ export type GateInput = {
   fieldKey: string;
   excerpt?: string | null;
   numeric?: NumericClaim | null;
+  /** A proposed stage: the quote must name the stage that decides the tier. */
+  stage?: Record<string, boolean | null> | null;
   document: StoredDocument | null;
   sourceReachable?: boolean;
 };
@@ -348,6 +404,14 @@ export function gate(input: GateInput): GateVerdict {
     : anchorExcerpt(input.excerpt ?? "", doc);
 
   if (anchor.mode === "exact_normalized" || anchor.mode === "proximity") {
+    const unsupported = input.stage ? unsupportedStage(input.stage, input.excerpt ?? "") : null;
+    if (unsupported) {
+      // The quote is real but does not say what decides the tier. Held for a
+      // person, never bulk-accepted -- not "unsupported", which counts as a
+      // fabrication: nothing here was invented, only over-read.
+      return { state: "anchor_mismatch", anchor, bulkAcceptable: false,
+               reason: `the quote does not mention ${unsupported}, the stage that decides the tier` };
+    }
     return { state: "proposed", anchor, bulkAcceptable: true };
   }
   if (anchor.mode === "label_only") {
@@ -358,4 +422,28 @@ export function gate(input: GateInput): GateVerdict {
   // Absent from the document. Never surfaced as a proposal; counted in the
   // per-run hallucination rate that gates publish.
   return { state: "unsupported", anchor, bulkAcceptable: false, reason: anchor.reason };
+}
+
+/**
+ * The stage that decides a tier, in the order the rules read them, and the
+ * words that name it in English and French filings.
+ *
+ * Run 1: Radisson's finding set royalty/streaming true on a quote that said
+ * only "an exploration and development project". The quote was real, so the
+ * gate passed it; royalty outranks development, so the company was published
+ * as a royalty company. Only the deciding stage is checked: a producer's
+ * quote about production need not also mention its exploration.
+ */
+const DECIDING_ORDER = ["production", "royalty_streaming", "development", "exploration"] as const;
+const STAGE_NAMED: Record<typeof DECIDING_ORDER[number], { words: RegExp; label: string }> = {
+  production: { words: /produc|commercial production|operating mines?|mining operations?|en exploitation/, label: "production" },
+  royalty_streaming: { words: /royalt|\bstream|redevance|\bflux\b/, label: "a royalty or stream" },
+  development: { words: /develop|développ|construction|feasibility|faisabilité|mise en valeur/, label: "development" },
+  exploration: { words: /explor/, label: "exploration" },
+};
+
+export function unsupportedStage(stage: Record<string, boolean | null>, excerpt: string): string | null {
+  const deciding = DECIDING_ORDER.find((s) => stage[s] === true);
+  if (!deciding) return null;
+  return STAGE_NAMED[deciding].words.test(normalize(excerpt)) ? null : STAGE_NAMED[deciding].label;
 }

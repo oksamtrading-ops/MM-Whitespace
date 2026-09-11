@@ -6,7 +6,7 @@ import { applySchema } from "../db/schema.ts";
 import { formatProfileValue, listCompanies, readCompanyProfile, unpublishedChanges } from "./company.ts";
 
 test("a market cap reads as money and a region map as the regions actually held", async () => {
-  assert.equal(formatProfileValue("market_cap_cad", 1060201462), "$1,060,201,462");
+  assert.equal(formatProfileValue("market_cap_cad", 1060201462), "C$1,060,201,462", "never a bare $");
   assert.equal(
     formatProfileValue("property_regions", {
       AFRICA: [], "LATIN AMERICA": ["Guyana", "Suriname"], CANADA: [], "AUS/NZ/PNG": ["Fiji"],

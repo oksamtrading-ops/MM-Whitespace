@@ -40,7 +40,7 @@ export default async function ByCompany(
     companyName: r.companyName,
     cells: await Promise.all(r.cells.map(async (c, i) => c && {
       fieldKey: c.fieldKey,
-      value: c.abstained ? "abstained" : formatValue(c.proposedValue),
+      value: c.abstained ? "abstained" : formatValue(c.proposedValue, c.fieldKey),
       band: c.band,
       strength: c.evidenceStrength,
       decided: c.decided,
@@ -52,7 +52,7 @@ export default async function ByCompany(
       anchorMode: c.anchorMode,
       findingId: c.findingId,
       findingAttempt: c.findingAttempt,
-      extractValue: c.extractValue === null ? null : formatValue(c.extractValue),
+      extractValue: c.extractValue === null ? null : formatValue(c.extractValue, c.fieldKey),
       cellLabel: cellLabel(c, fields[i].label),
       tierNote: await tierConsequence(ctx.db, period.id, c),
     })),

@@ -153,7 +153,7 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
         </Section>
 
         <Section id="fees" title="Fees" index={2}
-                 caption="Fee population is deferred; the fields exist so a value can be entered and reviewed like any other.">
+                 caption="From the company's own filings, in the currency it reports in, for the fiscal year shown.">
           {fees.length === 0 || fees.every((f) => f.value === null)
             ? <p className="empty">No fee has been recorded for this company.</p>
             : (
