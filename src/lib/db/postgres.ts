@@ -22,6 +22,7 @@
  * express "this person may publish".
  */
 import { readFileSync } from "node:fs";
+import { attachDatabasePool } from "@vercel/functions";
 import { Pool, types as pgTypes, type PoolClient, type PoolConfig } from "pg";
 import { toNumberedPlaceholders, type Row, type Sql } from "./sql.ts";
 import { SUPABASE_ROOT_2021_CA } from "./supabase_ca.ts";
@@ -65,6 +66,23 @@ export type PgOptions = {
   ssl?: PoolConfig["ssl"];
   max?: number;
 };
+
+/**
+ * Connections one instance may hold, and how long one may sit idle.
+ *
+ * Supabase's session pooler admits 15 clients in all, and every connection an
+ * instance keeps -- idle or not -- is one of them. On 11 September 2026 the
+ * pool allowed 10 per instance with pg's default idle handling, and a few
+ * warm instances (Fluid compute keeps them, and a deploy leaves the previous
+ * one's running) held all 15: every page that touched the database failed
+ * with EMAXCONNSESSION, and /runs, /review and /publish went down together.
+ *
+ * Four covers the worker's four slots; a request past that waits for a
+ * connection rather than taking one of someone else's. Five idle seconds is
+ * long enough to reuse a connection across a page's queries.
+ */
+export const POOL_MAX = 4;
+export const POOL_IDLE_MS = 5_000;
 
 /**
  * TLS is verified. There is no switch here to turn that off.
@@ -119,14 +137,24 @@ export class PostgresSql implements Sql {
   private readonly client: PoolClient | null;
 
   constructor(options: PgOptions | Pool, client: PoolClient | null = null) {
-    this.pool = options instanceof Pool
-      ? options
-      : new Pool({
-          connectionString: options.connectionString,
-          ssl: tls(options.connectionString, options.ssl),
-          max: options.max ?? 10,
-          types,
-        });
+    if (options instanceof Pool) {
+      this.pool = options;
+    } else {
+      this.pool = new Pool({
+        connectionString: options.connectionString,
+        ssl: tls(options.connectionString, options.ssl),
+        max: options.max ?? POOL_MAX,
+        idleTimeoutMillis: POOL_IDLE_MS,
+        types,
+      });
+      // A pooler or the database dropping an idle connection is an 'error' on
+      // the pool; unheard, it is an uncaught exception that ends the instance.
+      this.pool.on("error", (err) => console.error("postgres: idle connection lost", err.message));
+      // On Vercel, keep the instance awake until its idle connections close,
+      // rather than suspending it with them still open and counted against the
+      // pooler. Off Vercel this does nothing.
+      attachDatabasePool(this.pool);
+    }
     this.client = client;
   }
 
