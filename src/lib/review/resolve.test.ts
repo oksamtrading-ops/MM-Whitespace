@@ -5,6 +5,7 @@ import type { Sql } from "../db/sql.ts";
 import { commitPeriod, type ParsedCompany } from "../db/commit.ts";
 import { publishPeriod, readPublished } from "../publish/snapshot.ts";
 import { recordDecision, undoLast } from "./decide.ts";
+import { fieldRows } from "./queue.ts";
 
 /** A company as it arrives on day one: stage blank, properties known. */
 function unresearched(over: Partial<ParsedCompany> = {}): ParsedCompany {
@@ -31,9 +32,8 @@ async function committed(over: Partial<ParsedCompany> = {}) {
 
 /** A research finding, as the worker would have persisted it. */
 async function finding(db: Sql, periodId: string, companyId: string, fieldKey: string, value: unknown) {
-  await db.run(`insert into enrichment_runs (period_id, budget_usd, model, prompt_version, mode)
-      values (?, 5, 'test', 'test', 'replay')`, periodId);
-  const run = await db.get("select id from enrichment_runs order by created_at desc limit 1") as { id: string };
+  const run = await db.get(`insert into enrichment_runs (period_id, budget_usd, model, prompt_version, mode)
+      values (?, 5, 'test', 'test', 'replay') returning id`, periodId) as { id: string };
   const job = await db.get(`insert into enrichment_jobs (run_id, company_id, field_group, state)
       values (?, ?, 'general', 'completed') returning id`, run.id, companyId) as { id: string };
   return (await db.get(`insert into enrichment_findings
@@ -147,6 +147,24 @@ test("A DECISION AMENDS A PUBLISHED PERIOD; the published revision itself never 
       where publication_id = ? and company_id = ?`, second.publicationId, companyId) as { status: string };
   assert.equal(amended.status, "classified");
   void readPublished;
+});
+
+test("review shows one proposal per company and field: the best, not every pass's", async () => {
+  const { db, periodId, companyId } = await committed();
+  // Pass 1 (EDGAR) and pass 2 (the filings) both propose a head office.
+  const weak = await finding(db, periodId, companyId, "head_office_location", "Littleton");
+  await db.run("update enrichment_findings set evidence_strength = 0.675 where id = ?", weak);
+  const failed = await finding(db, periodId, companyId, "head_office_location", "Vancouver");
+  await db.run("update enrichment_findings set state = 'unsupported', evidence_strength = 0.4 where id = ?", failed);
+  const strong = await finding(db, periodId, companyId, "head_office_location", "Vancouver");
+  await db.run("update enrichment_findings set evidence_strength = 0.82 where id = ?", strong);
+
+  const rows = await fieldRows(db, periodId, "head_office_location");
+  assert.equal(rows.length, 1, "one row per company, never three");
+  assert.equal(rows[0].findingId, strong, "the anchored proposal with the strongest evidence");
+  // All three stay on record.
+  const kept = await db.get("select count(*) n from enrichment_findings where field_key = 'head_office_location'") as { n: number };
+  assert.equal(kept.n, 3);
 });
 
 test("an overridden region set re-derives the footprint and the tier", async () => {

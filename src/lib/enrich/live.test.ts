@@ -374,6 +374,15 @@ test("windows keep the cover and what each field needs, verbatim and capped", ()
   assert.ok(w.length <= 30_000 + 20, `capped, got ${w.length}`);
 });
 
+test("a character a model wrote as its escape is put back before the quote is checked", () => {
+  const base = { document_index: null, abstained: false, abstention_reason: null, self_confidence: 0.5,
+                 year_value: null, stage: null, auditor_change: null, fee: null };
+  const f = toFinding({ ...base, field_key: "head_office_location",
+    evidence_excerpt: "the Kiena mine, located in Val-d\\u2019Or, Quebec", text_value: "Val-d\\u2019Or" }, [])!;
+  assert.equal(f.evidence_excerpt, "the Kiena mine, located in Val-d’Or, Quebec");
+  assert.equal(f.value, "Val-d’Or");
+});
+
 test("values that do not fit their field are dropped, not stored", () => {
   const base = { document_index: null, evidence_excerpt: null, abstained: false, abstention_reason: null,
                  self_confidence: 0.5, text_value: null, year_value: null, stage: null, auditor_change: null, fee: null };

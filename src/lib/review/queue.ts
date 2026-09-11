@@ -147,6 +147,20 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
        join companies c on c.id = e.company_id
        join field_catalog f on f.key = e.field_key
       where e.state != 'superseded'
+        -- One proposal per company and field. Two passes (EDGAR in pass 1, the
+        -- filings in pass 2) and any re-run each propose a value, and a grid
+        -- keyed by company showed them all. The one shown is the best: an
+        -- anchored proposal, then one held for a human, then the rest, with an
+        -- abstention last; within that, the strongest evidence, then the newest.
+        -- The others stay on record, append-only.
+        and e.id = (select e2.id from enrichment_findings e2
+                      join enrichment_runs r2 on r2.id = e2.run_id and r2.period_id = r.period_id
+                     where e2.company_id = e.company_id and e2.field_key = e.field_key
+                       and e2.state != 'superseded'
+                     order by case e2.state when 'proposed' then 0 when 'anchor_mismatch' then 1
+                                            when 'abstained' then 3 else 2 end,
+                              e2.evidence_strength desc nulls last, e2.created_at desc, e2.id desc
+                     limit 1)
       order by e.evidence_strength asc nulls first, c.canonical_name asc`, periodId, periodId, periodId) as Array<Record<string, unknown>>;
 
   return rows.map((r) => {

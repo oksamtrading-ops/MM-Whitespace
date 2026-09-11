@@ -509,8 +509,21 @@ type Extracted = {
   fee: { amount: number; scale: "units" | "thousands" | "millions"; fiscal_year: number | null; currency: string | null } | null;
 };
 
+/**
+ * A model sometimes writes a character as its escape -- Val-d, backslash,
+ * u2019, Or -- inside an otherwise verbatim quote (Run 1, pass 2).
+ * The quote is still the document's; this puts the character back. It
+ * changes nothing a model could use to pass off text that is not there.
+ */
+export function unescapeModelText(s: string | null): string | null {
+  if (s === null) return null;
+  return s.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+}
+
 /** One extraction item as a proposed finding, citing the document it names. */
-export function toFinding(e: Extracted, docs: FetchedDocument[]): ProposedFinding | null {
+export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFinding | null {
+  const e = { ...raw, evidence_excerpt: unescapeModelText(raw.evidence_excerpt),
+              text_value: unescapeModelText(raw.text_value) };
   const doc = e.document_index !== null ? docs[e.document_index] ?? null : null;
   const base: ProposedFinding = {
     field_key: e.field_key, value: null,

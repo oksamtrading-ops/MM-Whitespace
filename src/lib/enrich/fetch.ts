@@ -154,21 +154,58 @@ export function defaultTextExtractor(bytes: Uint8Array): Extracted {
   return { text, pageCount: 1, extractor: "text", extractorVersion: "1.0.0" };
 }
 
-/** Strip scripts, styles, and markup. Embedded scripts never reach storage. */
+/**
+ * Named character references a filing actually uses: typographic punctuation,
+ * and the accented letters a Quebec issuer's French filing is written in.
+ * Anything not here and not numeric is left as written, never guessed at.
+ */
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+  rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", sbquo: "‚", bdquo: "„",
+  ndash: "–", mdash: "—", hellip: "…", bull: "•", middot: "·", deg: "°",
+  copy: "©", reg: "®", trade: "™", sect: "§", para: "¶", dagger: "†", Dagger: "‡",
+  euro: "€", pound: "£", cent: "¢", yen: "¥", times: "×", divide: "÷", minus: "−",
+  frac12: "½", frac14: "¼", frac34: "¾", sup1: "¹", sup2: "²", sup3: "³",
+  laquo: "«", raquo: "»", shy: "­", ensp: " ", emsp: " ", thinsp: " ", zwnj: "‌", zwj: "‍",
+  eacute: "é", Eacute: "É", egrave: "è", Egrave: "È", ecirc: "ê", Ecirc: "Ê", euml: "ë",
+  agrave: "à", Agrave: "À", acirc: "â", Acirc: "Â", auml: "ä", aacute: "á",
+  ccedil: "ç", Ccedil: "Ç", icirc: "î", Icirc: "Î", iuml: "ï", iacute: "í",
+  ocirc: "ô", Ocirc: "Ô", ouml: "ö", oacute: "ó", ograve: "ò",
+  ucirc: "û", Ucirc: "Û", ugrave: "ù", uuml: "ü", uacute: "ú", ntilde: "ñ", oelig: "œ", OElig: "Œ",
+};
+
+/** Decode numeric and named character references into the characters they stand for. */
+export function decodeEntities(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi, (whole, ref: string) => {
+    if (ref[0] === "#") {
+      const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    }
+    return NAMED_ENTITIES[ref] ?? whole;
+  });
+}
+
+/**
+ * Strip scripts, styles, and markup. Embedded scripts never reach storage.
+ *
+ * Version 1.1.0 decodes every character reference. 1.0.0 decoded four, so an
+ * SEC exhibit was stored as "Company&#8217;s head office" and the model --
+ * reading the same text -- quoted it as "Company’s head office": every quote
+ * from an HTML filing failed the anchor, true ones included (Run 1, pass 2).
+ */
+export const HTML_EXTRACTOR_VERSION = "1.1.0";
+
 export function defaultHtmlExtractor(bytes: Uint8Array): Extracted {
   const raw = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-  const text = raw
+  const stripped = raw
     .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-  return { text, pageCount: 1, extractor: "html-strip", extractorVersion: "1.0.0" };
+    .replace(/<[^>]+>/g, " ");
+  // Decoded after the markup is gone, so an encoded "&lt;" in the text can
+  // never become a tag.
+  const text = decodeEntities(stripped).replace(/\s+/g, " ").trim();
+  return { text, pageCount: 1, extractor: "html-strip", extractorVersion: HTML_EXTRACTOR_VERSION };
 }
 
 /* -------------------------------------------------------------- fetching */
@@ -326,11 +363,16 @@ export async function fetchDocument(
     extracted = (extractors.html ?? defaultHtmlExtractor)(response.body);
   }
 
-  // The document is keyed by the hash of the bytes we actually received, and
-  // the STORED TEXT is what anchoring later verifies against. The file itself
-  // is never persisted.
-  const contentHash =
-    "sha256:" + createHash("sha256").update(response.body).digest("hex");
+  // The document is keyed by the bytes we actually received AND the reader
+  // that turned them into text, and the STORED TEXT is what anchoring later
+  // verifies against. The file itself is never persisted. The reader is in
+  // the key because the text is: when a reader improves, the same filing read
+  // again is a new document, and every earlier finding keeps the exact text it
+  // was checked against rather than having it replaced underneath it.
+  const contentHash = "sha256:" + createHash("sha256")
+    .update(response.body)
+    .update(`\0${extracted.extractor}@${extracted.extractorVersion}`)
+    .digest("hex");
   const pageCount = Math.max(1, extracted.pageCount);
   const charsPerPage = extracted.text.length / pageCount;
 

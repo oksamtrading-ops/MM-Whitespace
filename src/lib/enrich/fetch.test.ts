@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildAllowlist, classifyTier, defaultHtmlExtractor, fetchDocument, FetchRefused,
+  buildAllowlist, classifyTier, decodeEntities, defaultHtmlExtractor, fetchDocument, FetchRefused,
   isAllowedHost, isBlockedAddress, sniffType, type FetchDeps, type HttpResponse,
 } from "./fetch.ts";
+import { gate } from "./anchor.ts";
 
 const ALLOW = buildAllowlist([
   "https://northco.invalid/investors", "royalco.invalid", "www.sedar-plus.invalid",
@@ -163,6 +164,38 @@ test("a fetched document is keyed by hash and stores text, never the file", asyn
   assert.equal(doc.extractor, "html-strip");
   assert.equal(doc.normalizationVersion, "1.0.0");
   assert.equal(doc.finalUrl, "https://northco.invalid/circular.html");
+});
+
+test("every character reference is decoded, so a quote from an SEC exhibit anchors", async () => {
+  // Run 1, pass 2: stored as "Company&#8217;s", quoted as "Company’s", and
+  // every true quote from an HTML filing failed the gate.
+  assert.equal(decodeEntities("Company&#8217;s &#x2019; &rsquo; A&amp;B &nbsp;x"), "Company’s ’ ’ A&B  x");
+  assert.equal(decodeEntities("Montr&eacute;al, Qu&eacute;bec"), "Montréal, Québec");
+  assert.equal(decodeEntities("&unknownthing; &#0; &#99999999;"), "&unknownthing; &#0; &#99999999;",
+    "what cannot be decoded is left as written, never guessed");
+
+  const html = "<html><body><p>The Company&#8217;s head and registered office is located at " +
+               "145&#160;King Street East, Toronto, Ontario</p><p>&lt;script&gt;alert(1)&lt;/script&gt;</p></body></html>";
+  const doc = await fetchDocument("https://northco.invalid/aif.htm", ALLOW,
+    await deps({ responses: { "https://northco.invalid/aif.htm": ok(html) } }));
+  assert.match(doc.text, /Company’s head and registered office/);
+  assert.equal(doc.extractorVersion, "1.1.0");
+  const verdict = gate({ fieldKey: "head_office_location", document: doc,
+    excerpt: "The Company's head and registered office is located at 145 King Street East, Toronto" });
+  assert.equal(verdict.state, "proposed");
+  assert.equal(verdict.anchor.mode, "exact_normalized");
+  // An encoded tag in the text is decoded after the markup is gone: it is text, not markup.
+  assert.equal(defaultHtmlExtractor(bytes("<p>&lt;b&gt;x&lt;/b&gt;</p>")).text, "<b>x</b>");
+});
+
+test("the same filing read by a better reader is a new document, not a rewrite of the old one", async () => {
+  const html = "<html><body>Company&#8217;s</body></html>";
+  const url = "https://northco.invalid/a.html";
+  const one = await fetchDocument(url, ALLOW, await deps({ responses: { [url]: ok(html) } }));
+  const two = await fetchDocument(url, ALLOW, await deps({ responses: { [url]: ok(html) },
+    extractors: { html: (b) => ({ ...defaultHtmlExtractor(b), extractorVersion: "9.9.9" }) } }));
+  assert.notEqual(one.contentHash, two.contentHash,
+    "an earlier finding keeps the exact text it was checked against");
 });
 
 test("the same bytes always produce the same hash, so the cache is stable", async () => {
