@@ -84,6 +84,28 @@ export function findCik(
   return byName ? String(byName.cik_str) : null;
 }
 
+/** EDGAR writes a US address's state as its code, and the code again as the "description". */
+const US_STATES: Record<string, string> = {
+  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado",
+  CT: "Connecticut", DE: "Delaware", DC: "District of Columbia", FL: "Florida", GA: "Georgia",
+  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky",
+  LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota",
+  MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire",
+  NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota",
+  OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
+  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia",
+  WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
+};
+
+/** "Ontario, Canada" from EDGAR's description; "Colorado, United States" from a bare state code. */
+export function regionFrom(code: string | null | undefined, description: string | null | undefined): string | null {
+  const c = (code ?? "").trim().toUpperCase();
+  const d = (description ?? "").trim();
+  if (US_STATES[c] && (!d || d.toUpperCase() === c)) return `${US_STATES[c]}, United States`;
+  if (!d) return null;
+  return d.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
 export type EdgarRecord = {
   cik: string;
   name: string;
@@ -98,7 +120,8 @@ export type EdgarRecord = {
 export function parseSubmissions(text: string): EdgarRecord {
   const j = JSON.parse(text) as {
     cik: string | number; name: string; fiscalYearEnd?: string | null; website?: string | null;
-    addresses?: { business?: { city?: string | null; stateOrCountryDescription?: string | null } };
+    addresses?: { business?: { city?: string | null; stateOrCountry?: string | null;
+                               stateOrCountryDescription?: string | null } };
     filings?: { recent?: { form: string[]; filingDate: string[]; accessionNumber: string[]; primaryDocument: string[] } };
   };
   const cik = String(j.cik).replace(/^0+/, "");
@@ -122,7 +145,7 @@ export function parseSubmissions(text: string): EdgarRecord {
     fiscalYearEnd: j.fiscalYearEnd && /^\d{4}$/.test(j.fiscalYearEnd)
       ? `${j.fiscalYearEnd.slice(0, 2)}-${j.fiscalYearEnd.slice(2)}` : null,
     businessCity: title(j.addresses?.business?.city),
-    businessRegion: title(j.addresses?.business?.stateOrCountryDescription),
+    businessRegion: regionFrom(j.addresses?.business?.stateOrCountry, j.addresses?.business?.stateOrCountryDescription),
     latestAnnual,
   };
 }
@@ -151,14 +174,21 @@ export function edgarFindings(record: EdgarRecord, doc: FetchedDocument): Propos
     out.push({ ...base, field_key: "fiscal_year_end", value: record.fiscalYearEnd,
                evidence_excerpt: quote(doc.text, /"fiscalYearEnd"\s*:\s*"\d{4}"/) });
   }
+  // EDGAR's "business address" is whatever the filer registered, and it is
+  // not always the head office: in Run 1 a royalty company formed by merger
+  // registered its US partner's Colorado office. So it is quoted exactly, but
+  // scored as a secondary source -- high enough to show, below the line for
+  // bulk accept -- and a head office stated in the company's own AIF outranks it.
+  const address = { ...base, source_tier: 3 as const, corroborating_sources: 0 };
   const business = quote(doc.text, /"business"\s*:\s*\{[^}]*\}/);
   if (record.businessCity && business) {
-    out.push({ ...base, field_key: "head_office_location", value: record.businessCity,
+    out.push({ ...address, field_key: "head_office_location", value: record.businessCity,
                evidence_excerpt: quote(business, /"city"\s*:\s*"[^"]*"/) });
   }
   if (record.businessRegion && business) {
-    out.push({ ...base, field_key: "head_office_region", value: record.businessRegion,
-               evidence_excerpt: quote(business, /"stateOrCountryDescription"\s*:\s*"[^"]*"/) });
+    out.push({ ...address, field_key: "head_office_region", value: record.businessRegion,
+               evidence_excerpt: quote(business, /"stateOrCountryDescription"\s*:\s*"[^"]+"/)
+                              ?? quote(business, /"stateOrCountry"\s*:\s*"[^"]+"/) });
   }
   return out;
 }

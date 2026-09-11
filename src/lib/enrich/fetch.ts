@@ -205,7 +205,27 @@ export type FetchedDocument = {
   sourceTier: SourceTier;
   docType: DetectedType;
   hasTextLayer: boolean;
+  /**
+   * For an HTML page, every link on it, absolute. Never stored: it is how a
+   * company's "Investors" or "AGM materials" page leads to the filings it
+   * hosts, and each of those is fetched under the same checks as any other.
+   */
+  links?: string[];
 };
+
+/** Every href in an HTML page, resolved against the page's own address. */
+export function extractLinks(bytes: Uint8Array, base: string, max = 500): string[] {
+  const html = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  const out = new Set<string>();
+  for (const m of html.matchAll(/href\s*=\s*["']([^"'#][^"']*)["']/gi)) {
+    try {
+      const u = new URL(m[1].replace(/&amp;/g, "&"), base);
+      if (u.protocol === "https:" || u.protocol === "http:") out.add(u.href);
+    } catch { /* not a URL */ }
+    if (out.size >= max) break;
+  }
+  return [...out];
+}
 
 /** T1 hosts: an authoritative filing host. Everything else is scored lower. */
 export function classifyTier(host: string, allowlist: Set<string>): SourceTier {
@@ -333,5 +353,6 @@ export async function fetchDocument(
     // A PDF is the only thing that can be scanned: a short web page is short,
     // not an image, and marking it textless would refuse every terse homepage.
     hasTextLayer: type !== "pdf" || charsPerPage >= 100,
+    ...(type === "html" ? { links: extractLinks(response.body, current.href) } : {}),
   };
 }

@@ -560,6 +560,51 @@ function rankCandidates(candidates: CandidateDoc[], allow: Set<string>): Candida
       ((a.provenance === "reported" ? 1 : 0) - (b.provenance === "reported" ? 1 : 0)));
 }
 
+/** Most fetches a pass-2 job makes, index pages included: bounded work per company. */
+const MAX_FETCHES = 12;
+/** Most filings taken from one index page. */
+const MAX_LINKS_PER_PAGE = 6;
+
+/** What a linked file most likely is, from its address. */
+export function kindFromUrl(url: string): DocKind | null {
+  const u = decodeURIComponent(url).toLowerCase();
+  if (/form[-_ ]?of[-_ ]?proxy|voting[-_ ]?instruction|\bvif\b|notice[-_ ]?and[-_ ]?access/.test(u)) return null;
+  const interim = /\bq[123]\b|q[123][-_]|[-_]q[123]|interim|quarter/.test(u);
+  if (/circular|\bmic\b|proxy/.test(u)) return "information_circular";
+  if (/\baif\b|aif[-_]|[-_]aif|annual[-_ ]?information/.test(u)) return "annual_information_form";
+  if (/change[-_ ]?of[-_ ]?auditor|auditor[-_ ]?change|reporting[-_ ]?package/.test(u)) return "change_of_auditor";
+  if (/financial[-_ ]?statements|\bfs\b|fs[-_]|[-_]fs\b/.test(u)) return interim ? "interim_report" : "annual_financial_statements";
+  if (/md[-_&]?a\b|mda[-_]|management[-_ ]?s?[-_ ]?discussion/.test(u)) return interim ? "interim_report" : "annual_mdna";
+  if (/annual[-_ ]?report/.test(u)) return "annual_financial_statements";
+  return null;
+}
+
+/**
+ * The filings an index page links to, on hosts already trusted, most useful
+ * first. A link to anything that is not plausibly a filing is ignored.
+ */
+export function linkedFilings(links: string[], allow: Set<string>, seen: Set<string>): CandidateDoc[] {
+  const allowed = (url: string) => {
+    const h = hostOf(url);
+    return Boolean(h) && [...allow].some((a) => h === a || h!.endsWith(`.${a}`));
+  };
+  const found: CandidateDoc[] = [];
+  for (const url of links) {
+    const key = canonicalUrl(url);
+    if (seen.has(key) || !allowed(url) || !/\.pdf($|\?)/i.test(url)) continue;
+    const kind = kindFromUrl(url);
+    if (!kind) continue;
+    const years = [...url.matchAll(/20\d\d/g)].map((m) => Number(m[0]));
+    found.push({ url, kind, fiscal_year: years.length ? Math.max(...years) : null, title: "linked from the company's page",
+                 provenance: "reported" });
+  }
+  found.sort((a, b) =>
+    (KIND_PRIORITY.indexOf(a.kind) - KIND_PRIORITY.indexOf(b.kind)) || ((b.fiscal_year ?? 0) - (a.fiscal_year ?? 0)));
+  const picked = found.slice(0, MAX_LINKS_PER_PAGE);
+  for (const p of picked) seen.add(canonicalUrl(p.url));
+  return picked;
+}
+
 export async function fieldsPass(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<LiveBody> {
   const siteHost = job.website ? hostOf(job.website) : null;
   if (!siteHost) {
@@ -576,14 +621,29 @@ export async function fieldsPass(job: LiveJob, deps: LiveDeps, meter: Meter): Pr
   }
 
   const docs: FetchedDocument[] = [];
-  for (const c of rankCandidates(candidates, allow)) {
-    if (docs.length >= MAX_DOCUMENTS) break;
+  const queue = rankCandidates(candidates, allow);
+  const seen = new Set(queue.map((c) => canonicalUrl(c.url)));
+  let fetches = 0;
+  while (queue.length > 0 && docs.length < MAX_DOCUMENTS && fetches < MAX_FETCHES) {
+    const c = queue.shift()!;
+    fetches++;
     let doc: FetchedDocument;
     try {
       doc = await fetchDocument(c.url, allow, deps.fetch);
     } catch (err) {
       notes.push(`not fetched: ${c.url} (${(err as Error).message.slice(0, 120)})`);
       continue;
+    }
+    // A page on the company's own site that links to its filings is an index:
+    // discovery often stops at "Investors" or "AGM materials" when its search
+    // budget runs out (Run 1, Radisson). Follow its links, read none of it.
+    if (doc.docType === "html") {
+      const linked = linkedFilings(doc.links ?? [], allow, seen);
+      if (linked.length > 0) {
+        queue.unshift(...linked);
+        notes.push(`followed ${linked.length} filing link(s) from ${c.url}`);
+        continue;
+      }
     }
     if (!doc.hasTextLayer) { notes.push(`no text layer: ${c.url}`); continue; }
     // The worst output this system can produce is a well-cited fee from the

@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Sql } from "../db/sql.ts";
-import { resetTickerCache } from "./edgar.ts";
+import { regionFrom, resetTickerCache } from "./edgar.ts";
 import type { HttpResponse } from "./fetch.ts";
 import { claimJobs, ensureSlots } from "./ledger.ts";
 import {
-  canonicalAuditor, collectSearchUrls, Meter, toFinding, windowsOf, type LiveDeps, type Vendor, type VendorMessage,
+  canonicalAuditor, collectSearchUrls, kindFromUrl, linkedFilings, Meter, toFinding, windowsOf,
+  type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
 import { EgressViolation } from "./prompt.ts";
 import { extractPdf } from "./pdf.ts";
@@ -45,6 +46,13 @@ const PAGES: Record<string, { type: string; body: Uint8Array | string }> = {
     body: "<html><body><h1>Northco Mining Corp.</h1><p>TSX: NRTH. Gold in Ontario and Peru.</p></body></html>" },
   "https://northco.invalid/docs/circular-2026.pdf": { type: "application/pdf", body: CIRCULAR },
   "https://northco.invalid/docs/southco-aif.pdf": { type: "application/pdf", body: SOMEONE_ELSE },
+  // An investors page: where discovery stops when its searches run out.
+  "https://northco.invalid/investors/": { type: "text/html", body:
+    `<html><body><h1>Northco Mining Corp. Investors</h1>
+     <a href="/docs/circular-2026.pdf">2026 Management Information Circular</a>
+     <a href="/docs/Form-of-Proxy-2026.pdf">Form of proxy</a>
+     <a href="https://elsewhere.invalid/northco-aif-2025.pdf">Mirror</a>
+     <a href="/about/">About us</a></body></html>` },
   "https://www.sec.gov/files/company_tickers.json": { type: "application/json",
     body: JSON.stringify({ 0: { cik_str: 1234567, ticker: "NRTH", title: "NORTHCO MINING CORP" },
                            1: { cik_str: 7654321, ticker: "STHC", title: "SOUTHCO RESOURCES LTD" } }) },
@@ -110,7 +118,7 @@ const EXTRACTION = { findings: [
     text_value: null, year_value: null, stage: null, auditor_change: null, fee: null },
 ] };
 
-function vendor(opts: { pauseFirst?: boolean; refuse?: boolean } = {}) {
+function vendor(opts: { pauseFirst?: boolean; refuse?: boolean; report?: Record<string, unknown> } = {}) {
   const requests: Array<Record<string, unknown>> = [];
   let discoveries = 0;
   const v: Vendor = {
@@ -128,7 +136,7 @@ function vendor(opts: { pauseFirst?: boolean; refuse?: boolean } = {}) {
         return { stop_reason: "tool_use", usage, content: [
           searchBlock(["https://northco.invalid/", "https://northco.invalid/docs/circular-2026.pdf",
                        "https://northco.invalid/docs/southco-aif.pdf"]),
-          { type: "tool_use", id: "t1", name: "report_sources", input: DISCOVERY_REPORT },
+          { type: "tool_use", id: "t1", name: "report_sources", input: opts.report ?? DISCOVERY_REPORT },
         ] } as VendorMessage;
       }
       return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(EXTRACTION) }],
@@ -233,6 +241,59 @@ test("PASS 2: filings from the trusted domain only, the wrong company's filing r
   assert.equal(JSON.parse(by.audit_fee.proposed_value), 412000);
   assert.notEqual(by.tax_fee.state, "proposed", "265 appears nowhere in the circular");
   assert.equal(by.stage_evidence_state.state, "abstained");
+});
+
+test("pass 2 follows an index page's links to the filings, and reads only those", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v } = vendor({ report: { ...DISCOVERY_REPORT, documents: [
+    { url: "https://northco.invalid/investors/", kind: "other", fiscal_year: null, title: "Investors" },
+  ] } });
+  const { fetched, fetchDeps } = world();
+  const { by, runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+
+  assert.ok(fetched.includes("https://northco.invalid/docs/circular-2026.pdf"), "the circular was found by following the page");
+  assert.ok(!fetched.some((u) => u.includes("Form-of-Proxy")), "a proxy form is not a filing");
+  assert.ok(!fetched.some((u) => u.includes("elsewhere.invalid")), "a link off the allowlist is never followed");
+  const stored = await db.all("select url from documents") as Array<{ url: string }>;
+  assert.ok(!stored.some((d) => d.url.endsWith("/investors/")), "the index page is not read as a document");
+  assert.equal(by.audit_fee.state, "proposed");
+  const raw = JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+      where j.run_id = ?`, runId) as { raw: string }).raw);
+  assert.ok(raw.notes.some((n: string) => /followed 1 filing link/.test(n)));
+});
+
+test("a linked file's kind comes from its address, and forms that are not filings are skipped", () => {
+  assert.equal(kindFromUrl("https://x.invalid/files/WDO-2026-Circular-Revised.pdf"), "information_circular");
+  assert.equal(kindFromUrl("https://x.invalid/Wesdome-Gold-Mines-AIF-2025.pdf"), "annual_information_form");
+  assert.equal(kindFromUrl("https://x.invalid/2025/q4/Wesdome-MDA-2025-Final.pdf"), "annual_mdna");
+  assert.equal(kindFromUrl("https://x.invalid/2024/q1/FS-Q1-2024-FINAL.pdf"), "interim_report");
+  assert.equal(kindFromUrl("https://x.invalid/agm/2026/Form-of-Proxy.pdf"), null);
+  assert.equal(kindFromUrl("https://x.invalid/brochure.pdf"), null);
+  const seen = new Set<string>();
+  const picked = linkedFilings([
+    "https://x.invalid/2024-AIF.pdf", "https://x.invalid/2025-AIF.pdf", "https://x.invalid/2026-Circular.pdf",
+    "https://y.invalid/2026-Circular.pdf",
+  ], new Set(["x.invalid"]), seen);
+  assert.deepEqual(picked.map((p) => p.url),
+    ["https://x.invalid/2026-Circular.pdf", "https://x.invalid/2025-AIF.pdf", "https://x.invalid/2024-AIF.pdf"]);
+  assert.deepEqual(linkedFilings(["https://x.invalid/2026-Circular.pdf"], new Set(["x.invalid"]), seen), [],
+    "nothing is followed twice");
+});
+
+test("EDGAR's registered address is shown, scored below bulk accept, with a US state written out", async () => {
+  assert.equal(regionFrom("CO", "CO"), "Colorado, United States");
+  assert.equal(regionFrom("A6", "ONTARIO, CANADA"), "Ontario, Canada");
+  assert.equal(regionFrom(null, null), null);
+  const { db, periodId, northco } = await seeded();
+  const { v } = vendor();
+  const { fetchDeps } = world();
+  const { runId } = await runOne(db, periodId, northco.id, "identity", deps(db, v, fetchDeps));
+  const rows = await db.all(`select field_key, evidence_strength from enrichment_findings
+      where run_id = ? and field_key in ('head_office_location', 'head_office_region', 'fiscal_year_end')`, runId) as
+    Array<{ field_key: string; evidence_strength: number }>;
+  const s = Object.fromEntries(rows.map((r) => [r.field_key, Number(r.evidence_strength)]));
+  assert.ok(s.head_office_location < 0.8 && s.head_office_region < 0.8, JSON.stringify(s));
+  assert.ok(s.fiscal_year_end >= 0.8, "EDGAR's own fiscal year-end stays strong evidence");
 });
 
 test("pass 2 reads the documents pass 1 found instead of searching again", async () => {
