@@ -1,8 +1,9 @@
 # Handover — Mining Whitespace Intelligence Tool
 
-> **Status at 11 September 2026.** Built, deployed, published once, and able to
-> ingest a workbook in production. To start a new session, paste everything
-> below the line into it.
+> **Status at 11 September 2026.** Built, deployed, published once, ingests a
+> workbook in production, and has a working tick and worker. Research itself
+> waits on live enrichment. To start a new session, paste everything below the
+> line into it.
 
 ---
 
@@ -34,27 +35,18 @@ changed: still 1 publication, 259 companies, 3,626 frozen values. The one
 thing unconfirmed is what the screen said at the end — the expected text is
 **"Cannot be committed"**, because Q3-2026 is already published.
 
-**2. Deploy the worker and run the S1 probe.** The research-in-production
-work (item 2 below) is built and checked but **not yet pushed**. Pushing
-`main` deploys it. Before or with the push, apply migrations `0013` and
-`0014` to Supabase and record them in `schema_migrations`. Then:
-
-```bash
-curl -X POST "https://mm-whitespace.vercel.app/api/worker/drain?probe=1" \
-  -H "Authorization: Bearer $MM_CRON_SECRET"
-```
-
-and, after five minutes, read the row it wrote — the gap from `started_at` to
-`last_seen_at` is how long the platform let the invocation live:
+**2. Read a day of ticks.** The worker is deployed (commit `549475f`),
+migrations `0013`/`0014` are applied and recorded, and the S1 probe lived its
+full 240 s on production. What is left of S1 is a day of the per-minute
+schedule — the first twelve minutes were twelve of twelve. After 12 September
+2026 02:40 UTC:
 
 ```sql
-select started_at, last_seen_at, ended_at, end_reason, deadline_seconds
-  from worker_runs where probe order by started_at desc limit 1;
-select count(*) from cron_ticks where ticked_at > now() - interval '1 hour';  -- expect ~60
+select count(*) from cron_ticks where ticked_at > now() - interval '24 hours';  -- expect 1,440
 ```
 
-Record both in `docs/decisions/S1-WORKER-SHAPE.md`, which has a table with
-that row still empty.
+`/runs` shows the same number in its rail. Record it in
+`docs/decisions/S1-WORKER-SHAPE.md`.
 
 **Kay could not sign in.** `Kampofo@deloitte.ca` was refused at 00:38 UTC on
 11 September because only `gmail.com` is allowed, and Resend can only deliver
@@ -151,8 +143,8 @@ validation report and the commit; the workbook itself is discarded inside the
 request. Proven: the function's payload for the synthetic workbook is identical
 to the local parse. Not yet proven: an upload through the live screen (above).
 
-**The worker exists and the tick works (built 11 September 2026, uncommitted
-at the time of writing — check `git log`).** Spike S1 found that the
+**The worker exists and the tick works (commit `549475f`, deployed 11
+September 2026).** Spike S1 found that the
 scheduler calls the tick with `GET` and the route answered `POST` only, so
 **every production tick since deployment returned 405** and nothing recorded
 it. Now: the tick answers both, writes a `cron_ticks` row every minute even
@@ -322,11 +314,10 @@ it. Never run `git add -A` outside this project's folder.
 
 1. ~~Confirm the live upload~~ — done from the database side (the section
    near the top); ask Samuel what the screen said.
-2. **Research in production — plumbing done, measurement pending.** The
-   worker, the tick fix, the start-run screen and the S1 decision are built
-   (see "What exists"). Left: push, apply `0013`/`0014` to Supabase, run the
-   probe, read a day of `cron_ticks`, and fill the empty row in
-   `docs/decisions/S1-WORKER-SHAPE.md`.
+2. **Research in production — plumbing done and deployed.** The worker, the
+   tick fix, the start-run screen and the S1 decision are built and measured
+   (see "What exists"). Left: read a day of `cron_ticks` (the section near
+   the top). Research itself waits on item 3.
 3. **Live enrichment.** The model call is written (`callVendor` in
    `src/lib/enrich/client.ts`). It needs an Anthropic API key, `npm install
    @anthropic-ai/sdk`, spike **S3** (account tier and spend limits),

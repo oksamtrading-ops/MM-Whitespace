@@ -22,7 +22,9 @@ holds. What the spike actually found was a defect, not a platform limit.
 | Tick outcome, 12 h | **12 of 12 answered 405** | The route exported `POST` only |
 | Cron on Pro | Any schedule, including per-minute | Vercel documentation |
 | Idle cost | A tick is sub-second; a worker with nothing to do exits at the door | By construction, see below |
-| Usable wall clock | _Not yet measured on the platform._ The probe below measures it | `POST /api/worker/drain?probe=1` |
+| Usable wall clock | **240 of 240 s**, in `iad1`, closed by the worker itself and not by the platform (`end_reason = probe`, `ended_at` set) | `POST /api/worker/drain?probe=1` on production, 11 September 2026 02:46 UTC |
+| Cron delivery, per minute | **12 of 12** in the first twelve minutes after deploy, plus one manual `GET`; every tick answered 200 and wrote its row | `cron_ticks`, 02:39–02:51 UTC |
+| Fail-closed answers | Real drain refused **409** with `MM_ENRICH_MODE` unset; no bearer **401**; tick `GET` **200** | `curl` against production |
 
 **The defect.** The scheduler calls with GET and the tick answered POST only,
 so every production tick since deployment returned 405 and did nothing. No
@@ -71,12 +73,12 @@ enrichment exists, a container would be paying for a property nothing uses.
 
 ## What is still open
 
-1. **Run the probe on production** and record the lived duration here. If it
-   is well short of 300 s, raise `maxDuration` toward 800 and probe again; if
-   it is short of the configured value, that is R8 in docs/design/14 and the
-   container option returns.
+1. ~~Run the probe on production~~ — done, 240 of 240 s. The deadline can be
+   raised toward the 800 s ceiling when a live run needs it; probe again after
+   any change to `maxDuration` or the plan.
 2. **Read `cron_ticks` after 24 hours** of the per-minute schedule. The
-   number to expect is 1,440; the run screen shows it.
+   number to expect is 1,440; the run screen shows it. Twelve minutes is
+   twelve of twelve; a day is the measurement.
 3. **Overlap under load** cannot be measured until a run has real work. In
    replay mode a job takes milliseconds. Revisit with S3.
 4. `WORKER_SLOTS` is the design's placeholder. S3 sets it from the account's
