@@ -53,8 +53,16 @@ test("a spend limit you set halts the whole run, with the vendor's words as the 
   // The failing job and the one nobody had reached yet: halted, both of them.
   // Not dead-lettered -- that is the one-at-a-time failure this exists to stop.
   assert.equal((await read()).state, "halted");
+  assert.equal((await read()).attempts, 0, "a halt is not the job's fault and costs it no attempt");
   const states = await db.all("select state from enrichment_jobs where run_id = ?", runId) as Array<{ state: string }>;
   assert.deepEqual(states.map((s) => s.state), ["halted", "halted"]);
+});
+
+test("the organisation-limit 400 the live API returned in Run 1 halts the run", async () => {
+  // Verbatim, 11 September 2026 11:18 UTC, request req_011CewZS1a1KHTsPDbFQfwpp.
+  const { db, runId, jobId } = await inResearch();
+  assert.equal(await routeFailure(db, runId, jobId, vendorError(400, "invalid_request_error",
+    "You have reached your specified API usage limits. You will regain access on 2026-10-01 at 00:00 UTC.")), "halt");
 });
 
 test("the tier's spend cap halts too, recognised by its error_code", async () => {

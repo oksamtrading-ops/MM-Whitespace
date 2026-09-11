@@ -488,6 +488,12 @@ export async function routeFailure(
   const outcome = classifyError(err);
 
   if (outcome === "halt") {
+    // A spend limit or a revoked key says nothing about this job, so the
+    // attempt charged on entering research is given back (docs/design/03:
+    // "release leases without incrementing attempts"). Run 1 halted on the
+    // first job and left it one attempt down; resumed, it would have had two.
+    await db.run(`update enrichment_jobs set attempts = case when attempts > 0 then attempts - 1 else 0 end
+        where id = ?`, jobId);
     await haltRun(db, runId, `the model vendor refused: ${message}`);
     return "halt";
   }

@@ -140,7 +140,8 @@ its wording.
 | Cost of step 4 | $0.00025 (16 in, 4 out, on each model) | Step 4 output |
 | A real 401 from the live API | `authentication_error`, "invalid x-api-key", no `retry-after`; `classifyError` said **HALT** | Step 4's first attempt, a mis-pasted key |
 | Retention configuration | | Console → Privacy |
-| Self-set limit error, captured | **Not tripped.** 40 requests, ~$1.61, all accepted, against the `mm-s3-throwaway` workspace, 11 September 2026 | Step 6 output |
-| `classifyError` on the captured error | Not exercised live; the documented 400 is pinned verbatim in `client.test.ts` and `route.test.ts` | — |
+| Self-set limit error, captured | Step 6's throwaway workspace **did not trip** (40 requests, ~$1.61). The **organisation** limit then tripped in production, on Run 1's pass-2 re-run, 11 September 2026 11:18 UTC: `400 invalid_request_error` — "You have reached your specified API usage limits. You will regain access on 2026-10-01 at 00:00 UTC." (`req_011CewZS1a1KHTsPDbFQfwpp`) | Production, `enrichment_runs.halt_reason` |
+| `classifyError` on the captured error | **HALT, live.** The run stopped on its first job; the other three were never attempted, none was dead-lettered, and nothing was spent. The halted job had been charged an attempt; fixed so a halt costs none | Production run `1a50424e` |
+| Which limit | The message says "specified API usage limits", not "specified **workspace** API usage limits": the organisation limit from step 2, reached by the day's total across workspaces (Run 1 ~$1.84 plus the step 6 burn ~$1.61) | — |
 | Requests that landed past the limit | Unknown — either the limit was set above $1.61 or spend is counted with a delay. **Treat the workspace limit as a backstop that can overshoot; the run's own budget in the application is the precise control** | Step 6 output |
 | `WORKER_SLOTS` decided | **4** | Step 4 |
