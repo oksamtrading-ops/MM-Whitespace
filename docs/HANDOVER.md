@@ -340,9 +340,11 @@ it. Never run `git add -A` outside this project's folder.
    `WORKER_SLOTS` stays 4; results in `docs/decisions/S3-ACCOUNT-LIMITS.md`).
    The two-pass pipeline is built (`docs/decisions/RESEARCH-PIPELINE.md`).
    Before Run 1 (five companies): apply migration `0015` to Supabase; set
-   `MM_SEC_CONTACT` in Vercel; confirm decision 1's scope covers web search
-   and fetching issuer sites and EDGAR; then `LIVE_ENABLED = true` and
-   `MM_ENRICH_MODE=live`. Re-probe the worker at `maxDuration = 800`. The
+   `MM_SEC_CONTACT` in Vercel (done 11 September 2026); confirm decision 1's
+   scope covers web search and fetching issuer sites and EDGAR; then
+   `LIVE_ENABLED = true` and `MM_ENRICH_MODE=live`. The worker at
+   `maxDuration = 800` probed at 720 of 720 s. Run 1 is five named tickers —
+   AEM, WDO, ELE, NOU, RDS — using the start form's ticker limit. The
    **Batch API** is not built: the ledger has an `awaiting_batch` state and
    nothing submits or polls.
 4. **Excel export in the app.** It is only a Python command (`npm run

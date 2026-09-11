@@ -23,6 +23,7 @@ holds. What the spike actually found was a defect, not a platform limit.
 | Cron on Pro | Any schedule, including per-minute | Vercel documentation |
 | Idle cost | A tick is sub-second; a worker with nothing to do exits at the door | By construction, see below |
 | Usable wall clock | **240 of 240 s**, in `iad1`, closed by the worker itself and not by the platform (`end_reason = probe`, `ended_at` set) | `POST /api/worker/drain?probe=1` on production, 11 September 2026 02:46 UTC |
+| Usable wall clock at `maxDuration = 800` | **720 of 720 s**, in `iad1`, closed by the worker itself — the drain deadline live research now uses | The same probe after the live-research deploy, 11 September 2026 09:19–09:31 UTC |
 | Cron delivery, per minute | **12 of 12** in the first twelve minutes after deploy, plus one manual `GET`; every tick answered 200 and wrote its row | `cron_ticks`, 02:39–02:51 UTC |
 | Fail-closed answers | Real drain refused **409** with `MM_ENRICH_MODE` unset; no bearer **401**; tick `GET` **200** | `curl` against production |
 
