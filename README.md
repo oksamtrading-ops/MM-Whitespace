@@ -106,6 +106,13 @@ day-one state and the gate is right to stop.
 
 ### Exporting a period
 
+In the application: **Publish -> Take it away as a workbook**, which downloads
+the `.xlsx` (or the flat `.csv`) and records the download in the audit log. An
+Analyst or an Admin may; a Viewer may not, because the export carries the
+working period, including values nobody has published yet.
+
+From the command line, against a SQLite file:
+
 ```bash
 python3 scripts/export_period.py ./period.db out.xlsx --csv out.csv
 ```
@@ -344,6 +351,14 @@ faithful copy would re-emit the very defects the application exists to fix.
 
 So the export is a clean template the application fully controls, which is the
 only way to guarantee the proof totals tie.
+
+**Where it is built.** In Python, by one `build_workbook`, whichever way it is
+asked for: the command line reads a SQLite file, and the application hands the
+period over as JSON to `api/export.py` -- a function beside the Next.js app,
+because Vercel's Node functions have no Python, exactly as the upload parser
+works. `src/lib/export/period.ts` does the SQL in five queries rather than five
+per company, and `src/app/api/export/route.ts` is the boundary: who may ask,
+which period, and the audit line saying a licensed extract left the building.
 
 ### What it deliberately does not reproduce
 

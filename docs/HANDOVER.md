@@ -378,9 +378,15 @@ it. Never run `git add -A` outside this project's folder.
      **Batch API** at half price — not built: the ledger has an
      `awaiting_batch` state and nothing submits or polls.
    - A per-company cost on each job, so the estimate can use a p95.
-4. **Excel export in the app.** It is only a Python command (`npm run
-   export`); it needs a download, and on Vercel the same Python-function
-   approach as the parser.
+4. ~~**Excel export in the app.**~~ **Done, 12 September 2026.** *Publish ->
+   Take it away as a workbook* downloads the `.xlsx` or the flat `.csv`,
+   Analyst and Admin only, every download in the audit log. Built by
+   `api/export.py` from a payload `src/lib/export/period.ts` reads out of
+   whichever database is behind it; locally by a `python3` subprocess. It
+   exports the WORKING period, not the frozen revision -- the snapshot has no
+   stage rows and the matrix needs them -- which is the other reason a Viewer
+   may not have it. `MM_EXPORT_URL` overrides where the builder answers, as
+   `MM_PARSE_URL` does for the parser; both use `MM_PARSE_SECRET`.
 5. **Retention on Postgres.** `scripts/retention.mjs` works on SQLite only, so
    nothing sweeps production: expired parses, sign-in links and sessions are
    hidden by their expiry but not deleted. (`cron_ticks` prunes itself to a

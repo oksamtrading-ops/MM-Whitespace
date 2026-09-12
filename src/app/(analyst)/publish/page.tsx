@@ -155,6 +155,25 @@ export default async function Publish() {
           <PublishForm periodId={period.id} publishable={gate.publishable} isAdmin={isAdmin}
                        amending={revisions.length > 0} blockers={gate.blockers.length} />
         </Section>
+
+        <Section id="export" title="Take it away as a workbook" index={6}
+                 caption={"A clean template the application controls. The uploaded workbook is an " +
+                          "input artifact and is never written back into; this is the deliverable."}>
+          <p>
+            <a className="btn" href={`/api/export?period=${period.id}` as Route} download>
+              Download .xlsx
+            </a>{" "}
+            <a className="btn quiet" href={`/api/export?period=${period.id}&format=csv` as Route} download>
+              Flat .csv
+            </a>
+          </p>
+          <p className="note">
+            It carries the period as it stands now, including anything accepted in review since
+            revision {revisions.length}{revisions.length === 0 ? " — nothing is published yet" : ""}.
+            Every download is recorded in the audit log. The fee columns are written for whichever
+            fees have been accepted, and left blank for the rest.
+          </p>
+        </Section>
       </div>
 
       <aside className="rail rise" aria-label="About this period">

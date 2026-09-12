@@ -24,6 +24,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { pythonEndpoint } from "../python/endpoint.ts";
 import type { Sql } from "../db/sql.ts";
 import { formatStamp } from "../db/stamp.ts";
 
@@ -83,21 +84,11 @@ export class ParseFailed extends Error {
 export function parserEndpoint(
   env: Record<string, string | undefined> = process.env,
 ): { url: string; headers: Record<string, string> } | null {
-  const bypass: Record<string, string> = env.VERCEL_AUTOMATION_BYPASS_SECRET
-    ? { "x-vercel-protection-bypass": env.VERCEL_AUTOMATION_BYPASS_SECRET }
-    : {};
-  if (env.MM_PARSE_URL) return { url: env.MM_PARSE_URL, headers: bypass };
-  if (!env.VERCEL) return null;
-  // The production domain, not the deployment's own URL: deployment URLs sit
-  // behind Vercel's login under Standard Protection, and this request comes
-  // from a server that has no browser session to present.
-  const host = env.VERCEL_ENV === "production" && env.VERCEL_PROJECT_PRODUCTION_URL
-    ? env.VERCEL_PROJECT_PRODUCTION_URL
-    : env.VERCEL_URL;
-  if (!host) {
-    throw new ParseFailed("The upload parser is not configured on this deployment.");
+  try {
+    return pythonEndpoint("parse", env);
+  } catch (err) {
+    throw new ParseFailed((err as Error).message);
   }
-  return { url: `https://${host}/api/parse`, headers: bypass };
 }
 
 /**

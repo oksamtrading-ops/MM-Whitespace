@@ -318,6 +318,27 @@ async function journeys(dbPath) {
         adminPublish.html.includes("Publish an amendment") &&
         adminPublish.html.includes('name="amendmentReason"'));
 
+  // Journey four: the deliverable is a clean workbook the application builds,
+  // and it is a download in the application rather than a command line.
+  check("the publish screen offers the export", adminPublish.html.includes("/api/export"));
+  const download = await fetch(`${BASE}/api/export`, { headers: { cookie: analyst.cookie } });
+  const workbook = Buffer.from(await download.arrayBuffer());
+  check("an Analyst downloads the period as a workbook",
+        download.status === 200 &&
+        /spreadsheetml/.test(download.headers.get("content-type") ?? "") &&
+        /attachment; filename="MM Whitespace .*\.xlsx"/.test(download.headers.get("content-disposition") ?? "") &&
+        workbook.subarray(0, 2).toString("latin1") === "PK" && workbook.byteLength > 5000,
+        `status ${download.status}, ${workbook.byteLength} bytes`);
+  const csvDownload = await fetch(`${BASE}/api/export?format=csv`, { headers: { cookie: analyst.cookie } });
+  const csv = await csvDownload.text();
+  check("and as a flat csv, with the licence notices on it",
+        csvDownload.status === 200 && csv.startsWith("# ") && csv.includes("Northco Mining Corp."));
+  // The export carries unpublished values, so it is not a Viewer's to take.
+  const refusedExport = await fetch(`${BASE}/api/export`, { headers: { cookie: viewer.cookie } });
+  check("a Viewer is refused the export", refusedExport.status === 403);
+  const anonExport = await fetch(`${BASE}/api/export`);
+  check("and so is a caller with no session", anonExport.status === 401);
+
   // 8. Journey two: a partner opens a company before a pursuit conversation.
   console.log("\n8. a company profile");
   const index = await get("/companies", viewer.cookie);
