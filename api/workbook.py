@@ -1,8 +1,15 @@
-"""POST /api/export -- the workbook builder, as a Vercel Python function.
+"""POST /api/workbook -- the workbook builder, as a Vercel Python function.
 
 A thin adapter: everything that matters is in mmparser/export_service.py. The
 request body is the period as JSON, built by the application from its own
 database; the response is the .xlsx.
+
+NOT /api/export: that is the application's own route, the one a person clicks.
+A file in api/ and a Next.js route handler of the same name are the same URL,
+and on Vercel the Python function wins -- so /api/export answered every
+download with this function's "unauthorized" instead of a workbook. The two
+must never share a name; src/lib/python/endpoint.test.ts fails the build if
+they do again.
 
 Every request must carry ``X-MM-Parse-Secret`` -- the same secret the parser
 uses, because both are this application talking to itself. Missing and wrong

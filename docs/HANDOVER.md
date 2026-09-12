@@ -381,7 +381,7 @@ it. Never run `git add -A` outside this project's folder.
 4. ~~**Excel export in the app.**~~ **Done, 12 September 2026.** *Publish ->
    Take it away as a workbook* downloads the `.xlsx` or the flat `.csv`,
    Analyst and Admin only, every download in the audit log. Built by
-   `api/export.py` from a payload `src/lib/export/period.ts` reads out of
+   `api/workbook.py` from a payload `src/lib/export/period.ts` reads out of
    whichever database is behind it; locally by a `python3` subprocess. It
    exports the WORKING period, not the frozen revision -- the snapshot has no
    stage rows and the matrix needs them -- which is the other reason a Viewer

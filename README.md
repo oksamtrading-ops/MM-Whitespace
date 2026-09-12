@@ -354,7 +354,7 @@ only way to guarantee the proof totals tie.
 
 **Where it is built.** In Python, by one `build_workbook`, whichever way it is
 asked for: the command line reads a SQLite file, and the application hands the
-period over as JSON to `api/export.py` -- a function beside the Next.js app,
+period over as JSON to `api/workbook.py` -- a function beside the Next.js app,
 because Vercel's Node functions have no Python, exactly as the upload parser
 works. `src/lib/export/period.ts` does the SQL in five queries rather than five
 per company, and `src/app/api/export/route.ts` is the boundary: who may ask,

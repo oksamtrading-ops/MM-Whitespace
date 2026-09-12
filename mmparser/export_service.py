@@ -9,7 +9,7 @@ TypeScript would have meant a second exporter to keep in step with the first.
 So the application reads the period out of its own database (SQLite locally,
 Postgres in production) and hands the rows to the SAME ``build_workbook`` the
 command line uses. This module knows nothing about HTTP or about SQL:
-``api/export.py`` adapts it to a request, and src/lib/export/period.ts reads
+``api/workbook.py`` adapts it to a request, and src/lib/export/period.ts reads
 the database, so either can change without touching the workbook.
 
 Nothing is stored. The bytes are built in memory and returned to the caller.

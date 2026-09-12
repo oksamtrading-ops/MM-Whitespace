@@ -15,7 +15,7 @@
  * Analyst -- and decision 11's boundary is unchanged.
  *
  * WHERE THE WORKBOOK IS BUILT. In Python, by the same `build_workbook` the
- * command line uses: on Vercel as the function in api/export.py, locally as a
+ * command line uses: on Vercel as the function in api/workbook.py, locally as a
  * `python3` subprocess. This module does the SQL and nothing else, in five
  * queries rather than five per company -- 259 companies over a pooled
  * connection is where a per-company query becomes a minute.
