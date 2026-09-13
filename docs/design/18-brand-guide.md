@@ -99,12 +99,16 @@ The script asserts the two light-theme prohibitions still fail, asserts that no 
 
 | Job | Light | Dark | For |
 |---|---|---|---|
-| **Sequential**, one hue light→dark | `#86BC25 → #6B961E → #26890D → #046A38 → #25482B` | `#046A38 → #26890D → #43B02A → #86BC25 → #C4D600` (anchor flipped) | the map, the two heatmaps, the evidence wash |
-| **Categorical**, fixed order, **cap of four** | `#86BC25, #005587, #0097A9, #046A38` | `#86BC25, #A0DCFF, #0097A9` | nothing today; any future multi-series chart |
+| **Sequential**, one hue light→dark | `#86BC25 → #6B961E → #26890D → #046A38 → #25482B` | `#046A38 → #26890D → #43B02A → #86BC25 → #C4D600` (anchor flipped) | the map, the whitespace matrix, the tier badges, the evidence wash |
+| **Categorical**, fixed order, **cap of four** | `#86BC25, #005587, #0097A9, #046A38` | `#86BC25, #A0DCFF, #0097A9` | the footprint composition, and nothing else |
 | **Diverging**, two hues and a grey midpoint | `#8C3A14 · #74777A · #1F6F43` | `#E8895B · #97999B · #6CC98F` | tier migration polarity |
 | **Emphasis** | brand + `--demote` | brand + `--demote` | auditor share: Deloitte accented, every other firm grey, unknown last and longest |
 
 Validated: both ramps are monotone with every step ≥ 0.06 OKLab L apart; the light ramp's lightest step is the brand itself, which is the ceiling doc 09 set. Categorical adjacent pairs clear ΔE 18.4 (CVD) and 19.0 (normal) on light, 23.3 and 25.1 on dark. Blue beside teal fails the normal-vision floor in every Deloitte step (ΔE 9–13), so they are never adjacent, and the categorical cap is four on light and three on dark. Identity is by hue order, never by rank: a filter that changes the series count does not repaint survivors. Text never wears a series colour. Status colours are never reused for a series and always ship with an icon and a word. The dark categorical set sits lighter than the dataviz skill's own dark lightness band; the brief's three floors (CVD, normal vision, contrast) pass, and that is the standard this product holds.
+
+**Ink inside a fill.** A numeral sitting in a heat-map cell or a tier badge is text on a fill that changes under it, so every ramp step names the ink it can carry: `--on-seq-1` to `--on-seq-5`, black or white per theme, each pair asserted at 4.5:1 by the script. Nothing else may be set on a ramp step.
+
+**Where the categorical slots are spent.** Exactly one place: the footprint composition, whose four parts are one population and fit the four validated slots. Everywhere else is one hue, emphasis or a table, and the cap is the reason — a fifth market would have to repeat a hue, and two entities sharing a colour in one chart is a lie.
 
 **Acceptance.** `npm run check:contrast` exits 0 and prints "All contrast obligations hold." for both themes; changing any value above to one that breaks a floor makes it exit 1.
 
@@ -196,23 +200,30 @@ The Unicode marks the build used to draw — ▲ ▼ ● ○ ✓ ✗ ↗ → ←
 
 Marks: bars 14px thick with 2px rounded data-ends and a 2px surface gap between neighbours; lines 2px; markers ≥ 8px; gridlines a hairline in `--gridline`, recessive. Labels: the value at the tip of every bar, in ink, never in the series colour; selective direct labels elsewhere; a legend only for two or more series. Hover: the row lights (`--surface-2`) and its addend lights in the footing; on the map the province strokes in ink and the readout names it. Every chart has a table twin (the footing is one; the roster is another) and a coverage-meter state in the same footprint.
 
-| View | Form | Colour job | Label rule | Twin and meter |
+| View | Form | Colour job | Label rule | Twin and gate |
 |---|---|---|---|---|
-| Population | the hero sentence and the ledger line | none | the four figures in figure-lg | — |
-| Tier distribution | horizontal bars in tier order, Unclassified as a dashed gap | one hue | value at the tip; the gap's value in ink-3 | footing; meter at 95% |
-| Office by market | horizontal bars, sorted, foreign HQ last in grey | one hue | value at the tip | footing |
-| Market × tier | heatmap | sequential | numeral in every cell, in ink | table; gated |
+| Population | the hero sentence and the stat row | none | figure-lg in a panel | — |
+| Footprint | **composition bar** — four parts of one population, drawn as one bar | categorical, the only place the slots are spent | a key naming every part with its count and share | the bar is its own proof |
+| Tier distribution | bars above the floor; **tier ladder** below it | ordinal badge ramp | value at the tip, or the basis and "awaiting stage" | the ladder states the refusal and the real basis |
+| Office by market | **penetration bars** — the full length is the market, the inner length is Deloitte's book | brand + grey | count at the tip; "n ours · x%", or "no client here" | mono composition proof |
+| **Whitespace matrix** | **heat map**, market-cap band × incumbent auditor | sequential in named percentage steps | count and share in every cell, in the step's ink | a real table with row and column headers; the research gap is hatched and outside the ramp |
 | Province footprint | the map, and bars sorted | sequential on the map, one hue on the bars | code and count on the map; value at the tip | the bars are the twin; caption says counts do not sum |
 | Key jurisdictions | horizontal bars, top 12 and a grey remainder | one hue | value at the tip | — |
-| Auditor share | emphasis bars: Deloitte accented, others grey, unknown last | brand + grey | value at the tip | footing; meter at 90% |
-| Auditor × tier | heatmap | sequential | numeral in every cell | table; gated on two floors |
+| Auditor share | emphasis bars: Deloitte accented, others grey, unknown last | brand + grey | value at the tip | emphasis composition proof; meter at 90% |
+| Auditor × tier | heat map | sequential | count and share in every cell | table; gated on two floors |
 | Tier migration | a table of moves with polarity | diverging (status pair) | icon and word in every row | first-period empty state |
 | Enrichment coverage | gauges with the floor as a tick | ordinal: green above the floor, grey below | percentage and "n of N" | — |
 | Entrants and drop-outs | a table | none | proximity band marked with a word | — |
 
+**The proof is drawn, not written.** `121 + 61 + 12 + 7 + 5 + 53 = 259 ✓` is the right guarantee and the wrong object: an arithmetic string under every chart reads as a footnote nobody checks, and the dashboard carried four of them. The same assertion is now a **composition bar** whose segments *are* the addends — they sum to the width by construction, so the eye verifies the total the way the arithmetic did. The total still carries its tick as one text node, the arithmetic is one press away under "show the arithmetic", and the whole sum is the bar's accessible name. Nothing about the guarantee is weaker: a failing proof still reads `✗ expected N` in the same place, in the alert colour.
+
+**Two cross-tabs read the snapshot directly** rather than the precomputed aggregates. The whitespace matrix and market penetration are one pass over a single publication's rows, which costs nothing and means an already-published revision grows these views without being republished. They read `published_period_values` and nothing else, so they are as frozen as the rest of the page.
+
+**A heat map's steps are named, never stretched.** A linear five-way split of 0–100% puts almost every cell in the first two steps while 117 auditors are unresearched, and silently stretching the scale to fill the ramp would make a 12% cell look like a 40% one. The steps are fixed percentages and the legend prints them.
+
 Forbidden, from doc 09 and unchanged: pies, Sankeys, dual axes, colour-only encoding, hard-coded axis lists, any green ramp step lighter than the brand on a light ground, "Other" as the label for a Deloitte market, a chart drawn below its coverage floor, and 3D anywhere but the map.
 
-**Acceptance.** Every dashboard section either shows a footing that reads `= N ✓` or a meter with "unlocks at"; the journeys assert the first.
+**Acceptance.** Every population view on the dashboard ends in a composition bar whose total reads `= N ✓`, and every gated view says what it is waiting for; the journeys assert the first.
 
 ## 10. The map
 
@@ -338,6 +349,7 @@ Ordered so the demonstration path is finished first. Effort is in engineer-days 
 | 23 | The key-jurisdictions inset, once the foreign vocabulary separates countries from states | 1 | — |
 | 24 | Fold the export's cover and sheets onto the brand (section 14) | 1 | — |
 | 25 | Drill-down links from every bar into the filtered roster, and one "since last period" empty state | 1 | — |
+| 26 | The composition bar, the penetration bars, the whitespace matrix and the tier ladder | 1.5 | ✓ |
 
 **Acceptance.** Steps 1–18 are in the tree; `npm run check:contrast`, `npm test` and `npm run e2e:isolated` pass on it.
 

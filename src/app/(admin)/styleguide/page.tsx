@@ -5,6 +5,11 @@ import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { proofLine, type Bar } from "../../../lib/publish/views.ts";
 import Bars, { Footing } from "../../_ui/Bars.tsx";
 import Callout from "../../_ui/Callout.tsx";
+import Composition, { type Part } from "../../_ui/Composition.tsx";
+import Heatmap from "../../_ui/Heatmap.tsx";
+import Penetration from "../../_ui/Penetration.tsx";
+import TierLadder, { type Rung } from "../../_ui/TierLadder.tsx";
+import type { Matrix } from "../../../lib/publish/crosstabs.ts";
 import Icon, { type IconName } from "../../_ui/Icon.tsx";
 import Page from "../../_ui/Page.tsx";
 import Panel, { StatRow } from "../../_ui/Panel.tsx";
@@ -40,6 +45,40 @@ const TIERS: Bar[] = [
   { label: "Tier 4", n: 17, pct: 6.6 }, { label: "Tier 5", n: 21, pct: 8.1 }, { label: "Tier 6", n: 50, pct: 19.3 },
   { label: "Unclassified — no stage research", n: 142, pct: 54.8, muted: true },
 ];
+const FOOTPRINT_PARTS: Part[] = [
+  { label: "Canada only", n: 121, slot: 1 },
+  { label: "Canada and abroad", n: 61, slot: 2 },
+  { label: "Abroad only", n: 24, slot: 3 },
+  { label: "None — no properties", n: 53, slot: "quiet" },
+];
+
+const SAMPLE_MATRIX: Matrix = {
+  bands: [
+    { key: "a", label: "C$10B and above", cap: 909e9, companies: 26, cells: [5, 10, 7, 1, 1, 2] },
+    { key: "b", label: "C$2B – C$10B", cap: 236.6e9, companies: 50, cells: [5, 16, 13, 4, 9, 3] },
+    { key: "c", label: "C$500M – C$2B", cap: 88.2e9, companies: 85, cells: [6, 19, 8, 2, 20, 30] },
+    { key: "d", label: "C$200M – C$500M", cap: 30.5e9, companies: 98, cells: [1, 1, 1, 0, 13, 82] },
+  ],
+  totals: [17, 46, 29, 7, 43, 117],
+  population: 259,
+  capMissing: false,
+};
+
+const LADDER: Rung[] = [
+  { tier: 1, rule: "Production in Canada and abroad", detail: "Largest audit and tax footprint",
+    basis: "32 hold ground on both sides", n: null, icon: "mountain" },
+  { tier: 2, rule: "Production in Canada only", detail: "Domestic compliance, provincial mining tax",
+    basis: "51 hold Canadian ground only", n: null, icon: "map-pin" },
+  { tier: 3, rule: "Production abroad only", detail: "No Canadian producing property",
+    basis: "164 hold foreign ground only", n: null, icon: "map" },
+  { tier: 4, rule: "Royalty, streaming and processing", detail: "Classified from the workbook",
+    basis: "Resolved at ingest", n: 17, icon: "coins" },
+  { tier: 5, rule: "Development stage", detail: "Permitted or financed, not yet producing",
+    basis: "Requires stage research", n: null, icon: "hard-hat" },
+  { tier: 6, rule: "Exploration stage", detail: "A watchlist rather than a pursuit",
+    basis: "Requires stage research", n: null, icon: "pickaxe" },
+];
+
 const PROVINCES = [
   { code: "BC", n: 27 }, { code: "ON", n: 25 }, { code: "QC", n: 17 }, { code: "YT", n: 12 }, { code: "SK", n: 8 },
   { code: "NT", n: 7 }, { code: "NL", n: 6 }, { code: "MB", n: 3 }, { code: "NU", n: 3 }, { code: "AB", n: 2 },
@@ -369,6 +408,42 @@ export default async function Styleguide() {
               <tr><td>Tier 4 → Tier 4</td><td className="n">17</td><td className="diag"><Icon name="minus" size={13} /> unchanged</td></tr>
             </tbody>
           </table>
+          <h3 style={{ marginTop: 32 }}>Composition — the proof, drawn</h3>
+          <p className="note" style={{ marginTop: 0 }}>
+            Three jobs. <b>Identity</b> when the bar is the chart and the parts fit the
+            validated slots; <b>emphasis</b> when one part is the subject and the rest are the
+            market; <b>mono</b> when it is only proving that the parts above it add up. The
+            arithmetic is one press away and still in the accessible name.
+          </p>
+          <Composition parts={FOOTPRINT_PARTS} proof={proofLine(FOOTPRINT, POP)} />
+          <h4>Emphasis</h4>
+          <Composition parts={AUDITOR.map((b): Part => ({ label: b.label, n: b.n, slot: b.accent ? 1 : "quiet" }))}
+                       proof={proofLine(AUDITOR, POP)} variant="emphasis" />
+          <h4>Mono</h4>
+          <Composition parts={TIERS.map((b): Part => ({ label: b.label, n: b.n, slot: b.muted ? "quiet" : 1 }))}
+                       proof={proofLine(TIERS, POP)} variant="mono" />
+
+          <h3 style={{ marginTop: 32 }}>Penetration — the market, and the part of it that is ours</h3>
+          <Penetration rows={[
+            { market: "British Columbia", companies: 121, deloitte: 6, terminal: false },
+            { market: "Ontario", companies: 61, deloitte: 3, terminal: false },
+            { market: "Quebec & NCR", companies: 12, deloitte: 0, terminal: false },
+            { market: "Foreign HQ — no Deloitte market", companies: 53, deloitte: 7, terminal: true },
+          ]} />
+
+          <h3 style={{ marginTop: 32 }}>Heat map — the whitespace matrix</h3>
+          <p className="note" style={{ marginTop: 0 }}>
+            Shading is the firm&rsquo;s share of the row, in named percentage steps rather than a
+            scale stretched to fill the ramp. The count sits in the cell in ink chosen for that
+            step. The research gap is hatched and outside the ramp, so the darkest cell is
+            always an incumbent.
+          </p>
+          <Heatmap matrix={SAMPLE_MATRIX} currency="CAD" />
+
+          <h3 style={{ marginTop: 32 }}>Tier ladder — what a gated chart shows instead of a meter</h3>
+          <TierLadder rungs={LADDER} gate={{ resolved: 17, population: 259, floorPct: 95,
+                                             reviewLink: "/review", canReview: true }} />
+
           <h3 style={{ marginTop: 32 }}>The hero sentence and the ledger line</h3>
           <p className="hero">Deloitte audits <span className="fig-xl">17</span> of <span className="fig-xl">259</span><span className="stop" aria-hidden="true" /></p>
           <Ledger items={[{ value: 259, label: "Companies" }, { value: 144, label: "TSX" }, { value: 115, label: "TSXV" }, { value: 12, label: "Unresolved values", quiet: true }]} />

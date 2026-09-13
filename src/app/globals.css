@@ -183,6 +183,11 @@
   --neutral:       var(--dtt-grey-7);
   --seq-1: var(--dtt-green-6); --seq-2: var(--dtt-green-4); --seq-3: var(--dtt-green-3);
   --seq-4: var(--dtt-green); --seq-5: var(--dtt-green-2);
+  /* The ink each ramp step can carry. Both themes: every pair clears 4.5:1,
+     and the script asserts it, because a numeral inside a heat-map cell is
+     text on a fill and the fill changes under it. */
+  --on-seq-1: var(--dtt-white); --on-seq-2: var(--dtt-black); --on-seq-3: var(--dtt-black);
+  --on-seq-4: var(--dtt-black);  --on-seq-5: var(--dtt-black);
   --cat-1: var(--dtt-green); --cat-2: var(--dtt-blue-1); --cat-3: var(--dtt-teal-5);
   --shadow-ink: rgb(0 0 0 / .6);
   --backdrop: rgb(0 0 0 / .6);
@@ -245,6 +250,8 @@
   --neutral:       var(--wsp-demote-light);
   --seq-1: var(--dtt-green); --seq-2: var(--wsp-green-line-light); --seq-3: var(--dtt-green-4);
   --seq-4: var(--dtt-green-6); --seq-5: var(--wsp-green-deepest);
+  --on-seq-1: var(--dtt-black); --on-seq-2: var(--dtt-black); --on-seq-3: var(--dtt-black);
+  --on-seq-4: var(--dtt-white); --on-seq-5: var(--dtt-white);
   --cat-1: var(--dtt-green); --cat-2: var(--dtt-blue-5); --cat-3: var(--dtt-teal-5); --cat-4: var(--dtt-green-6);
   --sidebar-bg: var(--wsp-surface-2-light);
   --sidebar-active: var(--dtt-white);
@@ -298,6 +305,8 @@
     --neutral:       var(--wsp-demote-light);
     --seq-1: var(--dtt-green); --seq-2: var(--wsp-green-line-light); --seq-3: var(--dtt-green-4);
     --seq-4: var(--dtt-green-6); --seq-5: var(--wsp-green-deepest);
+    --on-seq-1: var(--dtt-black); --on-seq-2: var(--dtt-black); --on-seq-3: var(--dtt-black);
+    --on-seq-4: var(--dtt-white); --on-seq-5: var(--dtt-white);
     --cat-2: var(--dtt-blue-5); --cat-4: var(--dtt-green-6);
     --shadow-ink: rgb(0 0 0 / .18);
     --backdrop: rgb(0 0 0 / .32);
@@ -590,6 +599,153 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
 .bar-row .n { text-align: right; color: var(--ink); }
 .bar-row.muted .n { color: var(--ink-3); }
 .bar-row.terminal { margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px dashed var(--rule); border-radius: 0; }
+
+/* ----------------------------------------------------- heat map ------
+   The whitespace matrix. Shading is the firm's share of the row, the count
+   sits in the cell in ink chosen for that step, and the research gap is
+   hatched and outside the ramp so the darkest cell is always an incumbent. */
+.heatwrap { overflow-x: auto; }
+.heatmap { border-collapse: separate; border-spacing: 0; min-width: 640px; }
+.heatmap caption { caption-side: bottom; text-align: left; font-size: var(--fs-caption); color: var(--ink-3); padding: var(--space-3) 0 0; }
+.heatmap thead th { background: none; border: 0; height: auto; padding: 0 6px 10px; font-size: 11.5px; color: var(--ink-2); text-align: center; vertical-align: bottom; }
+.heatmap thead th:first-child { text-align: left; color: var(--ink-3); }
+.heatmap thead th .ours { color: var(--green-text); font-weight: 700; }
+.heatmap tbody th { text-align: left; border: 0; padding: 0 var(--space-3) 0 0; font-size: 12.5px; font-weight: 600; white-space: nowrap; height: auto; }
+.heatmap tbody th .sub { display: block; font-weight: 400; color: var(--ink-3); font-size: 11px; }
+.heatmap td { border: 0; padding: 0; height: auto; text-align: center; }
+.heatmap .cell {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  margin: 2px; height: 46px; border-radius: var(--radius-2);
+  font-family: var(--font-figure); font-variant-numeric: tabular-nums;
+}
+.heatmap .cell b { font-size: 15px; font-weight: 700; line-height: 1; }
+.heatmap .cell i { font-style: normal; font-family: var(--font-text); font-size: 10px; opacity: .85; margin-top: 2px; }
+.heatmap .cell.q1 { background: var(--seq-1); color: var(--on-seq-1); }
+.heatmap .cell.q2 { background: var(--seq-2); color: var(--on-seq-2); }
+.heatmap .cell.q3 { background: var(--seq-3); color: var(--on-seq-3); }
+.heatmap .cell.q4 { background: var(--seq-4); color: var(--on-seq-4); }
+.heatmap .cell.q5 { background: var(--seq-5); color: var(--on-seq-5); }
+.heatmap .cell.zero { background: var(--surface-2); color: var(--ink-3); }
+/* A gap in the research, not a firm. Hatched, and outside the ramp. */
+.heatmap .cell.gap {
+  color: var(--ink-2);
+  background: repeating-linear-gradient(135deg, var(--surface-hover), var(--surface-hover) 4px,
+                                        var(--surface-2) 4px, var(--surface-2) 8px);
+}
+.heatmap .rowtotal { font-family: var(--font-figure); font-weight: 700; font-size: 14px; color: var(--ink-2); padding-left: var(--space-3); }
+.heatmap tfoot th, .heatmap tfoot td { border: 0; padding-top: 10px; font-size: 12px; color: var(--ink-3); font-weight: 600; height: auto; }
+.heatmap tfoot td { font-family: var(--font-figure); font-variant-numeric: tabular-nums; text-align: center; }
+.heatlegend { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-3) 0 0; flex-wrap: wrap; font-size: var(--fs-caption); }
+.heatlegend .k { margin: 0; }
+.heatlegend .step { width: 22px; height: 10px; border-radius: 2px; display: block; }
+.heatlegend .step.q1 { background: var(--seq-1); } .heatlegend .step.q2 { background: var(--seq-2); }
+.heatlegend .step.q3 { background: var(--seq-3); } .heatlegend .step.q4 { background: var(--seq-4); }
+.heatlegend .step.q5 { background: var(--seq-5); }
+.heatlegend .step.gap { background: repeating-linear-gradient(135deg, var(--surface-hover), var(--surface-hover) 4px, var(--surface-2) 4px, var(--surface-2) 8px); }
+.heatlegend .meta { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-3); }
+.heatlegend .stepkey { display: inline-flex; align-items: center; gap: 5px; }
+
+/* -------------------------------------------------- composition -------
+   The proof, drawn. Segments sum to the width by construction, so the eye
+   verifies the total the way the arithmetic used to. */
+.composition { margin: 22px 0 0; }
+.composition .track { display: flex; gap: 2px; height: 26px; border-radius: var(--radius-2); overflow: hidden; }
+.composition .seg { display: block; min-width: 3px; border-radius: 1px; }
+.composition .seg.s1 { background: var(--cat-1); }
+.composition .seg.s2 { background: var(--cat-2); }
+.composition .seg.s3 { background: var(--cat-3); }
+.composition .seg.squiet { background: var(--demote); }
+.composition .seg.smono { background: var(--green-line); }
+.composition .seg.saccent { background: var(--brand-fill); }
+/* A proof, not a chart: slimmer, and the parts are named above it. */
+.composition.v-mono .track, .composition.v-emphasis .track { height: 14px; }
+.composition.v-mono .sums, .composition.v-emphasis .sums { margin-top: var(--space-2); }
+.composition .key { list-style: none; display: flex; flex-wrap: wrap; gap: 6px var(--space-5); margin: var(--space-3) 0 0; padding: 0; }
+.composition .key li { display: flex; align-items: baseline; gap: 7px; font-size: var(--fs-body-sm); margin: 0; }
+.composition .key .sw { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; align-self: center; }
+.composition .key .sw.s1 { background: var(--cat-1); } .composition .key .sw.s2 { background: var(--cat-2); }
+.composition .key .sw.s3 { background: var(--cat-3); } .composition .key .sw.squiet { background: var(--demote); }
+.composition .key .sw.smono { background: var(--green-line); } .composition .key .sw.saccent { background: var(--brand-fill); }
+.composition .key .lab { color: var(--ink-2); }
+.composition .key .fig-sm { color: var(--ink); }
+.composition .key .pct { color: var(--ink-3); font-size: var(--fs-caption); }
+.composition .sums { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-3) 0 0; }
+.composition .sums .total {
+  margin-left: auto; font-family: var(--font-figure); font-variant-numeric: tabular-nums;
+  font-size: 14px; font-weight: 600; color: var(--ink); padding: 3px var(--space-2) 2px;
+  border-top: 1px solid var(--ink); border-bottom: 3px double var(--ink);
+}
+.composition.fail .sums .total { color: var(--alert); border-color: var(--alert); }
+.composition .arith {
+  margin: var(--space-2) 0 0; display: flex; justify-content: flex-end; align-items: baseline;
+  font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: var(--fs-body-sm);
+  color: var(--ink-3); white-space: nowrap; overflow-x: auto;
+}
+.composition .arith .addend { padding: 0 2px; }
+.composition .arith .op { padding: 0 var(--space-1); }
+.composition .arith .eq { margin-left: var(--space-2); color: var(--ink); font-weight: 600; }
+
+/* ------------------------------------------------- penetration --------
+   The full length is the market; the inner length is the book. */
+.pen { display: flex; flex-direction: column; gap: 2px; }
+.pen-row {
+  display: grid; grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) 54px 128px;
+  gap: 14px; align-items: center; min-height: 34px; padding: 2px var(--space-2); margin: 0 calc(-1 * var(--space-2));
+  border-radius: var(--radius-2); transition: background var(--dur-1) var(--ease);
+}
+.pen-row:hover { background: var(--surface-2); }
+.pen-row .lab { font-size: 14px; }
+.pen-row.terminal { margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px dashed var(--rule); border-radius: 0; }
+.pen-row.terminal .lab { color: var(--ink-3); }
+.pen-row .track { display: block; height: 16px; }
+.pen-row .all { display: block; height: 100%; background: var(--demote); border-radius: 2px; position: relative; min-width: 2px; }
+.pen-row.terminal .all { background: none; box-shadow: inset 0 0 0 1px var(--demote); }
+.pen-row .ours { position: absolute; left: 0; top: 0; bottom: 0; background: var(--brand-fill); border-radius: 2px 1px 1px 2px; }
+.pen-row .n { text-align: right; }
+.pen-row .ours-n { font-size: var(--fs-caption); color: var(--ink-3); white-space: nowrap; }
+.pen-row .ours-n .fig-sm { color: var(--green-text); }
+.pen-row .ours-n .none { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-3); }
+@media (max-width: 640px) {
+  .pen-row { grid-template-columns: 1fr auto; gap: 4px; }
+  .pen-row .track { grid-column: 1 / -1; }
+}
+
+/* ------------------------------------------------------ tier ladder ---
+   What the six tiers mean, the population each will be drawn from, and the
+   one already resolved -- in place of a progress bar where a chart should be. */
+.ladder { border-top: 1px solid var(--rule); }
+.rung {
+  display: grid; grid-template-columns: 62px minmax(0, 1fr) minmax(0, 190px) 92px;
+  gap: var(--space-4); align-items: center; padding: 11px 0; border-bottom: 1px solid var(--rule);
+}
+.rung .badge {
+  font-family: var(--font-figure); font-weight: 700; font-size: 11.5px; text-align: center;
+  padding: 3px 0; border-radius: var(--radius-2); letter-spacing: -.01em;
+}
+.rung .badge.t1 { background: var(--seq-5); color: var(--on-seq-5); }
+.rung .badge.t2 { background: var(--seq-4); color: var(--on-seq-4); }
+.rung .badge.t3 { background: var(--seq-3); color: var(--on-seq-3); }
+.rung .badge.t4 { background: var(--seq-2); color: var(--on-seq-2); }
+.rung .badge.t5, .rung .badge.t6 { background: var(--surface-2); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--rule); }
+.rung .what b { display: block; font-size: 14px; font-weight: 600; }
+.rung .what .detail { display: block; font-size: var(--fs-caption); color: var(--ink-3); margin-top: 1px; }
+.rung .basis { display: flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--ink-3); }
+.rung .basis .icon { flex: 0 0 auto; }
+.rung .count { text-align: right; }
+.rung .count .await { font-size: var(--fs-caption); color: var(--ink-3); }
+.rung.pending .what b { color: var(--ink-2); }
+.ladder-gate {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 11px; align-items: start;
+  margin: var(--space-4) 0 0; padding: 12px 15px; border: 1px solid var(--alert-edge);
+  background: var(--alert-soft); border-radius: var(--radius-4); font-size: 13.5px; color: var(--ink-2); max-width: 64ch;
+}
+.ladder-gate > .icon { color: var(--alert); margin-top: 1px; }
+.ladder-gate b { color: var(--ink); }
+.ladder-gate .btn { grid-column: 2; justify-self: start; margin-top: var(--space-2); }
+@media (max-width: 860px) {
+  .rung { grid-template-columns: 62px minmax(0, 1fr) 80px; }
+  .rung .basis { grid-column: 2; }
+}
 
 /* the footing */
 .footing {

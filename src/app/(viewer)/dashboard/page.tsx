@@ -9,7 +9,12 @@ import {
   populationTiles, PROVINCE_TITLE, proofLine, tierMigration, UNKNOWN_AUDITOR,
   type Aggregates, type Bar, type Gated,
 } from "../../../lib/publish/views.ts";
-import Bars, { Footing } from "../../_ui/Bars.tsx";
+import Bars from "../../_ui/Bars.tsx";
+import Composition, { type Part } from "../../_ui/Composition.tsx";
+import Heatmap from "../../_ui/Heatmap.tsx";
+import Penetration from "../../_ui/Penetration.tsx";
+import TierLadder, { type Rung } from "../../_ui/TierLadder.tsx";
+import { marketPenetration, whitespaceMatrix } from "../../../lib/publish/crosstabs.ts";
 import FootprintMap from "../../_ui/FootprintMap.tsx";
 import { foldProvinces, provinceName } from "../../../lib/publish/jurisdictions.ts";
 import Contents from "../../_ui/Contents.tsx";
@@ -44,10 +49,11 @@ const FOOTPRINT_LABEL: Record<string, string> = {
 const SECTIONS = [
   { id: "map", label: "Footprint map" },
   { id: "coverage", label: "Coverage" },
-  { id: "tiers", label: "Tier distribution" },
+  { id: "tiers", label: "Tier ladder" },
   { id: "footprint", label: "Footprint" },
   { id: "market", label: "Office by market" },
   { id: "auditor", label: "Auditor share" },
+  { id: "matrix", label: "Whitespace matrix" },
   { id: "province", label: "Provinces and territories" },
   { id: "jurisdiction", label: "Foreign jurisdictions" },
   { id: "migration", label: "Tier migration" },
@@ -121,6 +127,15 @@ export default async function Dashboard() {
       label: FOOTPRINT_LABEL[f.bucket] ?? f.bucket.replace(/_/g, " "),
       n: f.n, pct: Math.round((1000 * f.n) / population) / 10,
     }));
+  // Two cross-tabs read straight from the frozen snapshot rather than from
+  // the precomputed aggregates, so an already-published revision grows these
+  // views without being republished. One pass over 259 rows each.
+  const matrix = await whitespaceMatrix(ctx.db, snap.publication.id,
+                                        Number(period.threshold_amount), period.threshold_currency);
+  const markets = await marketPenetration(ctx.db, snap.publication.id, "Foreign HQ — no Deloitte market");
+  const tierGate = gateFor("tier_distribution");
+  const footprintCount = (bucket: string) =>
+    (agg.footprint ?? []).find((f) => f.bucket === bucket)?.n ?? 0;
   const market = marketBars(agg);
   const auditor = auditorBars(agg);
   // Provinces, folded onto the controlled vocabulary so two spellings of one
@@ -189,11 +204,12 @@ export default async function Dashboard() {
             footing is the footprint's and the caption says so. */}
         <div id="map" className="rise" style={{ "--i": 3 } as React.CSSProperties}>
           <FootprintMap rows={provinceRows} hero twinHref="#province" />
-          <Footing proof={proofLine(footprint, population)} />
+          <Composition parts={footprintParts(footprint)} proof={proofLine(footprint, population)} />
           <p className="note">
-            The footing is the footprint proof: every company holds properties in Canada only,
-            abroad only, both, or none. A province's count is companies with a property there,
-            counted once per province, so the provinces do not add to the population.
+            The bar under the map is the footprint proof: every company holds properties in
+            Canada only, abroad only, both, or none, and the four add to the population. A
+            province&rsquo;s count is companies with a property there, counted once per province,
+            so the provinces themselves do not add up.
           </p>
         </div>
 
@@ -221,19 +237,38 @@ export default async function Dashboard() {
           </div>
         </Section>
 
-        <Gated id="tiers" title="Tier distribution" queryKey="tier_distribution" index={5}
-               gate={gateFor("tier_distribution")} canReview={canReview}
-               caption="In tier order. Unclassified is shown as a gap, not a seventh tier.">
-          <Bars bars={tierBars} proof={proofLine(tierBars, population)} mutedStyle="gap" />
-          <p className="note">
-            <b>Unclassified is a displayed state.</b> Folding it into Tier 4 would fuse
-            royalty companies with companies that simply have no stage evidence yet.
-          </p>
-        </Gated>
+        {/* Below its floor the distribution is not drawn -- doc 09 is right and
+            nothing here changes it. But a progress bar where a chart should be
+            teaches nobody anything while they wait, so the ladder shows what the
+            six tiers mean and the real footprint population each will be drawn
+            from, with the refusal stated underneath rather than implied. */}
+        <Section id="tiers" title={tierGate.kind === "chart" ? "Tier distribution" : "Tier ladder"}
+                 queryKey="tier_distribution" index={5} icon="layers" lead
+                 caption={tierGate.kind === "chart"
+                   ? "In tier order. Unclassified is shown as a gap, not a seventh tier."
+                   : "The classification rules are unchanged from the workbook. What they need is an input the source does not carry: blank stage means not researched, not no."}>
+          {tierGate.kind === "chart"
+            ? (
+              <>
+                <Bars bars={tierBars} mutedStyle="gap" />
+                <Composition parts={marketParts(tierBars)} proof={proofLine(tierBars, population)} variant="mono" />
+                <p className="note">
+                  <b>Unclassified is a displayed state.</b> Folding it into Tier 4 would fuse
+                  royalty companies with companies that simply have no stage evidence yet.
+                </p>
+              </>
+            )
+            : (
+              <TierLadder rungs={tierRungs(agg, footprintCount)}
+                          gate={{ resolved: tierGate.resolved, population: tierGate.population,
+                                  floorPct: tierGate.floorPct, reviewLink: tierGate.reviewLink,
+                                  canReview }} />
+            )}
+        </Section>
 
         <Section id="footprint" title="Footprint" queryKey="footprint" index={6} icon="map"
-                 caption="Where each company holds properties: Canada, abroad, both, or none.">
-          <Bars bars={footprint} proof={proofLine(footprint, population)} />
+                 caption="Where each company holds properties: Canada, abroad, both, or none. Four parts of one population, so they are drawn as one bar that adds up rather than four that have to be added.">
+          <Composition parts={footprintParts(footprint)} proof={proofLine(footprint, population)} />
           <p className="note">
             <b>None is a real footprint.</b> Royalty and streaming companies hold no properties;
             the source workbook files them as Canada only.
@@ -241,27 +276,52 @@ export default async function Dashboard() {
         </Section>
 
         <Section id="market" title="Corporate office by Deloitte market" queryKey="market" index={7} icon="landmark"
-                 caption="Sorted by count. Foreign head offices sit last because they belong to no Deloitte market.">
-          <Bars bars={market.bars} proof={market.proof} />
+                 caption="The full bar is the market; the green inside it is what Deloitte audits. Foreign head offices sit last because they belong to no Deloitte market.">
+          <Penetration rows={markets.rows} />
+          <Composition parts={marketParts(market.bars)} proof={market.proof} variant="mono" />
+          <p className="note">
+            <b>Two markets carry no Deloitte audit client at all.</b> They are the cleanest
+            whitespace on this page: a market with companies in it and no relationship yet.
+          </p>
         </Section>
 
         <Gated id="auditor" title="Auditor share" queryKey="auditor_share" index={8}
                gate={gateFor("auditor_crosstab")} canReview={canReview}
                caption="Who audits the population. Deloitte is the accented bar; the rest of the market is grey.">
-          <Bars bars={auditor.bars} proof={auditor.proof} />
+          <Bars bars={auditor.bars} />
+          <Composition parts={auditorParts(auditor.bars)} proof={auditor.proof} variant="emphasis" />
         </Gated>
 
-        <Section id="province" title={PROVINCE_TITLE} queryKey="province_footprint" index={9} icon="map-pin"
+        <Section id="matrix" title="Whitespace matrix" queryKey="whitespace_matrix" index={9} icon="layers" lead
+                 caption="Market-cap band against incumbent auditor. Read down a column for one firm's book; read across a row to see who holds a size of company. It needs no research: both inputs come from the extract, so it is populated on day one.">
+          {matrix.capMissing || matrix.bands.length === 0
+            ? <p className="empty">
+                <b>No market capitalisation is recorded for this period.</b> The bands are
+                derived from it, so the matrix appears once the extract carries the column.
+              </p>
+            : (
+              <>
+                <Heatmap matrix={matrix} currency={period.threshold_currency} />
+                <p className="note">
+                  <b>The bottom band is almost entirely unresearched</b>, so the bottom-left of
+                  this matrix will move once enrichment runs. The top rows will not: those
+                  auditors came from the extract.
+                </p>
+              </>
+            )}
+        </Section>
+
+        <Section id="province" title={PROVINCE_TITLE} queryKey="province_footprint" index={10} icon="map-pin"
                  caption="A company is counted in every province or territory where it holds a property. This is not producing mines by province: property location and stage are recorded separately, with no link between them.">
           <Bars bars={province.bars} />
         </Section>
 
-        <Section id="jurisdiction" title={JURISDICTION_TITLE} queryKey="jurisdiction_footprint" index={10} icon="map-pin"
+        <Section id="jurisdiction" title={JURISDICTION_TITLE} queryKey="jurisdiction_footprint" index={11} icon="map-pin"
                  caption="The twelve most common, with the remainder grouped.">
           <Bars bars={jurisdiction.bars} />
         </Section>
 
-        <Section id="migration" title="Tier migration" queryKey="migration" index={11} icon="trending-up"
+        <Section id="migration" title="Tier migration" queryKey="migration" index={12} icon="trending-up"
                  caption="Prior tier against current. Direction carries an icon and a word, never colour alone.">
           {migration.kind === "first_period"
             ? <p className="empty">{migration.message}</p>
@@ -299,7 +359,7 @@ export default async function Dashboard() {
             )}
         </Section>
 
-        <Section id="entrants" title="Entrants and drop-outs" queryKey="movement" index={12} icon="history"
+        <Section id="entrants" title="Entrants and drop-outs" queryKey="movement" index={13} icon="history"
                  caption={`Companies within ${period.proximity_band_pct}% of the threshold are marked: an ordinary market move crosses the line without anything having happened.`}>
           <p className="empty">
             Nothing to compare against until a second period is published. Then this view
@@ -316,6 +376,53 @@ export default async function Dashboard() {
     </div>
     </Page>
   );
+}
+
+/* The four footprint categories have no order, so they take the categorical
+   slots in a fixed sequence -- and "none" is the absence bucket, drawn in the
+   de-emphasis grey like every other terminal bucket in this product. */
+const FOOTPRINT_SLOT: Record<string, Part["slot"]> = {
+  "Canada only": 1, "Canada and abroad": 2, "Abroad only": 3, "None — no properties": "quiet",
+};
+function footprintParts(bars: Bar[]): Part[] {
+  return bars.map((b) => ({ label: b.label, n: b.n, slot: FOOTPRINT_SLOT[b.label] ?? 1 }));
+}
+
+/* Auditor share: Deloitte is the one named part, every other firm is the
+   market, and the research gap is its own quiet segment. Emphasis, not
+   identity -- the page is about how much of this market is not ours. */
+function auditorParts(bars: Bar[]): Part[] {
+  return bars.map((b): Part => ({
+    label: b.label, n: b.n, slot: b.accent ? 1 : "quiet",
+  }));
+}
+
+/* A proof bar for a chart that has more parts than there are categorical
+   slots. One hue and gaps: the names are in the chart above it, and cycling
+   three hues over six markets would give two markets the same colour. */
+function marketParts(bars: Bar[]): Part[] {
+  return bars.map((b) => ({ label: b.label, n: b.n, slot: b.terminal || b.muted ? "quiet" : 1 }));
+}
+
+/* The ladder's six rungs. The basis figures are real and computable today:
+   they are the footprint populations each tier will be drawn from once stage
+   research lands. Tier 4 needs no research and carries its count already. */
+function tierRungs(agg: Aggregates, footprintCount: (b: string) => number): Rung[] {
+  const tier = (n: string) => (agg.tier_distribution ?? []).find((t) => t.bucket === n)?.n ?? null;
+  return [
+    { tier: 1, rule: "Production in Canada and abroad", detail: "Largest audit and tax footprint; multi-jurisdiction",
+      basis: `${footprintCount("canada_and_abroad")} hold ground on both sides`, n: tier("1"), icon: "mountain" },
+    { tier: 2, rule: "Production in Canada only", detail: "Domestic compliance, provincial mining tax",
+      basis: `${footprintCount("canada_only")} hold Canadian ground only`, n: tier("2"), icon: "map-pin" },
+    { tier: 3, rule: "Production abroad only", detail: "No Canadian producing property",
+      basis: `${footprintCount("abroad")} hold foreign ground only`, n: tier("3"), icon: "map" },
+    { tier: 4, rule: "Royalty, streaming and processing", detail: "Classified from the workbook — needs no research",
+      basis: "Resolved at ingest", n: tier("4"), icon: "coins" },
+    { tier: 5, rule: "Development stage", detail: "Permitted or financed, not yet producing",
+      basis: "Requires stage research", n: tier("5"), icon: "hard-hat" },
+    { tier: 6, rule: "Exploration stage", detail: "Smallest fee pool; a watchlist rather than a pursuit",
+      basis: "Requires stage research", n: tier("6"), icon: "pickaxe" },
+  ];
 }
 
 function bandOrder(bucket: string): number {

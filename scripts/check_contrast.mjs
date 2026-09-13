@@ -238,6 +238,15 @@ for (const theme of ["light", "dark"]) {
   note(`${theme}: lightest step ${light} ${contrast(light, surface).toFixed(2)}:1, darkest ${dark} ${contrast(dark, surface).toFixed(2)}:1 on the surface`);
 }
 
+console.log("\nink inside a heat-map cell — text on a fill that changes under it\n");
+for (const theme of ["light", "dark"]) {
+  for (let i = 1; i <= 5; i++) {
+    const fill = resolve(theme, `seq-${i}`), ink = resolve(theme, `on-seq-${i}`);
+    const ratio = contrast(ink, fill);
+    ok(ratio >= TEXT_FLOOR, `${theme}: --on-seq-${i} ${ink} on --seq-${i} ${fill}  ${ratio.toFixed(2)}:1  (floor ${TEXT_FLOOR})`);
+  }
+}
+
 console.log("\ncategorical palette — adjacent pairs, CVD and normal vision\n");
 for (const theme of ["light", "dark"]) {
   const slots = [];
