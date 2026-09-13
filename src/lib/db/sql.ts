@@ -87,3 +87,40 @@ export function toNumberedPlaceholders(sql: string): string {
   }
   return out;
 }
+
+/**
+ * How many bind parameters one statement may carry.
+ *
+ * Postgres allows 65535 and SQLite 32766, so this is far below both. It is a
+ * chunk size, not a limit to push against: the win is going from one round
+ * trip per row to one per few hundred, and the last 2% of that is not worth
+ * sitting next to an engine's ceiling.
+ */
+export const MAX_BIND_PARAMS = 5000;
+
+/**
+ * Insert many rows in as few statements as the parameter budget allows.
+ *
+ * Publishing revision 6 took about four minutes because it wrote roughly 3,600
+ * values one at a time, and against a pooled connection the round trip IS the
+ * cost. The same rows in chunks are seconds.
+ *
+ * `table`, `columns` and `suffix` are interpolated into the statement, so they
+ * must be literals the caller wrote -- never a value from the database, a
+ * request or a file. Only the row values are bound.
+ */
+export async function insertMany(
+  db: Sql, table: string, columns: readonly string[], rows: readonly unknown[][],
+  suffix = "",
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const perChunk = Math.max(1, Math.floor(MAX_BIND_PARAMS / columns.length));
+  const tuple = `(${columns.map(() => "?").join(", ")})`;
+  const head = `insert into ${table} (${columns.join(", ")}) values `;
+  for (let i = 0; i < rows.length; i += perChunk) {
+    const chunk = rows.slice(i, i + perChunk);
+    await db.run(head + chunk.map(() => tuple).join(", ") + (suffix ? ` ${suffix}` : ""),
+                 ...chunk.flat());
+  }
+  return rows.length;
+}

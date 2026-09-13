@@ -10,7 +10,7 @@
  * Corrections after publish are AMENDMENTS that bump the revision. Nothing is
  * ever mutated in place, which is what makes period comparison trustworthy.
  */
-import type { Sql } from "../db/sql.ts";
+import { insertMany, type Sql } from "../db/sql.ts";
 import { evaluateGate, overrideBanner, type Blocker, type GateResult } from "./gate.ts";
 
 export class PublishBlocked extends Error {
@@ -102,15 +102,9 @@ export async function publishPeriod(
       Array<{ company_id: string; field_key: string; value: string;
               source: string; evidence_state: string }>;
 
-    const insValue =
-      `insert into published_period_values
-         (publication_id, company_id, field_key, value, source, evidence_state)
-       values (?, ?, ?, ?, ?, ?)`;
-    for (const v of values) {
-      await db.run(insValue, pub.id, v.company_id, v.field_key, v.value, v.source,
-                   v.evidence_state);
-      result.values++;
-    }
+    result.values = await insertMany(db, "published_period_values",
+      ["publication_id", "company_id", "field_key", "value", "source", "evidence_state"],
+      values.map((v) => [pub.id, v.company_id, v.field_key, v.value, v.source, v.evidence_state]));
 
     // --- freeze the tiers, with the migration against the prior period ---
     const tiers = await db.all(`select company_id, tier, status, footprint, rule_set_version
@@ -118,27 +112,26 @@ export async function publishPeriod(
       Array<{ company_id: string; tier: number | null; status: string;
               footprint: string; rule_set_version: string }>;
 
-    const priorTier =
-      `select tier from published_period_tiers
-        where publication_id = ? and company_id = ?`;
-
-    const insTier =
-      `insert into published_period_tiers
-         (publication_id, company_id, tier, status, footprint,
-          rule_set_version, prior_tier, tier_changed)
-       values (?, ?, ?, ?, ?, ?, ?, ?)`;
-
-    for (const t of tiers) {
-      const before = priorPublication
-        ? (await db.get(priorTier, priorPublication.id, t.company_id) as
-            { tier: number | null } | undefined)
-        : undefined;
-      const priorValue = before ? before.tier : null;
-      await db.run(insTier, pub.id, t.company_id, t.tier, t.status, t.footprint,
-                   t.rule_set_version, priorValue,
-                   priorValue === null ? null : (priorValue === t.tier ? 0 : 1));
-      result.companies++;
+    // The prior period's tiers in one read rather than one per company. A
+    // company the prior publication never held, and one it held with no tier,
+    // are both "no prior tier" here, exactly as the per-row lookup had it.
+    const priorTiers = new Map<string, number | null>();
+    if (priorPublication) {
+      for (const row of await db.all(`select company_id, tier from published_period_tiers
+          where publication_id = ?`, priorPublication.id) as
+        Array<{ company_id: string; tier: number | null }>) {
+        priorTiers.set(String(row.company_id), row.tier === null ? null : Number(row.tier));
+      }
     }
+
+    result.companies = await insertMany(db, "published_period_tiers",
+      ["publication_id", "company_id", "tier", "status", "footprint",
+       "rule_set_version", "prior_tier", "tier_changed"],
+      tiers.map((t) => {
+        const priorValue = priorTiers.get(t.company_id) ?? null;
+        return [pub.id, t.company_id, t.tier, t.status, t.footprint, t.rule_set_version,
+                priorValue, priorValue === null ? null : (priorValue === t.tier ? 0 : 1)];
+      }));
 
     // --- precompute the aggregates --------------------------------------
     const agg =

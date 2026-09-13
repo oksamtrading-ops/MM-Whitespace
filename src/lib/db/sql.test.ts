@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { toNumberedPlaceholders } from "./sql.ts";
+import { insertMany, MAX_BIND_PARAMS, toNumberedPlaceholders } from "./sql.ts";
 import { SqliteSql } from "./sqlite.ts";
 
 test("placeholders are numbered in order", async () => {
@@ -90,5 +90,42 @@ test("txAs ignores the role on SQLite rather than failing", async () => {
     await t.run("insert into t (name) values (?)", "a");
   });
   assert.equal((await sql.all("select * from t")).length, 1);
+  await sql.close();
+});
+
+test("insertMany writes every row, in chunks inside the parameter budget", async () => {
+  const sql = new SqliteSql(new DatabaseSync(":memory:"));
+  await sql.exec("create table t (a integer, b text, c text, d text, e text, f text)");
+  const columns = ["a", "b", "c", "d", "e", "f"];
+  // Two full chunks and a remainder, so the boundary is actually crossed.
+  const perChunk = Math.floor(MAX_BIND_PARAMS / columns.length);
+  const rows = Array.from({ length: perChunk * 2 + 7 },
+                          (_, i) => [i, `b${i}`, "c", "d", "e", "f"]);
+
+  // What is being bought here is round trips, so they are what is counted --
+  // SQLite would swallow one statement of this size and prove nothing.
+  const statements: number[] = [];
+  const counting = new Proxy(sql, {
+    get: (target, prop, receiver) => prop !== "run" ? Reflect.get(target, prop, receiver)
+      : (s: string, ...params: unknown[]) => { statements.push(params.length); return sql.run(s, ...params); },
+  });
+
+  assert.equal(await insertMany(counting, "t", columns, rows), rows.length);
+  assert.equal(statements.length, 3, "one statement per chunk, not one per row");
+  assert.ok(Math.max(...statements) <= MAX_BIND_PARAMS,
+            `no statement binds more than ${MAX_BIND_PARAMS} parameters: ${statements}`);
+
+  const all = await sql.all("select a, b from t order by a") as Array<{ a: number; b: string }>;
+  assert.equal(all.length, rows.length);
+  assert.deepEqual(all[0], { a: 0, b: "b0" });
+  assert.deepEqual(all[all.length - 1], { a: rows.length - 1, b: `b${rows.length - 1}` });
+  await sql.close();
+});
+
+test("insertMany on no rows writes nothing rather than a statement with no values", async () => {
+  const sql = new SqliteSql(new DatabaseSync(":memory:"));
+  await sql.exec("create table t (a integer)");
+  assert.equal(await insertMany(sql, "t", ["a"], []), 0);
+  assert.equal((await sql.all("select * from t")).length, 0);
   await sql.close();
 });
