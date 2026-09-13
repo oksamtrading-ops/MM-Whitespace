@@ -52,7 +52,10 @@ September. All 178 decisions are on the dashboards: 40 companies carry a tier
 (up from 21) and the auditor cross-tab reads 55.6%. Publishing took seconds
 rather than revision 6's four minutes.
 
-**3. Kay still cannot sign in.** `Kampofo@deloitte.ca` was refused because
+**3. Eleven findings from the batched run are unreviewed** — Aclara, Alkane and
+Allied Gold, on `/review`. Nothing is wrong with them; nobody has looked.
+
+**4. Kay still cannot sign in.** `Kampofo@deloitte.ca` was refused because
 only `gmail.com` is allowed, and Resend can only deliver to
 `oksamtrading@gmail.com` until a domain is verified (item 6 in what is left).
 Kay can only get in through a Gmail address inserted into `app_users`. The
@@ -342,6 +345,33 @@ seconds.
   none at all, so every pursuit tag rendered bare — the contrast check only
   verifies pairs it is told about.
 
+**The Batch API is ON in production and proven end to end.**
+`MM_ENRICH_BATCH=1` is set and deployed. A three-company smoke run took the
+whole path against the real vendor — submit, a real `msgbatch` id, the tick
+counting an open batch as work, the poll, the download, the resume, findings
+persisted — in about five minutes:
+
+| | |
+|---|---|
+| Run | `b5d3d9c3-0718-4f13-b5ac-1f6369054c1f`, completed |
+| Batch | `msgbatch_01XBFem1wZ5u884GRwpsnNtC`, settled, 3 of 3 succeeded |
+| Companies | Aclara (ARA), Alkane (ALK), Allied Gold (AAUC) |
+| Cost | **US$0.3936** against a US$0.45 estimate |
+| Findings | **11, waiting in `/review`, nobody has reviewed them** |
+
+`/runs` says "Batched" and quotes the batched price. The EDGAR profile fields
+all scored **0.585**, below the bulk-accept floor — the demotion above, working
+on real data.
+
+**EDGAR's address casing, found by that run.** It returned Alkane's head office
+as "Perth, Wa": EDGAR shouts, and title-casing "PERTH, WA" whole turns the
+state into a word. Each comma-separated segment is now cased on its own and a
+segment of two or three letters keeps its case. The same test caught
+"ST. JOHN'S" becoming "St. John'S", which the old rule had always done. **The
+finding already in review still reads "Perth, Wa"** — it is a proposal with its
+evidence anchored to the record it came from, so a reviewer overrides it rather
+than anyone rewriting a stored value.
+
 **Built on 13 September 2026, evening — the brand and interface.** A separate
 session, 143 files, on `main` and deployed. `docs/design/18-brand-guide.md` is
 the record; it extends doc 17 and **reverses its light-first decision**.
@@ -567,17 +597,20 @@ it. Never run `git add -A` outside this project's folder.
    migration `0018` say so; and **a pursuit's own words must never reach a
    prompt**, which `pursuit.test.ts` holds.
 
-2. **Switch the Batch API on, in that order.** It is **built and off**
-   (`MM_ENRICH_BATCH=1`; `docs/decisions/BATCH-API.md`). Migrations `0016` and
-   `0017` are applied to Supabase; what is left is setting the variable in
-   Vercel and redeploying. **Nothing in it has run against the real Batch API** — the tests
-   drive a fake one, which proves our two paths agree, not that the vendor
-   behaves as documented. So the first real use is a handful of companies with
-   `/runs` watched, not Run 3.
+2. **Settle what a batched web search costs, before Run 3.** The Batch API is
+   ON and proven (see below), but each job made one call with **six web
+   searches**, and `Meter.add` applies the 50% batch discount to the *whole*
+   cost including the per-search charge. **Nobody has confirmed that Anthropic
+   discounts server-tool use** — the discount is documented on tokens. If
+   searches bill at full price, recorded spend understates by about US$7 across
+   Run 3, and **the budget gate halts a run on recorded spend**. One look at the
+   console's billing for `msgbatch_01XBFem1wZ5u884GRwpsnNtC` against our
+   recorded **US$0.3936** answers it; if they are not discounted, apply the rate
+   to tokens only in `src/lib/enrich/live.ts`.
 
-3. **Run 3: the remaining 229 companies.** About **US$80** live, or **US$40**
-   batched, at Run 2's measured rate (US$0.31 a company: pass 1 US$0.22, pass 2
-   US$0.10). Start it from `/runs`; the start form estimates per pass.
+3. **Run 3: the remaining 229 companies.** About **US$34 batched** for pass 1
+   (US$68.70 live), and US$5.63 for pass 2's 75 eligible companies. Start it
+   from `/runs`, which now states the batched price. Do item 2 first.
 
 4. **Mail:** buy and verify a domain for this application (Samuel's decision
    and money), then set `MM_MAIL_FROM`; **rotate the Resend key**, which was
