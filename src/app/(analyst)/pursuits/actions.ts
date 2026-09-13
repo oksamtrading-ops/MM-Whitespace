@@ -16,8 +16,8 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/context.ts";
 import {
-  addAction, addNote, PursuitRefused, setActionOwner, setActionStatus, setOwner, setPriority,
-  startPursuit, sweepTerm, type StrandedKind,
+  addAction, addNote, PursuitRefused, setActionDueDate, setActionOwner, setActionStatus, setOwner,
+  setPriority, startPursuit, sweepTerm, type StrandedKind,
 } from "../../../lib/pursuit/index.ts";
 
 export type ActionResult = { ok: boolean; message: string; pursuitId?: string };
@@ -93,6 +93,17 @@ export async function assignAction(form: FormData): Promise<ActionResult> {
   return attempt(
     () => setActionOwner(db, String(form.get("actionId") ?? ""), raw === "" ? null : raw, user.id),
     raw === "" ? "Action unassigned." : "Action assigned.",
+    ["/pursuits", `/pursuits/${pursuitId}`]);
+}
+
+/** Put a date on one action, or take it off. */
+export async function dateAction(form: FormData): Promise<ActionResult> {
+  const { user, db } = await requireRole(["analyst", "admin"]);
+  const pursuitId = String(form.get("pursuitId") ?? "");
+  const raw = String(form.get("dueDate") ?? "").trim();
+  return attempt(
+    () => setActionDueDate(db, String(form.get("actionId") ?? ""), raw || null, user.id),
+    raw ? `Due ${raw}.` : "Due date cleared.",
     ["/pursuits", `/pursuits/${pursuitId}`]);
 }
 

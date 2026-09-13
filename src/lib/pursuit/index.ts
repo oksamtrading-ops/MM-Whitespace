@@ -264,10 +264,8 @@ export async function setActionOwner(
   db: Sql, actionId: string, ownerId: string | null, actorId: string | null,
 ): Promise<void> {
   await assertAssignable(db, ownerId);
-  const r = await db.run("update pursuit_actions set owner_id = ? where id = ?", ownerId, actionId);
-  if (r.changes !== 1) throw new PursuitRefused("There is no such action.");
-  await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_action_assigned', ?, ?)`,
-               actorId, JSON.stringify({ actionId, ownerId }));
+  await patchAction(db, actionId, "owner_id", ownerId, "pursuit_action_assigned",
+                    { ownerId }, actorId);
 }
 
 export async function addNote(
@@ -291,10 +289,7 @@ export async function addAction(
   const description = input.description.trim();
   if (!description) throw new PursuitRefused("An action needs a description.");
   if (description.length > 500) throw new PursuitRefused("An action longer than 500 characters is a note, not an action.");
-  const dueDate = (input.dueDate ?? "").trim() || null;
-  if (dueDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-    throw new PursuitRefused("A due date is YYYY-MM-DD, or empty.");
-  }
+  const dueDate = parseDueDate(input.dueDate);
   await assertPursuit(db, pursuitId);
   const v = await vocabulary(db);
   const row = await db.get(
@@ -302,6 +297,29 @@ export async function addAction(
      values (?, ?, ?, ?, ?, ?) returning id`,
     pursuitId, description, dueDate, input.ownerId ?? null, firstStatus(v), decisionStamp()) as { id: string };
   return String(row.id);
+}
+
+/**
+ * Write one column on one action, and record that it was written.
+ *
+ * The three things an action carries after it is made -- its status, its owner,
+ * its due date -- differ only in what is checked first and what the audit line
+ * is called. Written out three times they drift; the fourth one to be asked for
+ * should cost a validation and a name.
+ *
+ * The column is a literal from the caller in this module, never a value from a
+ * request.
+ */
+async function patchAction(
+  db: Sql, actionId: string, column: "status" | "owner_id" | "due_date",
+  value: string | null, event: string, detail: Record<string, unknown>,
+  actorId: string | null,
+): Promise<void> {
+  const r = await db.run(
+    `update pursuit_actions set ${column} = ? where id = ?`, value, actionId);
+  if (r.changes !== 1) throw new PursuitRefused("There is no such action.");
+  await db.run(`insert into audit_log (event, actor_id, detail) values (?, ?, ?)`,
+               event, actorId, JSON.stringify({ actionId, ...detail }));
 }
 
 export async function setActionStatus(
@@ -312,10 +330,31 @@ export async function setActionStatus(
     throw new PursuitRefused(
       `"${status}" is not one of the statuses in use (${statusNames(v).join(", ")}).`);
   }
-  const r = await db.run("update pursuit_actions set status = ? where id = ?", status, actionId);
-  if (r.changes !== 1) throw new PursuitRefused("There is no such action.");
-  await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_action_moved', ?, ?)`,
-               actorId, JSON.stringify({ actionId, status }));
+  await patchAction(db, actionId, "status", status, "pursuit_action_moved", { status }, actorId);
+}
+
+/** A due date is YYYY-MM-DD, or none at all: a date nobody chose is not a date. */
+export function parseDueDate(raw: string | null | undefined): string | null {
+  const value = (raw ?? "").trim();
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new PursuitRefused("A due date is YYYY-MM-DD, or empty.");
+  }
+  // Rejects 2026-02-31 and 2026-13-01, which the shape above accepts.
+  const [y, m, d] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+    throw new PursuitRefused(`There is no such date as ${value}.`);
+  }
+  return value;
+}
+
+export async function setActionDueDate(
+  db: Sql, actionId: string, dueDate: string | null, actorId: string | null,
+): Promise<void> {
+  const value = parseDueDate(dueDate);
+  await patchAction(db, actionId, "due_date", value, "pursuit_action_dated",
+                    { dueDate: value }, actorId);
 }
 
 async function assertPursuit(db: Sql, pursuitId: string): Promise<void> {

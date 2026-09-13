@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { assignAction, moveAction, type ActionResult } from "../actions.ts";
+import { assignAction, dateAction, moveAction, type ActionResult } from "../actions.ts";
 import type { Action, Vocabulary } from "../../../../lib/pursuit/index.ts";
 import type { Person } from "./PursuitDesk.tsx";
 
@@ -19,8 +19,10 @@ export default function ActionsTable({ pursuitId, actions, vocabulary, people }:
     async (_: ActionResult | null, form: FormData) => moveAction(form), null);
   const [assigned, assign, assigning] = useActionState(
     async (_: ActionResult | null, form: FormData) => assignAction(form), null);
-  // Whichever of the two answered last owns the one live region.
-  const latest = [state, assigned].filter(Boolean).at(-1) ?? null;
+  const [dated, date, dating] = useActionState(
+    async (_: ActionResult | null, form: FormData) => dateAction(form), null);
+  // Whichever of the three answered last owns the one live region.
+  const latest = [state, assigned, dated].filter(Boolean).at(-1) ?? null;
 
   return (
     <>
@@ -49,7 +51,15 @@ export default function ActionsTable({ pursuitId, actions, vocabulary, people }:
                   <button type="submit" className="btn" disabled={assigning}>Assign</button>
                 </form>
               </td>
-              <td>{a.dueDate ?? <span className="meta">—</span>}</td>
+              <td>
+                <form action={date} className="inline">
+                  <input type="hidden" name="pursuitId" value={pursuitId} />
+                  <input type="hidden" name="actionId" value={a.id} />
+                  <input type="date" name="dueDate" defaultValue={a.dueDate ?? ""}
+                         disabled={dating} aria-label={`Due date of “${a.description}”`} />
+                  <button type="submit" className="btn" disabled={dating}>Set</button>
+                </form>
+              </td>
               <td>
                 <form action={move} className="inline">
                   <input type="hidden" name="pursuitId" value={pursuitId} />

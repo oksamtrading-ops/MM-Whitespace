@@ -4,7 +4,8 @@ import { memorySql } from "../db/open.ts";
 import type { Sql } from "../db/sql.ts";
 import {
   addAction, addNote, closedStatuses, getPursuit, listPursuits, parseStatuses,
-  PursuitRefused, setActionOwner, setActionStatus, setOwner, setPriority, startPursuit, statusNames,
+  parseDueDate, PursuitRefused, setActionDueDate, setActionOwner, setActionStatus, setOwner,
+  setPriority, startPursuit, statusNames,
   strandedTerms, sweepTerm, vocabulary,
 } from "./index.ts";
 import { validate, InvalidSetting, putSettings } from "../settings/index.ts";
@@ -446,4 +447,49 @@ test("assigning an action names who did it, and who it went to", async () => {
     Array<{ actor_id: string; detail: string }>;
   assert.equal(row.actor_id, actor);
   assert.deepEqual(JSON.parse(row.detail), { actionId: action.id, ownerId: actor });
+});
+
+
+test("a due date can be put on an action after it is made, and taken off", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "Confirm the currency" }, actor);
+  const action = (await getPursuit(db, id))!.actions[0];
+  assert.equal(action.dueDate, null);
+
+  await setActionDueDate(db, action.id, "2026-10-31", actor);
+  assert.equal((await getPursuit(db, id))!.actions[0].dueDate, "2026-10-31");
+  await setActionDueDate(db, action.id, null, actor);
+  assert.equal((await getPursuit(db, id))!.actions[0].dueDate, null,
+               "a date nobody chose is not a date");
+});
+
+test("a date that does not exist is refused, not stored", async () => {
+  // The shape rule alone accepts 2026-02-31 and 2026-13-01, and SQLite stores
+  // whatever it is given.
+  assert.equal(parseDueDate("2026-10-31"), "2026-10-31");
+  assert.equal(parseDueDate("  "), null);
+  assert.throws(() => parseDueDate("31/10/2026"), /YYYY-MM-DD/);
+  assert.throws(() => parseDueDate("2026-02-31"), /no such date as 2026-02-31/);
+  assert.throws(() => parseDueDate("2026-13-01"), /no such date as 2026-13-01/);
+
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await assert.rejects(() => addAction(db, id, { description: "x", dueDate: "2026-02-31" }, actor),
+                       /no such date/);
+  assert.deepEqual((await getPursuit(db, id))!.actions, [], "and nothing was written");
+});
+
+test("dating an action names who did it", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "x" }, actor);
+  const action = (await getPursuit(db, id))!.actions[0];
+  await setActionDueDate(db, action.id, "2026-10-31", actor);
+  const [row] = await db.all(
+    "select actor_id, detail from audit_log where event = 'pursuit_action_dated'") as
+    Array<{ actor_id: string; detail: string }>;
+  assert.equal(row.actor_id, actor);
+  assert.deepEqual(JSON.parse(row.detail), { actionId: action.id, dueDate: "2026-10-31" });
+  await assert.rejects(() => setActionDueDate(db, "nope", "2026-10-31", actor), /no such action/);
 });
