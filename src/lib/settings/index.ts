@@ -55,6 +55,16 @@ const DEFINITIONS: Array<Pick<Setting, "key" | "label" | "help" | "kind">> = [
           "same thing. At least one must close, and at least one must not." },
 ];
 
+/**
+ * Every setting there is, in the order the screen shows them.
+ *
+ * Derived from the definitions rather than written out a second time. The
+ * screen and the action behind it once kept separate lists, and adding a
+ * setting to one but not the other rendered a field that saved nothing --
+ * which is the decorative screen the note at the top of this file warns about.
+ */
+export const SETTING_KEYS: readonly SettingKey[] = DEFINITIONS.map((d) => d.key);
+
 export class InvalidSetting extends Error {}
 
 /** A comma-separated vocabulary, trimmed, with the blanks dropped. */

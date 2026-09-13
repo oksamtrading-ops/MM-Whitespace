@@ -2,16 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/context.ts";
-import { InvalidSetting, putSettings, type SettingKey } from "../../../lib/settings/index.ts";
+import {
+  InvalidSetting, putSettings, SETTING_KEYS, type SettingKey,
+} from "../../../lib/settings/index.ts";
 
 export type SettingsResult =
   | { ok: true; message: string }
   | { ok: false; message: string };
-
-const KEYS: SettingKey[] = [
-  "default_threshold_amount", "default_threshold_currency", "default_threshold_operator",
-  "default_proximity_band_pct", "default_run_budget_usd",
-];
 
 /** Save the Admin's defaults. Every change is written to the audit log. */
 export async function saveSettings(
@@ -19,7 +16,7 @@ export async function saveSettings(
 ): Promise<SettingsResult> {
   const { db, user } = await requireRole(["admin"]);
   const values: Partial<Record<SettingKey, string>> = {};
-  for (const key of KEYS) {
+  for (const key of SETTING_KEYS) {
     const raw = form.get(key);
     if (raw !== null) values[key] = String(raw);
   }

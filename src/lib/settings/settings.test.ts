@@ -4,7 +4,12 @@ import { memorySql } from "../db/open.ts";
 import assert from "node:assert/strict";
 import { applySchema } from "../db/schema.ts";
 import { commitPeriod } from "../db/commit.ts";
-import { getNumber, InvalidSetting, putSettings, readSettings, validate } from "./index.ts";
+import {
+  getNumber, InvalidSetting, putSettings, readSettings, SETTING_KEYS, validate,
+} from "./index.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function db(): Sql {
   return memorySql();
@@ -84,4 +89,35 @@ test("a database a migration behind still commits, on the fallbacks", async () =
   const period = await d.get(
     "select threshold_amount from periods limit 1") as { threshold_amount: number };
   assert.equal(Number(period.threshold_amount), 200_000_000);
+});
+
+
+test("EVERY setting the screen renders is one the action actually saves", async () => {
+  // The screen and the action behind it kept separate lists. Two pursuit
+  // vocabularies were added to the definitions and not to the action's list,
+  // so the form rendered both fields, accepted what was typed, and reported
+  // "Nothing changed" -- which is the decorative screen this module's own note
+  // at the top warns about.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const action = readFileSync(
+    join(here, "..", "..", "app", "(admin)", "settings", "actions.ts"), "utf8");
+  assert.match(action, /for \(const key of SETTING_KEYS\)/,
+    "the action must iterate the definitions, not a list written out beside them");
+  assert.ok(!/const KEYS\s*:/.test(action),
+    "a second list of keys is how the two drifted the first time");
+
+  // And the definitions and what a save round-trips agree.
+  const sql = db();
+  const rendered = (await readSettings(sql)).map((s) => s.key);
+  assert.deepEqual(rendered, [...SETTING_KEYS]);
+});
+
+test("a saved vocabulary comes back changed, which is the whole point of the field", async () => {
+  const sql = db();
+  const changes = await putSettings(
+    sql, { pursuit_action_statuses: "Open, Done*, Superseded*" }, null);
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].to, "Open, Done*, Superseded*");
+  const after = (await readSettings(sql)).find((s) => s.key === "pursuit_action_statuses");
+  assert.equal(after?.value, "Open, Done*, Superseded*");
 });
