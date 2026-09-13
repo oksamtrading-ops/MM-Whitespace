@@ -196,7 +196,7 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 399 Node tests, 72 Python tests, the authorisation check, the
+**Checks:** 402 Node tests, 72 Python tests, the authorisation check, the
 colour-contrast check, the build, and 143 end-to-end checks.
 
 ```bash
@@ -511,9 +511,10 @@ it. Never run `git add -A` outside this project's folder.
    Either way `/pursuits` names the term, says how many rows carry it, and
    moves them in one sweep with one audit line (`pursuit_terms_swept`). The
    section is absent when nothing is stranded, and a priority cannot be swept
-   into a status. Nothing is ever deleted. An action carries its own owner and its own
-   status, both changeable after it is made — handing work over must not have
-   to look like abandoning it. **A pursuit's own words must never
+   into a status. Nothing is ever deleted. An action carries its own status, owner and due
+   date, all three changeable after it is made — handing work over must not have
+   to look like abandoning it. `patchAction` is the one place that writes an
+   action, so a fourth costs a validation and a name. **A pursuit's own words must never
    reach a prompt** (doc 06) — a canary test pushes one through `publicRow` and
    `buildPrompt`, and it was watched failing against a planted leak.
 
