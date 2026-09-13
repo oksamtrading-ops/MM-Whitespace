@@ -14,8 +14,8 @@ import { applySchema } from "../db/schema.ts";
 type Rule = {
   key: string; label: string; retention: string;
   owner: string; transferable?: boolean;
-  apply: (db: DatabaseSync, apply: boolean, opts: Record<string, unknown>) =>
-    { examined: number; deleted: number; note?: string };
+  apply: (db: Sql, apply: boolean, opts: Record<string, unknown>) =>
+    Promise<{ examined: number; deleted: number; note?: string }>;
 };
 
 test("EVERY retention rule has a named owner", async () => {
@@ -66,7 +66,7 @@ test("sign-in links and expired sessions are swept, live sessions are not", asyn
   await sql.run("insert into auth_sessions (user_id, token_hash, expires_at) values (?, ?, ?)",
                 u.id, "s2", future);
 
-  const r = rule.apply(handle, true, {});
+  const r = await rule.apply(sql, true, {});
   assert.equal(r.deleted, 2, "one stale link and one stale session");
   assert.deepEqual(
     (await sql.all("select token_hash from auth_magic_links")).map((x) => x.token_hash), ["h2"]);
@@ -92,7 +92,7 @@ test("the audit log is not trimmed without an export path", async () => {
     await file.run("insert into audit_log (event, detail, created_at) values ('old','{}','2000-01-01 00:00:00')");
     file.close();
 
-    const { results } = run(path, { apply: true, exportPath: null }) as
+    const { results } = await run(path, { apply: true, exportPath: null }) as
       { results: Array<{ key: string; note: string; examined: number; deleted: number }> };
     const audit = results.find((r) => r.key === "audit_log")! as
       { key: string; note: string; examined: number; deleted: number };
@@ -127,7 +127,7 @@ test("expired document text is cleared but the row is kept", async () => {
                'the filing text', 1)`);
     db.close();
 
-    run(path, { apply: true, exportPath: null });
+    await run(path, { apply: true, exportPath: null });
 
     const after = new SqliteSql(new DatabaseSync(path));
     const row = await after.get("select content_hash, text_content from documents where content_hash = 'sha256:old'") as { content_hash: string; text_content: string | null };

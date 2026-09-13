@@ -15,12 +15,17 @@
  *      and surfaces later as JSON.parse receiving "[object Object]";
  *   4. the real read paths return the real population;
  *   5. a transaction rolls back;
- *   6. `set local role` works, so the S5 policies apply to a request.
+ *   6. `set local role` works, so the S5 policies apply to a request;
+ *   7. every retention rule runs here, as a DRY RUN. The job drove node:sqlite
+ *      directly until 13 September 2026, so the one database that accumulates
+ *      anything was the one it could not sweep. This is where that stays true.
  *
- * It writes nothing. Step 5 inserts inside a transaction it then rolls back.
+ * It writes nothing. Step 5 inserts inside a transaction it then rolls back,
+ * and step 7 is a dry run.
  */
 import { PostgresSql } from "../src/lib/db/postgres.ts";
 import { migrationFiles } from "../src/lib/db/schema.ts";
+import { run as retention } from "./retention.mjs";
 
 const url = process.env.MM_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!url) {
@@ -108,6 +113,12 @@ try {
     } catch (err) {
       check(`set local role ${role}`, false, String(err.message).split("\n")[0]);
     }
+  }
+  // 7 -----------------------------------------------------------------
+  const { results } = await retention(db, { apply: false, exportPath: null });
+  for (const r of results) {
+    check(`retention: ${r.label}`, !r.refused && Number.isInteger(r.examined), r.note);
+    if (!r.refused) console.log(`        ${r.examined} row(s) beyond retention — ${r.note}`);
   }
 } finally {
   await db.close();

@@ -7,12 +7,27 @@
  *
  *   node scripts/retention.mjs ./period.db            # dry run, the default
  *   node scripts/retention.mjs ./period.db --apply
+ *   node scripts/retention.mjs "$MM_DATABASE_URL" --apply
  *   node scripts/retention.mjs ./period.db --export-audit ./audit-export.jsonl
+ *
+ * IT RUNS ON EITHER ENGINE. It used to drive node:sqlite directly, which meant
+ * the one database that accumulates anything -- production -- was the one it
+ * could not sweep: expired parses, sign-in links and sessions were hidden by
+ * their expiry and never deleted. Every rule now goes through the same seam
+ * the application uses, and the three sweeps that already existed in the
+ * application are CALLED rather than re-written here, so a rule and the code
+ * it mirrors cannot drift.
  *
  * See the retention table in docs/design/11-security-privacy-compliance.md.
  */
 import { appendFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { SqliteSql } from "../src/lib/db/sqlite.ts";
+import { PostgresSql } from "../src/lib/db/postgres.ts";
+import { formatStamp } from "../src/lib/db/stamp.ts";
+import { purgeExpiredLinks } from "../src/lib/auth/magiclink.ts";
+import { purgeExpiredSessions } from "../src/lib/auth/sessions.ts";
+import { sweepQuarantine } from "../src/lib/ingest/quarantine.ts";
 
 const UNOWNED = "UNASSIGNED";
 
@@ -38,19 +53,14 @@ export const RULES = [
     transferable: true,
     // Nothing to delete: uploads are parsed and the bytes dropped rather than
     // stored. The rule is listed so its absence is a stated fact, not a gap.
-    apply: (db, apply) => {
+    apply: async (db, apply) => {
       // The workbook itself is deleted inside the request that parsed it, so
       // there is no store of a licensed extract. What outlives that request is
       // the PARSED PAYLOAD, held for an hour in upload_quarantine because the
       // validation report has to precede the commit -- swept here when it is
       // not committed.
-      const cutoff = new Date().toISOString().replace("T", " ").slice(0, 23) + "000";
-      const rows = db.prepare(
-        "select id from upload_quarantine where expires_at <= ?").all(cutoff);
-      if (apply && rows.length) {
-        db.prepare("delete from upload_quarantine where expires_at <= ?").run(cutoff);
-      }
-      return { examined: rows.length, deleted: apply ? rows.length : 0,
+      const { examined, deleted } = await sweepQuarantine(db, Date.now(), { dryRun: !apply });
+      return { examined, deleted,
                note: "parsed payloads past their hour in upload_quarantine; " +
                      "the workbook itself is never stored" };
     },
@@ -61,18 +71,21 @@ export const RULES = [
     retention: "90 days",
     owner: SOLUTION_OWNER,
     transferable: true,
-    apply: (db, apply) => {
+    apply: async (db, apply) => {
       const cutoff = isoDaysAgo(90);
-      const rows = db.prepare(
-        "select content_hash from documents where retrieved_at < ?").all(cutoff);
-      if (apply && rows.length) {
+      // Rows still holding text, so a second run reports nothing left to do
+      // rather than counting the same cleared rows for ever.
+      const n = Number((await db.get(
+        `select count(*) n from documents
+          where retrieved_at < ? and text_content is not null`, cutoff)).n);
+      if (apply && n) {
         // Findings anchor to a document hash, so the TEXT is cleared and the
         // row kept: deleting the row would orphan the anchor and make an
         // accepted finding unverifiable after the fact.
-        db.prepare(
-          "update documents set text_content = null where retrieved_at < ?").run(cutoff);
+        await db.run(`update documents set text_content = null
+                       where retrieved_at < ? and text_content is not null`, cutoff);
       }
-      return { examined: rows.length, deleted: rows.length,
+      return { examined: n, deleted: apply ? n : 0,
                note: "text cleared, row retained so finding anchors stay resolvable" };
     },
   },
@@ -82,7 +95,7 @@ export const RULES = [
     retention: "30 days past expiry",
     owner: SOLUTION_OWNER,
     transferable: true,
-    apply: (db, apply) => {
+    apply: async (db, apply) => {
       // Neither table holds a token -- both hold its SHA-256 -- so what is
       // swept here is evidence rather than credentials: who asked for a link,
       // from what address, and when a session ended. Kept a month past expiry
@@ -90,17 +103,17 @@ export const RULES = [
       // out, and dropped after it because a permanent record of every sign-in
       // is a permanent record of a person's working hours.
       const cutoff = isoDaysAgo(30);
-      const links = db.prepare(
-        "select id from auth_magic_links where expires_at < ?").all(cutoff);
-      const sessions = db.prepare(
-        "select id from auth_sessions where expires_at < ?").all(cutoff);
-      if (apply) {
-        db.prepare("delete from auth_magic_links where expires_at < ?").run(cutoff);
-        db.prepare("delete from auth_sessions where expires_at < ?").run(cutoff);
-      }
-      const n = links.length + sessions.length;
-      return { examined: n, deleted: n,
-               note: `${links.length} link(s) and ${sessions.length} session(s) ` +
+      const links = Number((await db.get(
+        "select count(*) n from auth_magic_links where expires_at < ?", cutoff)).n);
+      const sessions = Number((await db.get(
+        "select count(*) n from auth_sessions where expires_at < ?", cutoff)).n);
+      // purgeExpiredLinks and purgeExpiredSessions ARE the rule; 30 days is
+      // stated once, in the retention line above, and passed to both.
+      const deleted = apply
+        ? await purgeExpiredLinks(db, 30) + await purgeExpiredSessions(db, 30)
+        : 0;
+      return { examined: links + sessions, deleted,
+               note: `${links} link(s) and ${sessions} session(s) ` +
                      "past 30 days; the audit_log entry for each sign-in is kept" };
     },
   },
@@ -110,11 +123,11 @@ export const RULES = [
     retention: "24 months, with a periodic export first",
     owner: SOLUTION_OWNER,
     transferable: false,
-    apply: (db, apply, opts) => {
+    apply: async (db, apply, opts) => {
       const cutoff = isoDaysAgo(730);
-      const rows = db.prepare(
+      const rows = await db.all(
         "select id, event, actor_id, period_id, detail, created_at from audit_log where created_at < ?",
-      ).all(cutoff);
+        cutoff);
       if (rows.length && !opts.exportPath) {
         const err = new Error(
           "refusing to trim the audit log without an export path. The log is the one " +
@@ -128,9 +141,9 @@ export const RULES = [
       }
       if (apply && rows.length) {
         for (const row of rows) appendFileSync(opts.exportPath, JSON.stringify(row) + "\n");
-        db.prepare("delete from audit_log where created_at < ?").run(cutoff);
+        await db.run("delete from audit_log where created_at < ?", cutoff);
       }
-      return { examined: rows.length, deleted: rows.length,
+      return { examined: rows.length, deleted: apply ? rows.length : 0,
                note: opts.exportPath ? `exported to ${opts.exportPath} before deletion`
                                      : "nothing beyond retention" };
     },
@@ -155,20 +168,32 @@ export const RULES = [
 ];
 
 function isoDaysAgo(days) {
-  return new Date(Date.now() - days * 86_400_000)
-    .toISOString().replace("T", " ").slice(0, 19);
+  return formatStamp(Date.now() - days * 86_400_000);
 }
 
-export function run(dbPath, { apply = false, exportPath = null } = {}) {
-  const db = new DatabaseSync(dbPath);
-  db.exec("pragma foreign_keys = on");
+/**
+ * A Postgres URL or a SQLite path, told apart by the scheme.
+ *
+ * Not openSql(): that reads MM_DATABASE_URL from the environment, and a job
+ * that deletes rows should sweep the database it was NAMED, never one it found
+ * lying around in a shell.
+ */
+export function openTarget(target) {
+  if (/^postgres(ql)?:\/\//i.test(target)) return new PostgresSql({ connectionString: target });
+  const handle = new DatabaseSync(target);
+  handle.exec("pragma foreign_keys = on");
+  return new SqliteSql(handle);
+}
+
+export async function run(target, { apply = false, exportPath = null } = {}) {
+  const db = typeof target === "string" ? openTarget(target) : target;
   const results = [];
   const unowned = RULES.filter((r) => r.owner === UNOWNED);
 
   for (const rule of RULES) {
     let outcome;
     try {
-      outcome = rule.apply(db, apply, { exportPath });
+      outcome = await rule.apply(db, apply, { exportPath });
     } catch (err) {
       outcome = {
         examined: err.examined ?? 0, deleted: 0,
@@ -177,14 +202,14 @@ export function run(dbPath, { apply = false, exportPath = null } = {}) {
     }
     results.push({ ...rule, ...outcome });
   }
-  db.close();
+  if (typeof target === "string") await db.close();
   return { results, unowned };
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
-  const [dbPath, ...rest] = process.argv.slice(2);
-  if (!dbPath) {
-    console.error("usage: node scripts/retention.mjs <db> [--apply] [--export-audit <path>]");
+  const [target, ...rest] = process.argv.slice(2);
+  if (!target) {
+    console.error("usage: node scripts/retention.mjs <sqlite-path|postgres-url> [--apply] [--export-audit <path>]");
     process.exit(2);
   }
   const apply = rest.includes("--apply");
@@ -192,7 +217,7 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop()
   const exportPath = ei >= 0 ? rest[ei + 1] : null;
   if (exportPath) writeFileSync(exportPath, "", { flag: "a" });
 
-  const { results, unowned } = run(dbPath, { apply, exportPath });
+  const { results, unowned } = await run(target, { apply, exportPath });
 
   console.log(apply ? "retention — APPLYING\n" : "retention — dry run (pass --apply to act)\n");
   for (const r of results) {
