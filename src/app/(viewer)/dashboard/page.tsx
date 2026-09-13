@@ -13,7 +13,6 @@ import Bars from "../../_ui/Bars.tsx";
 import Composition, { type Part } from "../../_ui/Composition.tsx";
 import Donut, { type Slice } from "../../_ui/Donut.tsx";
 import DotPlot from "../../_ui/DotPlot.tsx";
-import Treemap from "../../_ui/Treemap.tsx";
 import Heatmap from "../../_ui/Heatmap.tsx";
 import TierLadder, { type Rung } from "../../_ui/TierLadder.tsx";
 import { companyMarks, marketPenetration, UNKNOWN as UNKNOWN_FIRM, whitespaceMatrix } from "../../../lib/publish/crosstabs.ts";
@@ -49,7 +48,6 @@ const FOOTPRINT_LABEL: Record<string, string> = {
 };
 
 const SECTIONS = [
-  { id: "market-map", label: "The market" },
   { id: "map", label: "Footprint map" },
   { id: "coverage", label: "Coverage" },
   { id: "tiers", label: "Tier ladder" },
@@ -136,6 +134,8 @@ export default async function Dashboard() {
   const matrix = await whitespaceMatrix(ctx.db, snap.publication.id,
                                         Number(period.threshold_amount), period.threshold_currency);
   const markets = await marketPenetration(ctx.db, snap.publication.id, "Foreign HQ — no Deloitte market");
+  // Not for a picture any more — the by-value donut needs every company's
+  // market cap and auditor, and this is the one pass that gets them.
   const tm = await companyMarks(ctx.db, snap.publication.id);
   const tierGate = gateFor("tier_distribution");
   const auditorGate = gateFor("auditor_crosstab");
@@ -223,24 +223,7 @@ export default async function Dashboard() {
             under it the footprint proof. Province counts count a company once
             per province and do not sum to the population, which is why the
             footing is the footprint's and the caption says so. */}
-        {/* The one chart where the answer arrives before anything is read: a
-            wall of grey with a few green tiles in it. The map keeps the space
-            directly beneath, unchanged. */}
-        {tm.marks.length > 0 && (
-          <div id="market-map" className="rise" style={{ "--i": 3 } as React.CSSProperties}>
-            <Treemap marks={tm.marks} total={tm.total} unsized={tm.unsized}
-                     currency={period.threshold_currency} />
-            <p className="note">
-              Every company in the population, sized by market capitalisation. The four largest
-              are <b>{tm.marks.slice(0, 4).map((m) => m.ticker || m.name).join(", ")}</b>, and{" "}
-              {tm.marks[0]?.firm === "Deloitte" ? "the largest is ours" : `the largest is audited by ${tm.marks[0]?.firm}`}.
-              Area is read badly, so every figure is also in the table on{" "}
-              <Link href="/companies" prefetch={false}>Companies</Link>.
-            </p>
-          </div>
-        )}
-
-        <div id="map" className="rise" style={{ "--i": 4 } as React.CSSProperties}>
+        <div id="map" className="rise" style={{ "--i": 3 } as React.CSSProperties}>
           <FootprintMap rows={provinceRows} hero twinHref="#province" />
           <Composition parts={footprintParts(footprint)} proof={proofLine(footprint, population)} />
           <p className="note">
@@ -251,7 +234,7 @@ export default async function Dashboard() {
           </p>
         </div>
 
-        <div className="rise" style={{ "--i": 5 } as React.CSSProperties}>
+        <div className="rise" style={{ "--i": 4 } as React.CSSProperties}>
           <Panel icon="database" title="The population" bare
                  right={<>as of {fmtDate(period.market_cap_as_of)}</>}>
             <StatRow items={[

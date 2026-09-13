@@ -203,7 +203,6 @@ Marks: bars 14px thick with 2px rounded data-ends and a 2px surface gap between 
 | View | Form | Colour job | Label rule | Twin and gate |
 |---|---|---|---|---|
 | Population | the hero sentence and the stat row | none | figure-lg in a panel | — |
-| **The market** | **treemap** — every company a rectangle, area is market capitalisation | brand + one grey in four steps; the gap hatched | the largest tiles carry their ticker and value | the roster is the twin, and the caption says so |
 | Footprint | **composition bar** — four parts of one population, drawn as one bar | categorical, the only place the slots are spent | a key naming every part with its count and share | the bar is its own proof |
 | Tier distribution | bars above the floor; **tier ladder** below it | ordinal badge ramp | value at the tip, or the basis and "awaiting stage" | the ladder states the refusal and the real basis |
 | Office by market | **dot plot** — one dot for the market, one for Deloitte's book | brand + grey | count at the tip; "n ours · x%", or "no client here" | mono composition proof |
@@ -222,9 +221,9 @@ Marks: bars 14px thick with 2px rounded data-ends and a 2px surface gap between 
 
 **Where a donut is legal.** Two or three parts, a large difference between them, and a hole big enough to carry the headline. Doc 09 banned pies for the *tier distribution* — five or six near-equal segments where the whole point was that two tables disagreed — and that ban holds for that chart, for the six Deloitte markets, and for anything else with near-equal parts. The auditor pair is the other shape: ours, everyone else's, and the part nobody has looked at yet. **The third slice is what makes it honest below the auditor floor**: the research gap is drawn as a gap, hatched and named, so no reader can mistake unresearched for held by somebody else. The coverage meter still sits underneath, and the cross-tab of auditor against tier is still shut.
 
-**Green means Deloitte and nothing else.** In the treemap every competitor is a step of one grey rather than a hue of its own. A four-firm colour set was tested against the palette and cannot be had: no single fixed set of four Deloitte values clears 3:1 on both a white and a black ground, and once green is reserved the palette has only two hue families left — blue and teal — for three competitors. Per-theme steps would solve the contrast half and not the arithmetic half. *[decision: leave the competitors grey, or accept two steps of one hue for two firms]*
+**Green means Deloitte and nothing else**, so every competing firm is drawn in the de-emphasis grey wherever firms appear together. A four-firm colour set was tested against the palette and cannot be had: no single fixed set of four Deloitte values clears 3:1 on both a white and a black ground, and once green is reserved the palette has only two hue families left — blue and teal — for three competitors. Per-theme steps would solve the contrast half and not the arithmetic half. *[decision: leave the competitors grey, or give up the rule and let one firm take a green step]*
 
-**Area is read badly, so it never carries a number alone.** The treemap labels its largest tiles, names every tile in its title, and says in its caption that the roster holds all 259 figures.
+**A treemap was built for the hero and withdrawn.** Area sized by market capitalisation put the argument on one screen, and it was removed on 13 September because the map is the image this product is remembered by and two full-width pictures above the fold is one too many. The component is in the history at `b435ce4` if the decision is ever reopened; the market-cap figures it drew are all in the roster.
 
 **A heat map's steps are named, never stretched.** A linear five-way split of 0–100% puts almost every cell in the first two steps while 117 auditors are unresearched, and silently stretching the scale to fill the ramp would make a 12% cell look like a 40% one. The steps are fixed percentages and the legend prints them.
 
@@ -357,7 +356,7 @@ Ordered so the demonstration path is finished first. Effort is in engineer-days 
 | 24 | Fold the export's cover and sheets onto the brand (section 14) | 1 | — |
 | 25 | Drill-down links from every bar into the filtered roster, and one "since last period" empty state | 1 | — |
 | 26 | The composition bar, the whitespace matrix and the tier ladder | 1.5 | ✓ |
-| 27 | The treemap hero, the auditor donut pair and the market dot plot | 1 | ✓ |
+| 27 | The auditor donut pair and the market dot plot | 1 | ✓ |
 
 **Acceptance.** Steps 1–18 are in the tree; `npm run check:contrast`, `npm test` and `npm run e2e:isolated` pass on it.
 

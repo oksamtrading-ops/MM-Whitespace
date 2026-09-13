@@ -37,8 +37,8 @@ export default function Donut({ slices, headline, caption, title }: {
            aria-label={`${title}. ${arcs.map((a) => `${a.label} ${a.n}, ${a.pct} percent`).join(". ")}`}>
         <defs>
           <pattern id={`dn-${slug(title)}`} width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-            <rect width="6" height="6" fill="var(--tm-gap-a)" />
-            <rect width="3" height="6" fill="var(--tm-gap-b)" />
+            <rect width="6" height="6" fill="var(--hatch-a)" />
+            <rect width="3" height="6" fill="var(--hatch-b)" />
           </pattern>
         </defs>
         {arcs.map((a) => (

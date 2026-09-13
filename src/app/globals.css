@@ -188,10 +188,8 @@
      text on a fill and the fill changes under it. */
   --on-seq-1: var(--dtt-white); --on-seq-2: var(--dtt-black); --on-seq-3: var(--dtt-black);
   --on-seq-4: var(--dtt-black);  --on-seq-5: var(--dtt-black);
-  /* The market, as one material in four steps. Green is Deloitte and nothing
-     else on this page, so a competitor never takes a hue. */
-  --tm-1: #75787B; --tm-2: #63666A; --tm-3: #53565A; --tm-4: #46484C;
-  --tm-gap-a: #111112; --tm-gap-b: #1E1F20;
+  /* The research gap takes no hue: it is not a firm, it is work outstanding. */
+  --hatch-a: #111112; --hatch-b: #1E1F20;
   --cat-1: var(--dtt-green); --cat-2: var(--dtt-blue-1); --cat-3: var(--dtt-teal-5);
   --shadow-ink: rgb(0 0 0 / .6);
   --backdrop: rgb(0 0 0 / .6);
@@ -256,8 +254,7 @@
   --seq-4: var(--dtt-green-6); --seq-5: var(--wsp-green-deepest);
   --on-seq-1: var(--dtt-black); --on-seq-2: var(--dtt-black); --on-seq-3: var(--dtt-black);
   --on-seq-4: var(--dtt-white); --on-seq-5: var(--dtt-white);
-  --tm-1: #97999B; --tm-2: #B0B2B4; --tm-3: #C4C5C7; --tm-4: #D8D9DA;
-  --tm-gap-a: #F4F4F3; --tm-gap-b: #E2E2E0;
+  --hatch-a: #F4F4F3; --hatch-b: #E2E2E0;
   --cat-1: var(--dtt-green); --cat-2: var(--dtt-blue-5); --cat-3: var(--dtt-teal-5); --cat-4: var(--dtt-green-6);
   --sidebar-bg: var(--wsp-surface-2-light);
   --sidebar-active: var(--dtt-white);
@@ -313,8 +310,7 @@
     --seq-4: var(--dtt-green-6); --seq-5: var(--wsp-green-deepest);
     --on-seq-1: var(--dtt-black); --on-seq-2: var(--dtt-black); --on-seq-3: var(--dtt-black);
     --on-seq-4: var(--dtt-white); --on-seq-5: var(--dtt-white);
-    --tm-1: #97999B; --tm-2: #B0B2B4; --tm-3: #C4C5C7; --tm-4: #D8D9DA;
-    --tm-gap-a: #F4F4F3; --tm-gap-b: #E2E2E0;
+    --hatch-a: #F4F4F3; --hatch-b: #E2E2E0;
     --cat-2: var(--dtt-blue-5); --cat-4: var(--dtt-green-6);
     --shadow-ink: rgb(0 0 0 / .18);
     --backdrop: rgb(0 0 0 / .32);
@@ -608,26 +604,12 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
 .bar-row.muted .n { color: var(--ink-3); }
 .bar-row.terminal { margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px dashed var(--rule); border-radius: 0; }
 
-/* ------------------------------------------------------- treemap -----
-   Area is market capitalisation. The only chart here whose encoding is area
-   rather than length, which is why the largest tiles are labelled and the
-   numbers all live in the twin underneath. */
-.treemap svg { display: block; width: 100%; height: auto; }
-.treemap rect { transition: opacity var(--dur-1) var(--ease); }
-.treemap svg:hover rect:not(:hover) { opacity: .82; }
-.treemap rect.ours { stroke: var(--brand-fill); stroke-width: .5; }
-.treemap .tm-t { font-family: var(--font-figure); font-weight: 700; fill: var(--ink); letter-spacing: -.01em; }
-.treemap .tm-s { font-family: var(--font-text); font-size: 11px; fill: var(--ink-3); }
-.treemap .tm-t.on-brand { fill: var(--on-brand); }
-.treemap .tm-s.on-brand { fill: #2C4A08; }
-.tm-legend { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin: var(--space-3) 0 0; font-size: var(--fs-caption); color: var(--ink-2); }
-.tm-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.tm-legend .meta { margin-left: auto; }
+/* The hatch and the swatches, shared by the donut and its key. The research
+   gap takes no hue anywhere: it is not a firm. */
 .sw { width: 12px; height: 12px; border-radius: 2px; display: block; flex: 0 0 auto; }
 .sw.ours { background: var(--brand-fill); }
-.sw.other { background: var(--tm-2); }
-.sw.all { background: var(--demote); }
-.sw.gap { background: repeating-linear-gradient(135deg, var(--tm-gap-b), var(--tm-gap-b) 3px, var(--tm-gap-a) 3px, var(--tm-gap-a) 6px); }
+.sw.other, .sw.all { background: var(--demote); }
+.sw.gap { background: repeating-linear-gradient(135deg, var(--hatch-b), var(--hatch-b) 3px, var(--hatch-a) 3px, var(--hatch-a) 6px); }
 
 /* --------------------------------------------------------- donut -----
    Legal where a donut is honest: two or three parts, a large difference, and

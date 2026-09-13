@@ -8,10 +8,9 @@ import Callout from "../../_ui/Callout.tsx";
 import Composition, { type Part } from "../../_ui/Composition.tsx";
 import Donut, { type Slice } from "../../_ui/Donut.tsx";
 import DotPlot from "../../_ui/DotPlot.tsx";
-import Treemap from "../../_ui/Treemap.tsx";
 import Heatmap from "../../_ui/Heatmap.tsx";
 import TierLadder, { type Rung } from "../../_ui/TierLadder.tsx";
-import type { CompanyMark, Matrix } from "../../../lib/publish/crosstabs.ts";
+import type { Matrix } from "../../../lib/publish/crosstabs.ts";
 import Icon, { type IconName } from "../../_ui/Icon.tsx";
 import Page from "../../_ui/Page.tsx";
 import Panel, { StatRow } from "../../_ui/Panel.tsx";
@@ -53,21 +52,6 @@ const FOOTPRINT_PARTS: Part[] = [
   { label: "Abroad only", n: 24, slot: 3 },
   { label: "None — no properties", n: 53, slot: "quiet" },
 ];
-
-/* Twenty invented issuers, so the treemap specimen shows the shape without
-   putting a real book on the styleguide. */
-const SAMPLE_MARKS: CompanyMark[] = ([
-  ["NRTH", 126.9, "Ernst & Young"], ["SOUT", 98.7, "PwC"], ["WEST", 84.2, "Deloitte"],
-  ["EAST", 67.5, "PwC"], ["ROYL", 61.6, "PwC"], ["CARY", 50.0, "KPMG"], ["DEVC", 45.3, "KPMG"],
-  ["EXPC", 44.8, "PwC"], ["BLNK", 35.4, "PwC"], ["GOLD", 35.2, "Not yet known"],
-  ["SILV", 33.2, "Deloitte"], ["COPR", 23.8, "KPMG"], ["ZINC", 22.3, "PwC"],
-  ["NICK", 20.9, "Other firms"], ["IRON", 17.4, "PwC"], ["LITH", 17.1, "Not yet known"],
-  ["URAN", 16.0, "Deloitte"], ["POTA", 14.8, "KPMG"], ["COAL", 12.2, "Not yet known"],
-  ["TUNG", 11.5, "Other firms"],
-] as Array<[string, number, CompanyMark["firm"]]>).map(([ticker, b, firm]) => ({
-  ticker, name: ticker, cap: b * 1e9, firm,
-}));
-const SAMPLE_TOTAL = SAMPLE_MARKS.reduce((a, m) => a + m.cap, 0);
 
 const SAMPLE_MATRIX: Matrix = {
   bands: [
@@ -425,15 +409,6 @@ export default async function Styleguide() {
               <tr><td>Tier 4 → Tier 4</td><td className="n">17</td><td className="diag"><Icon name="minus" size={13} /> unchanged</td></tr>
             </tbody>
           </table>
-          <h3 style={{ marginTop: 32 }}>Treemap — area is market capitalisation</h3>
-          <p className="note" style={{ marginTop: 0 }}>
-            The only chart in the product whose encoding is area rather than length, and the only
-            one where the answer arrives before anything is read. Area is judged badly, so the
-            largest tiles are labelled and every figure is also in the roster. Green is Deloitte;
-            every competitor is a step of one grey; the research gap is hatched and takes no hue.
-          </p>
-          <Treemap marks={SAMPLE_MARKS} total={SAMPLE_TOTAL} unsized={0} currency="CAD" />
-
           <h3 style={{ marginTop: 32 }}>Donut — where a donut is honest</h3>
           <p className="note" style={{ marginTop: 0 }}>
             Two or three parts, a large difference between them, and a hole big enough to carry
