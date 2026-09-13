@@ -93,3 +93,97 @@ class ExportService(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _payload_with_fees():
+    """Two companies, two currencies -- what Run 1 actually produced."""
+    return {
+        "period": {"label": "Q3-2026 (2026-05-31)", "market_cap_as_of": "2026-05-31",
+                   "threshold_amount": 200000000, "threshold_operator": "gte",
+                   "threshold_currency": "CAD", "proximity_band_pct": 2, "status": "published",
+                   "revision": 6, "rule_set_version": "1.0.0"},
+        "companies": [
+            {"name": "Agnico Eagle Mines Limited", "tier": 1, "status": "classified",
+             "footprint": "canada_and_abroad", "rule_set_version": "1.0.0",
+             "stages": ["production", "exploration", "development"],
+             "values": {"root_ticker": "AEM", "exchange": "TSX", "market_cap_cad": 78000000000,
+                        "auditor": "Ernst & Young", "head_office_location": "Toronto",
+                        "audit_fee": {"amount": 8052000, "currency": "CAD", "fiscal_year": 2025},
+                        "tax_fee": {"amount": 382000, "currency": "CAD", "fiscal_year": 2025}}},
+            {"name": "Elemental Royalty Corporation", "tier": 4, "status": "classified",
+             "footprint": "abroad", "rule_set_version": "1.0.0", "stages": ["royalty_streaming"],
+             "values": {"root_ticker": "ELE", "exchange": "TSXV", "market_cap_cad": 400000000,
+                        "auditor": "Davidson & Company", "head_office_location": "Littleton",
+                        "audit_fee": {"amount": 517116, "currency": "USD", "fiscal_year": 2025},
+                        "tax_fee": {"amount": 0, "currency": "USD", "fiscal_year": 2025}}},
+        ],
+        "provenance": {"source_file_sha256": "abc", "rule_set_version": "1.0.0",
+                       "prior_period": None},
+    }
+
+
+class Presentation(unittest.TestCase):
+    """What a partner sees. A workbook nobody can read is not a deliverable."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.wb = load_workbook(io.BytesIO(workbook_bytes(_payload_with_fees())))
+
+    def test_every_amount_says_which_currency_it_is_in(self):
+        matrix = self.wb["A.02 Matrix"]
+        # Market cap is Canadian dollars, and says so rather than being a bare number.
+        self.assertIn("C$", matrix.cell(row=6, column=6).number_format)
+        # Fees carry the currency of the filing they came from.
+        self.assertEqual(matrix.cell(row=6, column=40).value, "CAD")
+        self.assertEqual(matrix.cell(row=6, column=41).value, 8052000)
+        self.assertIn("C$", matrix.cell(row=6, column=41).number_format)
+        self.assertEqual(matrix.cell(row=7, column=40).value, "USD")
+        self.assertIn("US$", matrix.cell(row=7, column=41).number_format)
+        self.assertEqual(matrix.cell(row=6, column=43).value, 2025, "the fiscal year travels too")
+
+    def test_a_foreign_fee_is_not_converted_at_a_rate_nobody_chose(self):
+        matrix = self.wb["A.02 Matrix"]
+        # Canadian dollars need no conversion, so the CAD column is filled.
+        self.assertEqual(matrix.cell(row=6, column=42).value, 8052000)
+        # US dollars do, and there is no FX table: empty, with the reason on it.
+        usd_cad = matrix.cell(row=7, column=42)
+        self.assertIsNone(usd_cad.value)
+        self.assertIsNotNone(usd_cad.comment, "an empty cell must say why it is empty")
+        self.assertIn("USD", usd_cad.comment.text)
+
+    def test_the_auditor_columns_are_big_four_and_everyone_else(self):
+        matrix = self.wb["A.02 Matrix"]
+        self.assertEqual(matrix.cell(row=6, column=37).value, "Ernst & Young")
+        self.assertIsNone(matrix.cell(row=6, column=38).value)
+        self.assertIsNone(matrix.cell(row=7, column=37).value)
+        self.assertEqual(matrix.cell(row=7, column=38).value, "Davidson & Company")
+
+    def test_the_tier_is_filled_and_carries_its_rule(self):
+        tier = self.wb["A.02 Matrix"].cell(row=6, column=2)
+        self.assertEqual(tier.value, "Tier 1")
+        self.assertEqual(tier.fill.fgColor.rgb[-6:], "86BC25", "a tier reads as a conclusion")
+        self.assertTrue(tier.font.bold)
+
+    def test_every_data_sheet_is_navigable_and_printable(self):
+        for title in ["A.02 Matrix", "B.01 Consol TSX - TSXV", "B.04 Auditor & Fees"]:
+            ws = self.wb[title]
+            self.assertTrue(ws.freeze_panes, "%s does not hold its headers" % title)
+            self.assertTrue(ws.auto_filter.ref, "%s cannot be filtered" % title)
+            self.assertTrue(ws.print_title_rows, "%s loses its header on page 2" % title)
+            self.assertEqual(ws.page_setup.orientation, "landscape")
+            self.assertEqual(ws.sheet_properties.tabColor.rgb[-6:].upper() in
+                             {"86BC25", "A7CF5E", "C6E29A"}, True)
+
+    def test_no_tab_is_empty_and_contents_says_what_each_holds(self):
+        for ws in self.wb.worksheets:
+            filled = sum(1 for row in ws.iter_rows() for c in row if c.value not in (None, ""))
+            self.assertGreater(filled, 0, "%s has nothing on it" % ws.title)
+        contents = "\n".join(str(c.value) for row in self.wb["Contents"].iter_rows() for c in row)
+        for title in self.wb.sheetnames:
+            if title != "Contents":
+                self.assertIn(title, contents, "%s is not listed in Contents" % title)
+
+    def test_the_provenance_says_what_the_fees_are_and_what_was_not_converted(self):
+        text = "\n".join(str(c.value) for row in self.wb["Provenance"].iter_rows() for c in row)
+        self.assertIn("CAD, USD", text)
+        self.assertIn("unconverted", text)

@@ -19,7 +19,7 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .xlsxwrite import put, put_row
@@ -49,10 +49,44 @@ MATRIX_HEADER_ROW = 5
 MATRIX_GROUP_ROW = 4
 MATRIX_FIRST_DATA_ROW = 6
 
-HEADER_FILL = PatternFill("solid", fgColor="EFF1E9")
-GROUP_FILL = PatternFill("solid", fgColor="DCE0D2")
+# --- how it looks ---------------------------------------------------------
+# The application's own palette (src/app/globals.css): Deloitte green for
+# marks and fills, never for text; ink for type. A spreadsheet is read across
+# a row, so the work here is mostly separating one row from the next and
+# making a number say what it is.
+INK = "53565A"
+HEADER_FILL = PatternFill("solid", fgColor="E7F0D9")   # soft green ground
+GROUP_FILL = PatternFill("solid", fgColor="53565A")    # ink band, white type
+BAND_FILL = PatternFill("solid", fgColor="F7F7F5")     # every other row
 BOLD = Font(bold=True)
+GROUP_FONT = Font(bold=True, color="FFFFFF")
 WRAP = Alignment(wrap_text=True, vertical="top")
+RIGHT = Alignment(horizontal="right", vertical="top")
+RULE = Side(style="thin", color="D0D0CE")
+HEADER_RULE = Side(style="medium", color="86BC25")     # the brand's one line
+HEADER_BORDER = Border(bottom=HEADER_RULE)
+CELL_BORDER = Border(bottom=RULE)
+
+#: A tier is a conclusion, so it reads as one: filled, and never colour alone.
+TIER_FILLS = {
+    1: PatternFill("solid", fgColor="86BC25"),
+    2: PatternFill("solid", fgColor="A7CF5E"),
+    3: PatternFill("solid", fgColor="C6E29A"),
+    4: PatternFill("solid", fgColor="DCEBC3"),
+    5: PatternFill("solid", fgColor="EAF3DC"),
+    6: PatternFill("solid", fgColor="F4F8EE"),
+}
+
+#: Written into the cell so an amount says which dollar it is, the way the
+#: application does. An unknown currency is formatted as a plain number
+#: rather than guessed at.
+CURRENCY_FORMATS = {
+    "CAD": '"C$"#,##0', "USD": '"US$"#,##0', "AUD": '"A$"#,##0',
+    "GBP": '"£"#,##0', "EUR": '"€"#,##0',
+}
+PLAIN_MONEY = "#,##0"
+
+BIG_FOUR = {"Deloitte", "PwC", "KPMG", "Ernst & Young"}
 
 TIER_LABELS = {
     1: "Tier 1", 2: "Tier 2", 3: "Tier 3",
@@ -170,17 +204,138 @@ def _header(ws, row, column, text, fill=HEADER_FILL):
     return cell
 
 
+def money(value) -> Optional[float]:
+    """The amount out of a fee, whichever shape it is stored in.
+
+    Fees were bare numbers until currency was kept with them (September 2026);
+    both forms are in the published record, so both are read here.
+    """
+    if isinstance(value, dict):
+        amount = value.get("amount")
+        return amount if isinstance(amount, (int, float)) else None
+    return value if isinstance(value, (int, float)) else None
+
+
+def currency_of(value) -> Optional[str]:
+    return (value.get("currency") or None) if isinstance(value, dict) else None
+
+
+def fiscal_year_of(value) -> Optional[int]:
+    return value.get("fiscal_year") if isinstance(value, dict) else None
+
+
+def money_format(currency: Optional[str]) -> str:
+    return CURRENCY_FORMATS.get((currency or "").upper(), PLAIN_MONEY)
+
+
+def put_fee(ws, row, columns, value, as_of: Optional[str] = None):
+    """Currency, amount, amount in CAD, fiscal year -- the four fee columns.
+
+    The CAD column is filled only where no conversion is needed. There is no
+    FX table in this build and docs/design/10 forbids a nearest-date fallback,
+    so a foreign fee leaves the cell empty with a comment naming what is
+    missing, rather than carrying a rate nobody chose.
+    """
+    currency_col, amount_col, cad_col, year_col = columns
+    amount = money(value)
+    currency = currency_of(value)
+    put(ws, row, currency_col, currency)
+    put(ws, row, amount_col, amount, number_format=money_format(currency))
+    if cad_col is None:
+        pass
+    elif amount is not None and (currency or "").upper() == "CAD":
+        put(ws, row, cad_col, amount, number_format=CURRENCY_FORMATS["CAD"])
+    elif amount is not None:
+        put(ws, row, cad_col, None,
+            comment="No conversion: this build holds no FX table, so a %s amount%s is left "
+                    "unconverted rather than carrying a rate nobody chose."
+                    % (currency or "foreign-currency", " as at %s" % as_of if as_of else ""))
+    put(ws, row, year_col, fiscal_year_of(value))
+
+
+def finish_sheet(ws, *, header_row: int, first_data_row: int, last_data_row: int,
+                 last_column: int, widths: Optional[Dict[int, float]] = None,
+                 freeze_column: int = 1, tab_color: Optional[str] = None,
+                 landscape: bool = True):
+    """The treatment every data sheet gets, once, in one place.
+
+    Header rule and fill, banded rows, a filter over the data, frozen panes,
+    column widths, and a print setup that survives contact with a printer:
+    landscape, fitted to one page wide, header rows repeating on every page,
+    and the period in the footer.
+    """
+    for col in range(1, last_column + 1):
+        cell = ws.cell(row=header_row, column=col)
+        cell.border = HEADER_BORDER
+    if last_data_row >= first_data_row:
+        for row in range(first_data_row, last_data_row + 1):
+            for col in range(1, last_column + 1):
+                cell = ws.cell(row=row, column=col)
+                cell.border = CELL_BORDER
+                if (row - first_data_row) % 2 == 1:
+                    cell.fill = BAND_FILL
+        ws.auto_filter.ref = "%s%d:%s%d" % (
+            get_column_letter(2), header_row, get_column_letter(last_column), last_data_row)
+    for col, width in (widths or {}).items():
+        ws.column_dimensions[get_column_letter(col)].width = width
+    ws.freeze_panes = ws.cell(row=first_data_row, column=freeze_column)
+    if tab_color:
+        ws.sheet_properties.tabColor = tab_color
+
+    ws.page_setup.orientation = "landscape" if landscape else "portrait"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_title_rows = "%d:%d" % (header_row, header_row)
+    ws.print_options.horizontalCentered = True
+
+
 def build_workbook(data: Dict[str, Any]) -> Workbook:
     wb = Workbook()
     wb.remove(wb.active)
     _cover(wb, data)
-    wb.create_sheet("A - Analysis >>")          # dividers: the TOC links to them
+    # No divider tabs. The source has two, empty, because ITS table of contents
+    # links to them; this file has a Contents sheet that says what each tab
+    # holds, and a tab with nothing in it is a defect rather than a section.
+    _contents(wb, data)
     _matrix(wb, data)
-    wb.create_sheet("B - Supporting Schedules >>")
     _consolidated(wb, data)
     _auditor(wb, data)
     _provenance(wb, data)
     return wb
+
+
+def _contents(wb, data):
+    ws = wb.create_sheet("Contents")
+    n = len(data["companies"])
+    ws.column_dimensions["B"].width = 26
+    ws.column_dimensions["C"].width = 86
+    put(ws, 2, 2, "Contents").font = Font(bold=True, size=14)
+    _header(ws, 4, 2, "Sheet")
+    _header(ws, 4, 3, "What is on it")
+    rows = [
+        ("Cover", "The period, the threshold that defined the population, the publication "
+                  "it was taken from, and both licence notices."),
+        ("A.02 Matrix", "Every company in the period, one row each: tier, market cap, head "
+                        "office, stage, properties, auditor and fees. %d rows." % n),
+        ("B.01 Consol TSX - TSXV", "The same population in exchange-then-name order, as the "
+                                   "consolidated list the practice works from."),
+        ("B.04 Auditor & Fees", "Auditor and fee detail, one row per company, with the entity "
+                                "identifier where it is known."),
+        ("Provenance", "Where this file came from: source workbook hash, rule set, "
+                       "enrichment run and the conversion rates used."),
+    ]
+    for i, (sheet, what) in enumerate(rows):
+        put(ws, 5 + i, 2, sheet)
+        put(ws, 5 + i, 3, what).alignment = WRAP
+        ws.cell(row=5 + i, column=2).border = CELL_BORDER
+        ws.cell(row=5 + i, column=3).border = CELL_BORDER
+    put(ws, 5 + len(rows) + 1, 2, "Tier is a value, not a formula")
+    put(ws, 5 + len(rows) + 1, 3,
+        "Tiers are computed and tested in the application and written here as values, with the "
+        "rule that produced each one as a comment on the cell. The footprint trio and the proof "
+        "totals stay live formulas, with corrected ranges.").alignment = WRAP
+    ws.sheet_properties.tabColor = "86BC25"
 
 
 def _cover(wb, data):
@@ -189,7 +344,13 @@ def _cover(wb, data):
     ws.column_dimensions["B"].width = 34
     ws.column_dimensions["C"].width = 92
 
-    put(ws, 2, 2, "Mining Whitespace Analysis").font = Font(bold=True, size=14)
+    title = put(ws, 2, 2, "Mining Whitespace Analysis")
+    title.font = Font(bold=True, size=16)
+    for col in (2, 3):
+        ws.cell(row=2, column=col).border = HEADER_BORDER
+    ws.sheet_properties.tabColor = "53565A"
+    ws.page_setup.orientation = "portrait"
+    ws.print_options.horizontalCentered = True
     rows = [
         ("Period", p["label"]),
         ("Market cap as of", p["market_cap_as_of"]),
@@ -246,7 +407,7 @@ def _matrix(wb, data):
         40: "Audit Fees", 45: "Tax Fees",
     }
     for col, label in groups.items():
-        _header(ws, MATRIX_GROUP_ROW, col, label, GROUP_FILL)
+        _header(ws, MATRIX_GROUP_ROW, col, label, GROUP_FILL).font = GROUP_FONT
 
     headers = {
         2: "Tier", 3: "#", 4: "Company", 5: "Exchange", 6: "Marketcap\n(in CAD)",
@@ -264,9 +425,6 @@ def _matrix(wb, data):
         headers[25 + i] = region
     for col, label in headers.items():
         _header(ws, MATRIX_HEADER_ROW, col, label)
-    ws.column_dimensions["D"].width = 34
-    ws.column_dimensions[get_column_letter(51)].width = 40
-    ws.freeze_panes = ws.cell(row=MATRIX_FIRST_DATA_ROW, column=5)
 
     for n, c in enumerate(companies, start=1):
         row = MATRIX_FIRST_DATA_ROW + n - 1
@@ -279,12 +437,15 @@ def _matrix(wb, data):
         if c["trace"]:
             trace_note = "Rule: %s\nInputs: %s\nRule set: %s" % (
                 c["trace"]["rule_id"], c["trace"]["inputs"], c["rule_set_version"])
-        put(ws, row, 2, label, comment=trace_note)
+        tier_cell = put(ws, row, 2, label, comment=trace_note)
+        if c["tier"] in TIER_FILLS:
+            tier_cell.fill = TIER_FILLS[c["tier"]]
+            tier_cell.font = BOLD
 
         put(ws, row, 3, n)                       # presentation only, never an identity key
         put(ws, row, 4, c["name"])
         put(ws, row, 5, v.get("exchange"))
-        put(ws, row, 6, v.get("market_cap_cad"), number_format="#,##0.00")
+        put(ws, row, 6, v.get("market_cap_cad"), number_format=CURRENCY_FORMATS["CAD"])
         put(ws, row, 13, v.get("head_office_location"))
         put(ws, row, 14, v.get("dtt_market"))
 
@@ -317,14 +478,35 @@ def _matrix(wb, data):
         # 35 (Deloitte Tax Client) is deliberately left blank: header retained
         # so downstream column references stay stable, no data written.
 
+        # The two auditor columns are Big 4 and everyone else, and writing every
+        # firm into the first made the second look like a column with no data.
         auditor = v.get("auditor")
-        put(ws, row, 37, auditor)
+        put(ws, row, 37 if auditor in BIG_FOUR else 38, auditor)
+
+        as_of = data["period"].get("market_cap_as_of")
+        put_fee(ws, row, (40, 41, 42, 43), v.get("audit_fee"), as_of)
+        put_fee(ws, row, (45, 46, 47, 48), v.get("tax_fee"), as_of)
+        audit_amount, tax_amount = money(v.get("audit_fee")), money(v.get("tax_fee"))
+        if audit_amount and tax_amount is not None:
+            # Tax as a share of audit, live, so an edited fee updates it.
+            put(ws, row, 49, "=IF(%s%d=0,\"\",%s%d/%s%d)" % (
+                get_column_letter(41), row, get_column_letter(46), row,
+                get_column_letter(41), row), formula=True)
+            ws.cell(row=row, column=49).number_format = "0.0%"
+
         put(ws, row, 51, v.get("website"))
 
         put(ws, row, 55, TIER_LABELS.get(c["prior_tier"]) if c["prior_tier"] else None)
         if c["prior_tier"] is not None:
             put(ws, row, 56, "Yes" if c["prior_tier"] == c["tier"] else "No")
 
+    finish_sheet(
+        ws, header_row=MATRIX_HEADER_ROW, first_data_row=MATRIX_FIRST_DATA_ROW,
+        last_data_row=MATRIX_FIRST_DATA_ROW + len(companies) - 1, last_column=56,
+        widths={2: 13, 3: 5, 4: 36, 5: 11, 6: 18, 13: 22, 14: 16, 21: 18, 22: 16, 23: 16,
+                37: 18, 38: 18, 40: 10, 41: 15, 42: 15, 43: 11,
+                45: 10, 46: 15, 47: 15, 48: 11, 49: 9, 51: 40, 55: 10, 56: 8},
+        freeze_column=5, tab_color="86BC25")
     _proof_block(ws, len(companies))
 
 
@@ -388,7 +570,6 @@ def _consolidated(wb, data):
     headers[20] = "Properties Abroad?"
     for col, label in headers.items():
         _header(ws, 7, col, label)
-    ws.column_dimensions["D"].width = 34
 
     # Exchange-then-name order, preserved: the source stores two alphabetical blocks.
     ordered = sorted(data["companies"],
@@ -400,7 +581,7 @@ def _consolidated(wb, data):
         put(ws, row, 3, v.get("root_ticker"))
         put(ws, row, 4, c["name"])
         put(ws, row, 5, v.get("exchange"))
-        put(ws, row, 6, v.get("market_cap_cad"), number_format="#,##0.00")
+        put(ws, row, 6, v.get("market_cap_cad"), number_format=CURRENCY_FORMATS["CAD"])
         put(ws, row, 7, v.get("head_office_location"))
         put(ws, row, 8, v.get("head_office_region"))
         put(ws, row, 9, "Y" if "royalty_streaming" in c["stages"] else None)
@@ -412,6 +593,12 @@ def _consolidated(wb, data):
         put(ws, row, 20,
             "Yes" if any(regions.get(a) for a in ABROAD_COLUMNS) else "No")
 
+    finish_sheet(ws, header_row=7, first_data_row=8, last_data_row=7 + len(ordered),
+                 last_column=20,
+                 widths={2: 5, 3: 10, 4: 36, 5: 11, 6: 20, 7: 22, 8: 24, 9: 14,
+                         19: 18, 20: 18},
+                 freeze_column=5, tab_color="A7CF5E")
+
 
 def _auditor(wb, data):
     ws = wb.create_sheet("B.04 Auditor & Fees")
@@ -420,21 +607,53 @@ def _auditor(wb, data):
                10: "Tax_Currency", 11: "Tax_Fees", 12: "Tax_Fiscal Year", 13: "Website"}
     for col, label in headers.items():
         _header(ws, 5, col, label)
-    ws.column_dimensions["C"].width = 34
-    ws.column_dimensions["M"].width = 40
 
+    as_of = data["period"].get("market_cap_as_of")
     for n, c in enumerate(data["companies"], start=1):
         row = 5 + n
+        v = c["values"]
         put(ws, row, 2, n)
         put(ws, row, 3, c["name"])
         put(ws, row, 4, c["entity_id"])
-        put(ws, row, 5, c["values"].get("auditor"))
-        # Fee columns: headers and formats written, no data. They are in-scope
-        # enrichment targets and omitting the columns would break the client's
-        # downstream column mapping.
-        for col in (8, 11):
-            ws.cell(row=row, column=col).number_format = "#,##0.00"
-        put(ws, row, 13, c["values"].get("website"))
+        auditor = v.get("auditor")
+        put(ws, row, 5 if auditor in BIG_FOUR else 6, auditor)
+        # Fees, in the currency the filing states them in, for the year it
+        # states them for. Blank where nothing has been accepted yet.
+        put_fee(ws, row, (7, 8, None, 9), v.get("audit_fee"), as_of)
+        put_fee(ws, row, (10, 11, None, 12), v.get("tax_fee"), as_of)
+        put(ws, row, 13, v.get("website"))
+
+    finish_sheet(ws, header_row=5, first_data_row=6,
+                 last_data_row=5 + len(data["companies"]), last_column=13,
+                 widths={2: 5, 3: 36, 4: 16, 5: 18, 6: 18, 7: 12, 8: 16, 9: 12,
+                         10: 12, 11: 16, 12: 12, 13: 40},
+                 freeze_column=4, tab_color="C6E29A")
+
+
+def _fee_line(data) -> str:
+    """What the fee columns hold, so their emptiness is never a mystery."""
+    fees = [(c["values"].get("audit_fee"), c["values"].get("tax_fee")) for c in data["companies"]]
+    have = [f for pair in fees for f in pair if money(f) is not None]
+    if not have:
+        return ("none accepted yet - the columns are written for the population and fill as "
+                "fees are researched and accepted")
+    currencies = sorted({(currency_of(f) or "currency not recorded") for f in have})
+    return "%d amounts across %d companies, in %s" % (
+        len(have),
+        sum(1 for a, t in fees if money(a) is not None or money(t) is not None),
+        ", ".join(currencies))
+
+
+def _fx_line(data) -> str:
+    """No FX table exists in this build, and docs/design/10 forbids guessing."""
+    foreign = {(currency_of(f) or "").upper()
+               for c in data["companies"] for f in (c["values"].get("audit_fee"),
+                                                    c["values"].get("tax_fee"))
+               if money(f) is not None and (currency_of(f) or "CAD").upper() != "CAD"}
+    if not foreign:
+        return "none needed - every fee recorded is already in Canadian dollars"
+    return ("none - %s amounts are left unconverted rather than carrying a rate nobody chose; "
+            "the CAD column names what is missing" % ", ".join(sorted(foreign)))
 
 
 def _provenance(wb, data):
@@ -449,10 +668,14 @@ def _provenance(wb, data):
         ("Rule set version", data["provenance"]["rule_set_version"]),
         ("Companies exported", len(data["companies"])),
         ("Prior period", data["provenance"]["prior_period"] or "none"),
-        ("Fee FX rates used", "none - no fee data in this period"),
+        ("Fee FX rates used", _fx_line(data)),
+        ("Fees in this period", _fee_line(data)),
         ("Enrichment run", "none - this period was not enriched"),
     ]
-    _header(ws, 2, 2, "Provenance", GROUP_FILL)
+    _header(ws, 2, 2, "Provenance", GROUP_FILL).font = GROUP_FONT
+    ws.sheet_properties.tabColor = "53565A"
+    ws.page_setup.orientation = "portrait"
+    ws.print_options.horizontalCentered = True
     r = 4
     for label, value in rows:
         _header(ws, r, 2, label)

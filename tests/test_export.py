@@ -109,12 +109,20 @@ class ExportEndToEnd(unittest.TestCase):
 
     def test_the_template_has_the_sheets_the_design_specifies(self):
         names = self.wb.sheetnames
-        for sheet in ["Cover", "A - Analysis >>", "A.02 Matrix",
-                      "B - Supporting Schedules >>", "B.01 Consol TSX - TSXV",
+        for sheet in ["Cover", "Contents", "A.02 Matrix", "B.01 Consol TSX - TSXV",
                       "B.04 Auditor & Fees", "Provenance"]:
             self.assertIn(sheet, names)
         # The pursuit tab is empty in the source and out of scope.
         self.assertNotIn("A.03 Selected Targets", names)
+        # The source's two divider tabs exist only because ITS table of
+        # contents links to them. A tab with nothing on it is a defect.
+        for divider in ["A - Analysis >>", "B - Supporting Schedules >>"]:
+            self.assertNotIn(divider, names)
+
+    def test_no_sheet_is_empty(self):
+        for ws in self.wb.worksheets:
+            filled = sum(1 for row in ws.iter_rows() for c in row if c.value not in (None, ""))
+            self.assertGreater(filled, 0, "%s has nothing on it" % ws.title)
 
     def test_no_cell_anywhere_is_left_interpretable(self):
         offenders = []
