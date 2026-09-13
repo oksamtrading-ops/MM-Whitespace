@@ -10,15 +10,15 @@ This guide extends doc 17. It reverses one decision there, records why, and leav
 
 Five principles, each with what it forbids.
 
-1. **A chart proves itself or it is not drawn.** Every population chart foots to its total under a double rule; below its coverage floor it renders a meter in the same footprint. Forbidden: a chart without a footing, a meter that changes the layout, anything decorative that makes a gated view look complete.
+1. **A chart proves itself or it is not drawn.** Every population view ends in a composition bar whose segments are the addends and whose total carries its tick; below its coverage floor a view says what it is waiting for. Forbidden: a population chart with no proof under it, a gated view that changes the layout when it opens, anything decorative that makes a gated view look complete.
 2. **Evidence strength, not self-confidence.** Four ordinal bands, always as a strip, a numeral and a word. Forbidden: colour as the only carrier of a band, a continuous gradient, a wash behind a cell with no numeral in it.
 3. **Green is proof, not paint.** The brand green appears where something is Deloitte's or has been verified: the full stop, Deloitte's bar, the map's fill, the footing's tick, the focus ring, an accepted value. Forbidden: green as a background, a gradient or a glow; green text on white; white text on green; a green that is not a token.
 4. **Figures are instruments.** Every number that measures something is set in Archivo, tabular, and reads at a glance beside prose set in Open Sans. Forbidden: a figure in the text face, a prose number in the figure face, a KPI tile where a sentence would do.
 5. **Depth is spent where a partner looks, not where an analyst works.** The map, the sign-in, dialogs and tooltips carry lift, shadow and motion; the grid, the evidence panel, tables and forms are flat and dense. Forbidden: a card on a working screen, blur over data, motion on a grid row, anything that loops.
 
-**The one aesthetic risk.** The dashboard opens with no tile row. A sentence, a lit map and a proof line are the first screen; the ledger arrives on scroll. Partners are used to a strip of tiles, and the product's thesis is that the headline is a sentence and the proof is a footing, so the first screen is made of exactly those two things. It is right for this product because the workbook it replaces had tiles, and the tiles were wrong.
+**The one aesthetic risk.** The dashboard opens with no tile row. A sentence, a lit map and a proof bar are the first screen; the population panel arrives on scroll. Partners are used to a strip of tiles, and the product's thesis is that the headline is a sentence and the proof is a footing, so the first screen is made of exactly those two things. It is right for this product because the workbook it replaces had tiles, and the tiles were wrong.
 
-**Acceptance.** A reviewer opens `/dashboard` in both themes and finds: no tile above the map, a footing under the map that reads `= 259 ✓`, and no green anywhere that is not the stop, a Deloitte bar, the map, a tick, a focus ring or an accepted value.
+**Acceptance.** A reviewer opens `/dashboard` in both themes and finds: no tile above the map, a proof bar under the map whose total reads `= 259 ✓`, and no green anywhere that is not the stop, a Deloitte bar, the map, a tick, a focus ring or an accepted value.
 
 ## 2. Identity
 
@@ -223,6 +223,8 @@ Marks: bars 14px thick with 2px rounded data-ends and a 2px surface gap between 
 
 **Green means Deloitte and nothing else**, so every competing firm is drawn in the de-emphasis grey wherever firms appear together. A four-firm colour set was tested against the palette and cannot be had: no single fixed set of four Deloitte values clears 3:1 on both a white and a black ground, and once green is reserved the palette has only two hue families left — blue and teal — for three competitors. Per-theme steps would solve the contrast half and not the arithmetic half. *[decision: leave the competitors grey, or give up the rule and let one firm take a green step]*
 
+**Two components were retired with these forms.** `Ledger` gave way to the panel and stat row, and `Footing` — the arithmetic proof line under every chart — gave way to the composition bar. Both are in the history; neither is in the styleguide, because a styleguide that documents what the build no longer uses is the drift it exists to prevent.
+
 **A treemap was built for the hero and withdrawn.** Area sized by market capitalisation put the argument on one screen, and it was removed on 13 September because the map is the image this product is remembered by and two full-width pictures above the fold is one too many. The component is in the history at `b435ce4` if the decision is ever reopened; the market-cap figures it drew are all in the roster.
 
 **A heat map's steps are named, never stretched.** A linear five-way split of 0–100% puts almost every cell in the first two steps while 117 auditors are unresearched, and silently stretching the scale to fill the ramp would make a 12% cell look like a 40% one. The steps are fixed percentages and the legend prints them.
@@ -264,11 +266,10 @@ Every component in `src/app/_ui` and every pattern in `globals.css`, with its st
 | Stat row `.statrow` | quiet items, linked items | hover on a linked cell | rule, figure-lg, ink-3 | plain text | Do keep the cells equal. Don't let one orphan on a row |
 | Skip link `.skip` | — | focus | skip-bg, skip-ink | first tab stop | — |
 | Facts `.facts` | inline / rail | — | ink-3 label, ink value | a `<dl>` | Don't set a fact as a sentence |
-| Ledger `.ledger` | quiet item | — | rule, figure-lg | a `<dl>` | Don't make it cards |
 | Hero `.hero` | dashboard | count-up once | display, figure-xl, the stop | a `<p>`, the stop hidden | Don't put a second stop on a page |
 | Section `.section` | with query key | — | rule, mono | `aria-labelledby` its h2 | Don't box it |
-| Bars `.bars` | grey / gap / accent / terminal | hot (hover lights the footing) | brand-fill, demote, surface-2 | each bar `role="img"` with a name | Don't colour by value |
-| Footing `.footing` | ties / fails | addend hot | ink, alert, green-text | one string, `aria-label="Proof: …"` | Don't split `= N ✓` |
+| Bars `.bars` | grey / gap / accent / terminal | row hover | brand-fill, demote, surface-2 | each bar `role="img"` with a name | Don't colour by value, and don't put a proof inside the chart |
+| Proof `.composition` | identity / emphasis / mono | the arithmetic disclosed | cat slots or brand + grey; ink, alert | a `role="img"` naming every part and the sum; `= N ✓` stays one string | Don't spend the categorical slots where the parts outnumber them |
 | Gauge `.gauge` | below / warn / over / compact | — | green-line, demote, warn, alert | `role="img"` naming percent and floor | Don't fill below the floor in green |
 | Meter `.meter` | — | — | figure-md | text with a link into review | Don't let it change the footprint |
 

@@ -6,9 +6,7 @@ export function DashboardSkeleton() {
       <div className="sk line" style={{ width: 360 }} />
       <div className="sk sk-hero" />
       <div className="sk sk-map" />
-      <div className="sk-ledger">
-        {[0, 1, 2, 3].map((i) => <div className="sk fig" key={i} />)}
-      </div>
+      <div className="sk sk-panel" />
       {[0, 1, 2].map((i) => (
         <div className="section" key={i}>
           <div className="sk line" style={{ width: 220, height: 20, marginBottom: 20 }} />

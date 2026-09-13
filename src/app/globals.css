@@ -551,16 +551,6 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
 .hero-sub { font-size: var(--fs-title); color: var(--ink-2); font-weight: 400; margin: 14px 0 0; letter-spacing: -.01em; }
 .hero-sub .fig { font-size: inherit; color: var(--ink); }
 
-/* ledger */
-.ledger {
-  display: flex; flex-wrap: wrap; gap: var(--space-6) var(--space-9);
-  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
-  padding: 22px 0; margin: var(--space-8) 0 var(--space-2);
-}
-.ledger .item { display: flex; flex-direction: column; gap: 6px; min-width: 88px; }
-.ledger .k { font-size: var(--fs-caption); color: var(--ink-3); letter-spacing: .01em; text-transform: none; font-weight: 400; }
-.ledger .item.quiet .fig-lg { color: var(--ink-3); font-weight: 500; }
-
 /* sections --------------------------------------------------------------
    Two weights. A LEAD section is the argument -- the hero, the map, the
    coverage -- and carries an icon on its heading. A PLAIN section is the
@@ -1439,7 +1429,7 @@ form.inline { display: inline; }
 .sk.fig { height: 28px; width: 72px; }
 .sk-hero { height: 64px; width: 60%; margin: var(--space-2) 0 14px; }
 .sk-map { height: 320px; width: 100%; border-radius: var(--radius-4); margin: var(--space-6) 0; }
-.sk-ledger { display: flex; gap: var(--space-9); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 22px 0; margin: var(--space-8) 0; }
+.sk-panel { height: 84px; border-radius: var(--radius-4); margin: var(--space-8) 0; }
 .sk-rows > div { height: var(--row-h); border-bottom: 1px solid var(--rule); }
 
 /* ------------------------------------------------------------ triage */

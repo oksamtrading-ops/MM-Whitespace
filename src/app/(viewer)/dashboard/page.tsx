@@ -7,7 +7,7 @@ import { readPublished } from "../../../lib/publish/snapshot.ts";
 import {
   auditorBars, footprintBars, gateChart, JURISDICTION_TITLE, marketBars,
   populationTiles, PROVINCE_TITLE, proofLine, tierMigration, UNKNOWN_AUDITOR,
-  type Aggregates, type Bar, type Gated,
+  type Aggregates, type Bar,
 } from "../../../lib/publish/views.ts";
 import Bars from "../../_ui/Bars.tsx";
 import Composition, { type Part } from "../../_ui/Composition.tsx";
@@ -20,7 +20,6 @@ import FootprintMap from "../../_ui/FootprintMap.tsx";
 import { foldProvinces, provinceName } from "../../../lib/publish/jurisdictions.ts";
 import Contents from "../../_ui/Contents.tsx";
 import Gauge from "../../_ui/Gauge.tsx";
-import Ledger from "../../_ui/Ledger.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
 import Callout from "../../_ui/Callout.tsx";
@@ -109,7 +108,7 @@ export default async function Dashboard() {
   }
   const floors = await ctx.db.all("select chart, label, driving_field, floor_pct from coverage_floors") as
     Array<{ chart: string; label: string; driving_field: string; floor_pct: number | null }>;
-  const gateFor = (chart: string): Gated => {
+  const gateFor = (chart: string) => {
     const f = floors.find((x) => x.chart === chart);
     const c = coverage.get(chart) ?? { resolved: 0, population: 0 };
     return gateChart(chart, f?.label ?? chart, f?.driving_field ?? "auditor",
@@ -475,36 +474,4 @@ function tierRungs(agg: Aggregates, footprintCount: (b: string) => number): Rung
 function bandOrder(bucket: string): number {
   const n = Number(bucket);
   return Number.isFinite(n) ? n : 100;
-}
-
-/** Below its floor the chart is replaced by a gauge in the same footprint. */
-function Gated({ id, title, queryKey, caption, index, gate, canReview, children }: {
-  id: string; title: string; queryKey: string; caption?: string; index: number;
-  gate: Gated; canReview: boolean; children: React.ReactNode;
-}) {
-  if (gate.kind === "chart") {
-    return <Section id={id} title={title} queryKey={queryKey} caption={caption} index={index}>{children}</Section>;
-  }
-  return (
-    <Section id={id} title={title} queryKey={queryKey} index={index}>
-      <div className="meter">
-        <Gauge label="Researched" resolved={gate.resolved} population={gate.population}
-               floorPct={gate.floorPct} />
-        <p className="msg">
-          <span className="fig">{gate.resolved}</span> of <span className="fig">{gate.population}</span> researched.
-          This view unlocks at {gate.floorPct}%.
-          {canReview && (
-            <>{" "}
-              {/* typedRoutes cannot validate a href built from a field key; the
-                  value comes from coverage_floors, not user input. */}
-              <Link className="btn sm secondary" href={gate.reviewLink as Route}>
-                <Icon name="clipboard-check" size={13} />Review the gap
-              </Link>
-            </>
-          )}
-        </p>
-        <p className="why">A chart drawn at this coverage would be well formed and wrong.</p>
-      </div>
-    </Section>
-  );
 }

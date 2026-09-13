@@ -1,17 +1,21 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import type { Bar, Proof } from "../../lib/publish/views.ts";
+import type { Bar } from "../../lib/publish/views.ts";
 
 /**
- * A horizontal bar chart drawn as one SVG per bar, and the footing beneath it.
+ * A horizontal bar chart drawn as one SVG per bar.
  *
  * Every green fill on white obliges a relief channel, so the value is always a
- * direct label; hovering or focusing a row lights the same value in the
- * footing, which is how the chart and its proof are shown to be one thing.
+ * direct label beside the mark.
+ *
+ * The proof used to live here as an arithmetic footing under the bars. It is a
+ * composition bar now (docs/design/18 section 9): the segments are the addends,
+ * so the parts are seen to sum to the total rather than read as a sum. Pass a
+ * `Composition` after the chart.
  */
-export default function Bars({ bars, proof, mutedStyle = "grey", unit = "companies" }: {
-  bars: Bar[]; proof?: Proof; mutedStyle?: "grey" | "gap"; unit?: string;
+export default function Bars({ bars, mutedStyle = "grey", unit = "companies" }: {
+  bars: Bar[]; mutedStyle?: "grey" | "gap"; unit?: string;
 }) {
   const [hot, setHot] = useState<number | null>(null);
   const max = Math.max(1, ...bars.map((b) => b.n));
@@ -42,28 +46,6 @@ export default function Bars({ bars, proof, mutedStyle = "grey", unit = "compani
         })}
       </div>
       {note && <p className="note">{note}</p>}
-      {proof && <Footing proof={proof} hot={hot} />}
     </>
-  );
-}
-
-/**
- * The proof line set as an auditor's foot: addends, a rule, the total under a
- * double rule. The `= N ✓` text is one string on purpose -- it is what the
- * journeys assert, and React would otherwise split it into several text nodes.
- */
-export function Footing({ proof, hot = null }: { proof: Proof; hot?: number | null }) {
-  const total = proof.ties ? `= ${proof.total} ✓` : `= ${proof.total} ✗ expected ${proof.population}`;
-  return (
-    <p className={`footing${proof.ties ? "" : " fail"}`}
-       aria-label={`Proof: ${proof.text}`}>
-      {proof.parts.map((n, i) => (
-        <span key={i}>
-          {i > 0 && <span className="op" aria-hidden="true">+</span>}
-          <span className={`addend${hot === i ? " hot" : ""}`}>{n}</span>
-        </span>
-      ))}
-      <span className="total">{total}</span>
-    </p>
   );
 }

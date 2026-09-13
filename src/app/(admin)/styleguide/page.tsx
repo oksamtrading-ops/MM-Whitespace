@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { proofLine, type Bar } from "../../../lib/publish/views.ts";
-import Bars, { Footing } from "../../_ui/Bars.tsx";
+import Bars from "../../_ui/Bars.tsx";
 import Callout from "../../_ui/Callout.tsx";
 import Composition, { type Part } from "../../_ui/Composition.tsx";
 import Donut, { type Slice } from "../../_ui/Donut.tsx";
@@ -18,7 +18,6 @@ import Contents from "../../_ui/Contents.tsx";
 import Facts from "../../_ui/Facts.tsx";
 import FootprintMap from "../../_ui/FootprintMap.tsx";
 import Gauge from "../../_ui/Gauge.tsx";
-import Ledger from "../../_ui/Ledger.tsx";
 import Orb from "../../_ui/Orb.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
@@ -379,15 +378,15 @@ export default async function Styleguide() {
           <div style={{ maxWidth: 560 }}><DashboardSkeleton /></div>
         </Section>
 
-        <Section id="charts" title="Charts, with their footing and their meter" index={7} icon="gauge"
-                 caption="Every population chart foots to its total. Below its coverage floor a chart renders its meter in the same footprint, so nothing jumps when coverage crosses the line.">
-          <h3>Population bars, one hue, with the footing</h3>
-          <Bars bars={FOOTPRINT} proof={proofLine(FOOTPRINT, POP)} />
+        <Section id="charts" title="Charts, and the proof under them" index={7} icon="gauge"
+                 caption="Every population view ends in a composition bar whose segments are the addends, so the parts are seen to sum to the total. Below its coverage floor a view says what it is waiting for rather than drawing a chart that would be well formed and wrong.">
+          <h3>Population bars, one hue</h3>
+          <Bars bars={FOOTPRINT} />
           <h3 style={{ marginTop: 32 }}>Emphasis: Deloitte accented, the rest grey, unknown last and longest</h3>
-          <Bars bars={AUDITOR} proof={proofLine(AUDITOR, POP)} />
+          <Bars bars={AUDITOR} />
           <h3 style={{ marginTop: 32 }}>Ordinal, with Unclassified as a gap</h3>
-          <Bars bars={TIERS} proof={proofLine(TIERS, POP)} mutedStyle="gap" />
-          <h3 style={{ marginTop: 32 }}>The same chart below its floor: the meter, same footprint</h3>
+          <Bars bars={TIERS} mutedStyle="gap" />
+          <h3 style={{ marginTop: 32 }}>The meter, where a chart is still shut</h3>
           <div className="meter">
             <Gauge label="Researched" resolved={17} population={259} floorPct={95} />
             <p className="msg"><span className="fig">17</span> of <span className="fig">259</span> researched. This view unlocks at 95%.</p>
@@ -465,16 +464,25 @@ export default async function Styleguide() {
           <TierLadder rungs={LADDER} gate={{ resolved: 17, population: 259, floorPct: 95,
                                              reviewLink: "/review", canReview: true }} />
 
-          <h3 style={{ marginTop: 32 }}>The hero sentence and the ledger line</h3>
+          <h3 style={{ marginTop: 32 }}>The hero sentence, and the population in a panel</h3>
           <p className="hero">Deloitte audits <span className="fig-xl">17</span> of <span className="fig-xl">259</span><span className="stop" aria-hidden="true" /></p>
-          <Ledger items={[{ value: 259, label: "Companies" }, { value: 144, label: "TSX" }, { value: 115, label: "TSXV" }, { value: 12, label: "Unresolved values", quiet: true }]} />
+          <div style={{ marginTop: 24 }}>
+            <Panel icon="database" title="The population" bare right="as of 31 May 2026">
+              <StatRow items={[
+                { value: 259, label: "Companies", icon: "building-2" },
+                { value: 144, label: "TSX", icon: "trending-up" },
+                { value: 115, label: "TSXV", icon: "trending-up" },
+                { value: 12, label: "Unresolved values", icon: "circle-dashed", quiet: true },
+              ]} />
+            </Panel>
+          </div>
         </Section>
 
         <Section id="map" title="The map, tilted and flat" index={8} icon="map"
                  caption="The same choropleth twice. The tilted form is the hero on first load and settles on scroll or touch; height never encodes anything. Its footing is the footprint proof, because provinces count a company once each and do not add to the population.">
           <h3>Hero, tilted until touched</h3>
           <FootprintMap rows={PROVINCES} hero twinHref="#map-bars" />
-          <Footing proof={proofLine(FOOTPRINT, POP)} />
+          <Composition parts={FOOTPRINT_PARTS} proof={proofLine(FOOTPRINT, POP)} />
           <h3 style={{ marginTop: 32 }}>Canonical, flat</h3>
           <FootprintMap rows={PROVINCES} twinHref="#map-bars" />
           <h3 id="map-bars" style={{ marginTop: 32 }}>The accessible twin, and what prints</h3>
@@ -506,7 +514,10 @@ export default async function Styleguide() {
           <Replay>
             <div className="section rise" style={{ "--i": 0, paddingTop: 0 } as CSSProperties}>
               <p className="hero rise" style={{ "--i": 1 } as CSSProperties}>Deloitte audits <span className="fig-xl">17</span> of <span className="fig-xl">259</span><span className="stop" aria-hidden="true" /></p>
-              <div className="rise" style={{ "--i": 2, marginTop: 24 } as CSSProperties}><Bars bars={FOOTPRINT} proof={proofLine(FOOTPRINT, POP)} /></div>
+              <div className="rise" style={{ "--i": 2, marginTop: 24 } as CSSProperties}>
+                <Bars bars={FOOTPRINT} />
+                <Composition parts={FOOTPRINT_PARTS} proof={proofLine(FOOTPRINT, POP)} />
+              </div>
             </div>
           </Replay>
         </Section>
@@ -521,8 +532,16 @@ function Sample() {
   return (
     <>
       <p className="hero">Deloitte audits <span className="fig-xl" style={{ fontSize: 44 }}>17</span> of <span className="fig-xl" style={{ fontSize: 44 }}>259</span><span className="stop" aria-hidden="true" /></p>
-      <Ledger items={[{ value: 259, label: "Companies" }, { value: 144, label: "TSX" }, { value: 115, label: "TSXV" }]} />
-      <Bars bars={AUDITOR.slice(0, 3).concat(AUDITOR.slice(-1))} proof={proofLine(AUDITOR, POP)} />
+      <Panel icon="database" title="The population" bare>
+        <StatRow items={[
+          { value: 259, label: "Companies", icon: "building-2" },
+          { value: 144, label: "TSX", icon: "trending-up" },
+          { value: 115, label: "TSXV", icon: "trending-up" },
+        ]} />
+      </Panel>
+      <div style={{ marginTop: 20 }}>
+        <Bars bars={AUDITOR.slice(0, 3).concat(AUDITOR.slice(-1))} />
+      </div>
       <div className="gauges" style={{ marginTop: 20 }}><Gauge label="Stage" resolved={17} population={259} floorPct={95} compact /></div>
       <div className="row" style={{ marginTop: 20 }}>
         <button type="button" className="btn primary">Publish</button>
