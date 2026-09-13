@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Sql } from "../db/sql.ts";
-import { regionFrom, resetTickerCache } from "./edgar.ts";
+import { regionFrom, resetTickerCache, titleAddress } from "./edgar.ts";
 import type { HttpResponse } from "./fetch.ts";
 import { claimJobs, ensureSlots } from "./ledger.ts";
 import { drain, settleReady } from "./drain.ts";
@@ -613,4 +613,35 @@ test("BATCH: two companies in one batch are told apart by custom_id, never by po
     assert.match(String(r.value), new RegExp(expected),
       `${r.name} was given ${r.value}, which is the other company's answer`);
   }
+});
+
+
+test("EDGAR shouts, and a subdivision code cased down is not a word", async () => {
+  // Alkane's head office came back from the first batched run as "Perth, Wa":
+  // EDGAR's city field held "PERTH, WA" and title-casing the lot ruined the
+  // state. Length alone cannot decide it — "ST LOUIS" starts with two letters
+  // that ARE a word — so the comma does: a short segment of its own is a code.
+  assert.equal(titleAddress("PERTH, WA"), "Perth, WA");
+  assert.equal(titleAddress("VANCOUVER, BC"), "Vancouver, BC");
+  assert.equal(titleAddress("SYDNEY, NSW"), "Sydney, NSW");
+  assert.equal(titleAddress("LONDON, UK"), "London, UK");
+
+  // A short word INSIDE a longer segment is a word, not a code.
+  assert.equal(titleAddress("ST LOUIS"), "St Louis");
+  assert.equal(titleAddress("ST. JOHN'S"), "St. John's");
+  assert.equal(titleAddress("O'BRIEN"), "O'Brien", "only a lone trailing s goes back down");
+  assert.equal(titleAddress("RIO DE JANEIRO"), "Rio De Janeiro");
+
+  // The ordinary cases, unchanged.
+  assert.equal(titleAddress("TORONTO"), "Toronto");
+  assert.equal(titleAddress("ONTARIO, CANADA"), "Ontario, Canada");
+  assert.equal(titleAddress("  "), null);
+  assert.equal(titleAddress(null), null);
+  // Whitespace around a segment is tidied rather than preserved.
+  assert.equal(titleAddress("PERTH ,   WA "), "Perth, WA");
+
+  // regionFrom goes through the same rule, so the two cannot diverge.
+  assert.equal(regionFrom("A6", "ONTARIO, CANADA"), "Ontario, Canada");
+  assert.equal(regionFrom(null, "NEW SOUTH WALES, AU"), "New South Wales, AU");
+  assert.equal(regionFrom("CO", "CO"), "Colorado, United States");
 });

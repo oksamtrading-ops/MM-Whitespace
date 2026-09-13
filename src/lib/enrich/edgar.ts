@@ -99,12 +99,46 @@ const US_STATES: Record<string, string> = {
 };
 
 /** "Ontario, Canada" from EDGAR's description; "Colorado, United States" from a bare state code. */
+/**
+ * EDGAR shouts. Everything in a submissions record is upper case, so any of it
+ * shown to a person has to be cased down -- and a subdivision code cased down
+ * with the rest becomes a word that is not one.
+ *
+ * Alkane's head office came back as "Perth, Wa". EDGAR's city field held
+ * "PERTH, WA", and title-casing the lot turned the state into "Wa". The same
+ * would have made "Vancouver, BC" into "Bc" and "London, UK" into "Uk".
+ *
+ * Length alone cannot decide it: "ST LOUIS" starts with two letters that ARE a
+ * word here, and must become "St Louis". What separates them is the comma. In
+ * an address a short segment of its own is a code -- "PERTH, WA" -- while a
+ * short word inside a longer segment is a word. So each comma-separated
+ * segment is cased on its own, and a segment of two or three letters is left
+ * as it was found.
+ */
+export function titleAddress(raw: string | null | undefined): string | null {
+  const value = (raw ?? "").trim();
+  if (!value) return null;
+  return value.split(",").map((segment) => {
+    const part = segment.trim();
+    if (!part) return "";
+    // A segment that is only two or three letters is a subdivision or country
+    // code -- WA, BC, NSW, USA -- and keeps the case EDGAR gave it.
+    if (/^[A-Za-z]{2,3}$/.test(part)) return part.toUpperCase();
+    return part.toLowerCase()
+      .replace(/\b\w/g, (ch) => ch.toUpperCase())
+      // A possessive is not a new word: "ST. JOHN'S" is a real place and was
+      // becoming "St. John'S". O'Brien keeps its capital, because only a
+      // lone trailing "s" after the apostrophe is put back down.
+      .replace(/(['\u2019])S\b/g, (_, mark: string) => `${mark}s`);
+  }).filter(Boolean).join(", ");
+}
+
 export function regionFrom(code: string | null | undefined, description: string | null | undefined): string | null {
   const c = (code ?? "").trim().toUpperCase();
   const d = (description ?? "").trim();
   if (US_STATES[c] && (!d || d.toUpperCase() === c)) return `${US_STATES[c]}, United States`;
   if (!d) return null;
-  return d.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
+  return titleAddress(d);
 }
 
 export type EdgarRecord = {
@@ -138,14 +172,12 @@ export function parseSubmissions(text: string): EdgarRecord {
       break;   // EDGAR lists recent filings newest first
     }
   }
-  const title = (s: string | null | undefined) =>
-    s ? s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : null;
   return {
     cik, name: j.name,
     website: j.website ? String(j.website).trim() || null : null,
     fiscalYearEnd: j.fiscalYearEnd && /^\d{4}$/.test(j.fiscalYearEnd)
       ? `${j.fiscalYearEnd.slice(0, 2)}-${j.fiscalYearEnd.slice(2)}` : null,
-    businessCity: title(j.addresses?.business?.city),
+    businessCity: titleAddress(j.addresses?.business?.city),
     businessRegion: regionFrom(j.addresses?.business?.stateOrCountry, j.addresses?.business?.stateOrCountryDescription),
     latestAnnual,
   };
