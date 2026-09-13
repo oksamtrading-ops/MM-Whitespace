@@ -234,19 +234,40 @@ export async function setPriority(
                actorId, JSON.stringify({ pursuitId, priority }));
 }
 
+/** An owner who cannot sign in is not an owner; /access deactivates people. */
+async function assertAssignable(db: Sql, ownerId: string | null): Promise<void> {
+  if (ownerId === null) return;
+  const who = await db.get("select id from app_users where id = ? and is_active", ownerId) as
+    { id: string } | undefined;
+  if (!who) throw new PursuitRefused("That person is not an active user of this application.");
+}
+
 export async function setOwner(
   db: Sql, pursuitId: string, ownerId: string | null, actorId: string | null,
 ): Promise<void> {
-  if (ownerId !== null) {
-    const who = await db.get("select id from app_users where id = ? and is_active", ownerId) as
-      { id: string } | undefined;
-    // An owner who cannot sign in is not an owner; /access deactivates people.
-    if (!who) throw new PursuitRefused("That person is not an active user of this application.");
-  }
+  await assertAssignable(db, ownerId);
   const r = await db.run("update pursuits set owner_id = ? where id = ?", ownerId, pursuitId);
   if (r.changes !== 1) throw new PursuitRefused("There is no such pursuit.");
   await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_owner_set', ?, ?)`,
                actorId, JSON.stringify({ pursuitId, ownerId }));
+}
+
+/**
+ * Who is doing one action, as distinct from who owns the pursuit.
+ *
+ * An action could be given an owner when it was made and never afterwards,
+ * which meant the only way to hand one over was to make a second action and
+ * close the first -- a workaround that would have read, permanently, as though
+ * the work had been abandoned.
+ */
+export async function setActionOwner(
+  db: Sql, actionId: string, ownerId: string | null, actorId: string | null,
+): Promise<void> {
+  await assertAssignable(db, ownerId);
+  const r = await db.run("update pursuit_actions set owner_id = ? where id = ?", ownerId, actionId);
+  if (r.changes !== 1) throw new PursuitRefused("There is no such action.");
+  await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_action_assigned', ?, ?)`,
+               actorId, JSON.stringify({ actionId, ownerId }));
 }
 
 export async function addNote(

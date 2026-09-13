@@ -16,8 +16,8 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/context.ts";
 import {
-  addAction, addNote, PursuitRefused, setActionStatus, setOwner, setPriority, startPursuit,
-  sweepTerm, type StrandedKind,
+  addAction, addNote, PursuitRefused, setActionOwner, setActionStatus, setOwner, setPriority,
+  startPursuit, sweepTerm, type StrandedKind,
 } from "../../../lib/pursuit/index.ts";
 
 export type ActionResult = { ok: boolean; message: string; pursuitId?: string };
@@ -83,6 +83,17 @@ export async function moveAction(form: FormData): Promise<ActionResult> {
   return attempt(() => setActionStatus(db, String(form.get("actionId") ?? ""),
                                        String(form.get("status") ?? ""), user.id),
                  "Action moved.", ["/pursuits", `/pursuits/${pursuitId}`]);
+}
+
+/** Hand one action to somebody, or take it back. */
+export async function assignAction(form: FormData): Promise<ActionResult> {
+  const { user, db } = await requireRole(["analyst", "admin"]);
+  const pursuitId = String(form.get("pursuitId") ?? "");
+  const raw = String(form.get("ownerId") ?? "");
+  return attempt(
+    () => setActionOwner(db, String(form.get("actionId") ?? ""), raw === "" ? null : raw, user.id),
+    raw === "" ? "Action unassigned." : "Action assigned.",
+    ["/pursuits", `/pursuits/${pursuitId}`]);
 }
 
 /** Sweep every row out of a term the vocabulary no longer knows. */

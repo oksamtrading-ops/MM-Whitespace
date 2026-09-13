@@ -4,7 +4,7 @@ import { memorySql } from "../db/open.ts";
 import type { Sql } from "../db/sql.ts";
 import {
   addAction, addNote, closedStatuses, getPursuit, listPursuits, parseStatuses,
-  PursuitRefused, setActionStatus, setOwner, setPriority, startPursuit, statusNames,
+  PursuitRefused, setActionOwner, setActionStatus, setOwner, setPriority, startPursuit, statusNames,
   strandedTerms, sweepTerm, vocabulary,
 } from "./index.ts";
 import { validate, InvalidSetting, putSettings } from "../settings/index.ts";
@@ -399,4 +399,51 @@ test("both kinds strand at once, and each is listed with its own noun", async ()
     { kind: "status", value: "Done", count: 1 },
     { kind: "priority", value: "Low", count: 1 },
   ]);
+});
+
+
+test("an action can be handed to somebody after it was made", async () => {
+  // It could only be given an owner at creation, so the only way to hand one
+  // over was to make a second action and close the first -- which would have
+  // read, permanently, as though the work had been abandoned.
+  const { db, northco, actor } = await seeded();
+  const other = await db.get(
+    "insert into app_users (email, role) values ('kay@example.invalid','analyst') returning id") as { id: string };
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "Confirm the currency" }, actor);
+  const action = (await getPursuit(db, id))!.actions[0];
+  assert.equal(action.ownerEmail, null, "it starts unassigned");
+
+  await setActionOwner(db, action.id, other.id, actor);
+  assert.equal((await getPursuit(db, id))!.actions[0].ownerEmail, "kay@example.invalid");
+
+  // Taking it back is allowed, and is not the same as closing it.
+  await setActionOwner(db, action.id, null, actor);
+  assert.equal((await getPursuit(db, id))!.actions[0].ownerEmail, null);
+  assert.equal((await listPursuits(db))[0].openActions, 1, "and it is still open");
+});
+
+test("an action cannot be handed to somebody who cannot sign in", async () => {
+  const { db, northco, actor } = await seeded();
+  const gone = await db.get(
+    "insert into app_users (email, role, is_active) values ('gone2@example.invalid','analyst',false) returning id") as { id: string };
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "x" }, actor);
+  const action = (await getPursuit(db, id))!.actions[0];
+  await assert.rejects(() => setActionOwner(db, action.id, gone.id, actor), /not an active user/);
+  await assert.rejects(() => setActionOwner(db, "nope", actor, actor), /no such action/);
+  assert.equal((await getPursuit(db, id))!.actions[0].ownerEmail, null, "a refusal changes nothing");
+});
+
+test("assigning an action names who did it, and who it went to", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "x" }, actor);
+  const action = (await getPursuit(db, id))!.actions[0];
+  await setActionOwner(db, action.id, actor, actor);
+  const [row] = await db.all(
+    "select actor_id, detail from audit_log where event = 'pursuit_action_assigned'") as
+    Array<{ actor_id: string; detail: string }>;
+  assert.equal(row.actor_id, actor);
+  assert.deepEqual(JSON.parse(row.detail), { actionId: action.id, ownerId: actor });
 });

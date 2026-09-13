@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState } from "react";
-import { moveAction, type ActionResult } from "../actions.ts";
+import { assignAction, moveAction, type ActionResult } from "../actions.ts";
 import type { Action, Vocabulary } from "../../../../lib/pursuit/index.ts";
+import type { Person } from "./PursuitDesk.tsx";
 
 /**
  * Moving an action lives on the row it belongs to.
@@ -11,11 +12,15 @@ import type { Action, Vocabulary } from "../../../../lib/pursuit/index.ts";
  * carry an identifier from one part of the screen to another, which is work
  * the screen should be doing.
  */
-export default function ActionsTable({ pursuitId, actions, vocabulary }: {
-  pursuitId: string; actions: Action[]; vocabulary: Vocabulary;
+export default function ActionsTable({ pursuitId, actions, vocabulary, people }: {
+  pursuitId: string; actions: Action[]; vocabulary: Vocabulary; people: Person[];
 }) {
   const [state, move, moving] = useActionState(
     async (_: ActionResult | null, form: FormData) => moveAction(form), null);
+  const [assigned, assign, assigning] = useActionState(
+    async (_: ActionResult | null, form: FormData) => assignAction(form), null);
+  // Whichever of the two answered last owns the one live region.
+  const latest = [state, assigned].filter(Boolean).at(-1) ?? null;
 
   return (
     <>
@@ -32,7 +37,18 @@ export default function ActionsTable({ pursuitId, actions, vocabulary }: {
           {actions.map((a) => (
             <tr key={a.id}>
               <th scope="row">{a.description}</th>
-              <td>{a.ownerEmail ?? <span className="meta">unassigned</span>}</td>
+              <td>
+                <form action={assign} className="inline">
+                  <input type="hidden" name="pursuitId" value={pursuitId} />
+                  <input type="hidden" name="actionId" value={a.id} />
+                  <select name="ownerId" defaultValue={a.ownerId ?? ""} disabled={assigning}
+                          aria-label={`Owner of “${a.description}”`}>
+                    <option value="">Unassigned</option>
+                    {people.map((p) => <option key={p.id} value={p.id}>{p.email}</option>)}
+                  </select>
+                  <button type="submit" className="btn" disabled={assigning}>Assign</button>
+                </form>
+              </td>
               <td>{a.dueDate ?? <span className="meta">—</span>}</td>
               <td>
                 <form action={move} className="inline">
@@ -56,10 +72,10 @@ export default function ActionsTable({ pursuitId, actions, vocabulary }: {
         </tbody>
       </table>
       <div role="status" aria-live="polite">
-        {state && (
-          <div className={`notice ${state.ok ? "ok" : "alert"}`}>
-            <b>{state.ok ? "Moved" : "Not moved"}</b>
-            <span>{state.message}</span>
+        {latest && (
+          <div className={`notice ${latest.ok ? "ok" : "alert"}`}>
+            <b>{latest.ok ? "Recorded" : "Not recorded"}</b>
+            <span>{latest.message}</span>
           </div>
         )}
       </div>

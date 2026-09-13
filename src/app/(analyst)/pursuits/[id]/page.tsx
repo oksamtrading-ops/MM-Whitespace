@@ -77,7 +77,8 @@ export default async function Pursuit({ params }: { params: Promise<{ id: string
       <Section id="actions" title="Actions" index={1}
                caption={actions.length === 0 ? "None yet." : undefined}>
         {actions.length > 0 && (
-          <ActionsTable pursuitId={pursuit.id} actions={actions} vocabulary={v} />
+          <ActionsTable pursuitId={pursuit.id} actions={actions} vocabulary={v}
+                        people={people} />
         )}
       </Section>
 
