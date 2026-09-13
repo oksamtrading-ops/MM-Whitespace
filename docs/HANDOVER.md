@@ -4,8 +4,13 @@
 > exists to do. Q3-2026 is published at **revision 6**; **30 companies
 > researched** across Run 1 (5) and Run 2 (25) for **US$10.94 all in**;
 > **40 companies carry a tier**, 19 audit fees carry their currency and
-> fiscal year, and the period downloads as a clean workbook. To start a new
-> session, paste everything below the line into it.
+> fiscal year, and the period downloads as a clean workbook.
+>
+> **Five commits sit on `main` unpushed at the time of writing** — Run 2's
+> three research defects fixed, publishing cut from four minutes to seconds,
+> retention taught to run on Postgres, and the Batch API built and switched
+> off. Pushing `main` deploys production. To start a new session, paste
+> everything below the line into it.
 
 ---
 
@@ -194,11 +199,11 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 311 Node tests, 54 Python tests, the authorisation check, the
-colour-contrast check, the build, and 113 end-to-end checks.
+**Checks:** 363 Node tests, 72 Python tests, the authorisation check, the
+colour-contrast check, the build, and 128 end-to-end checks.
 
 ```bash
-npm test && npm run check:auth && npm run check:contrast && npm run build && npm run e2e
+npm test && npm run check:auth && npm run check:contrast && npm run build && npm run e2e:isolated
 ```
 
 **Built on 12–13 September 2026**, all deployed:
@@ -236,6 +241,35 @@ npm test && npm run check:auth && npm run check:contrast && npm run build && npm
   then royalty/streaming, then development, then exploration), or the finding
   is held for a person.
 
+**Built on 13 September 2026**, after the handover above was written. All four
+are committed; none is deployed until someone pushes.
+
+- **EDGAR's profile is no longer the last word.** Its stored address and
+  fiscal year-end are attributes the filer maintains, not statements a filing
+  makes, and they go stale while the filings stay current — three wrong values
+  reached review in Run 2 that way. They are secondary evidence of unknown age
+  now, and for those fields the review queue lets the issuer's own filing win
+  outright. One list, `src/lib/enrich/sources.ts`, decides both. **Deliberate
+  consequence:** an EDGAR fiscal year-end no longer clears the bulk-accept
+  floor on its own, so roughly 110 interlisted companies need a person there.
+- **A correction now reaches the reviewer.** Where a decision stands, the row
+  offers the NEWEST proposal the decision never saw, not the strongest — two
+  of 13 September's four corrections never surfaced and had to be overridden
+  by hand. The pick moved out of the SQL into `queue.pickFinding`, because it
+  depends on the standing decision and a correlated subquery cannot see it.
+- **The field grid's shortcuts agree with its buttons.** A decided row drew no
+  controls but still answered `A`, `O` and `F`. One predicate, `canAct`.
+- **Publishing is seconds, not minutes.** 3,918 round trips down to **39**,
+  measured: values and tiers go in chunks (`sql.insertMany`), and the prior
+  period's tiers are one read into a map. Nothing local would ever have caught
+  it — on SQLite both versions take 17 ms, because there is no round trip to
+  pay for.
+- **Retention runs on Postgres**, and calls the application's own sweeps
+  rather than re-writing their SQL. `pg_smoke` runs every rule as a dry run.
+  It still has to be called by something (item 6 below).
+- **The Batch API is built and off.** See item 3 below and
+  `docs/decisions/BATCH-API.md`.
+
 ## Production settings
 
 | Vercel variable (Production) | Value | Note |
@@ -248,6 +282,7 @@ npm test && npm run check:auth && npm run check:contrast && npm run build && npm
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |
 | `MM_CRON_SECRET`, `CRON_SECRET` | same value | The per-minute tick in `vercel.json`, and the worker endpoint |
 | `MM_ENRICH_MODE` | `live` | Set 11 September 2026. Never `replay` in production: it would abandon every real company |
+| `MM_ENRICH_BATCH` | **not set** | `1` sends each pass's model call to the Batch API at half price. Apply migrations `0016`/`0017` first. Never been run against the real Batch API |
 | `ANTHROPIC_API_KEY` | model key | **Sensitive**, added 11 September 2026, from workspace `mm-whitespace-prod` (`wrkspc_01W9ytyaac9BqDzPzLkxNAKT`) with a $100/month limit. Unused until `LIVE_ENABLED` is true |
 | `MM_SEC_CONTACT` | contact email | **Sensitive**, set 11 September 2026. SEC EDGAR's required User-Agent contact. Live mode refuses to start without it |
 
@@ -398,6 +433,16 @@ shares a name with a route again.
 stale while the issuer's own filing is current, and EDGAR outranks the filing
 in evidence scoring. Three wrong values reached review this way in Run 2.
 
+**`node --test` strips types, it does not compile them.** A TypeScript
+parameter property (`constructor(private readonly x = 1) {}`) passes both `tsc`
+and `tsx` and then fails the whole suite with
+`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. Assign the field in the body.
+
+**A second `next dev` blocks the end-to-end suite** with "the server did not
+start" and nothing else. `npm run e2e:isolated` runs the journeys in a detached
+worktree with its own `node_modules`, so a preview someone else is using stays
+up; prefer it to `npm run e2e`.
+
 **`/Users/oksam` is itself a git repository**, with the Archieva folder inside
 it. Never run `git add -A` outside this project's folder.
 
@@ -410,60 +455,42 @@ it. Never run `git add -A` outside this project's folder.
 2. **Publish revision 7.** 178 decisions from 13 September are not on the
    dashboards until someone publishes. See "What is waiting on Samuel".
 
-3. **Run 3: the remaining 229 companies.** Pass 1 then pass 2, about **US$80**
-   at Run 2's measured rate (US$0.31 a company end to end: pass 1 US$0.22,
-   pass 2 US$0.10). Start it from `/runs`; the start form estimates per pass.
-   Do it **after** the Batch API below if cost matters, since that roughly
-   halves it.
+3. **Switch the Batch API on, in that order.** It is **built and off**
+   (`MM_ENRICH_BATCH=1`; `docs/decisions/BATCH-API.md`). Before the flag goes
+   on: apply migrations `0016` and `0017` to Supabase, and set the variable in
+   Vercel. **Nothing in it has run against the real Batch API** — the tests
+   drive a fake one, which proves our two paths agree, not that the vendor
+   behaves as documented. So the first real use is a handful of companies with
+   `/runs` watched, not Run 3.
 
-4. **The Batch API.** Not built: the ledger has an `awaiting_batch` state and
-   nothing submits or polls. It is the difference between US$80 and US$40 for
-   the rest of the period, and the design (docs/design/03) expects it before
-   the full run.
+4. **Run 3: the remaining 229 companies.** About **US$80** live, or **US$40**
+   batched, at Run 2's measured rate (US$0.31 a company: pass 1 US$0.22, pass 2
+   US$0.10). Start it from `/runs`; the start form estimates per pass.
 
-5. **Three known weaknesses in research, each seen in Run 2.**
-   - **EDGAR is stale where filings are current, and outranks them.** Its
-     stored address put First Quantum in Vancouver (its AIF says Toronto) and
-     Lundin Mining in Toronto (its circular says Vancouver), and its
-     `fiscalYearEnd` said 30 November for First Quantum against its own
-     circular's 31 December. EDGAR is source tier 1 and scores 0.88 against a
-     filing's 0.71, so the wrong value wins the queue's "best finding" slot.
-     Consider lowering EDGAR's tier for head office and fiscal year-end, or
-     preferring the issuer's own filing for those two fields.
-   - **The superseded bucket picks the strongest finding, not the newest.**
-     Two of four corrections on 13 September never surfaced there and had to
-     be overridden by hand, because an older EDGAR proposal outscored the
-     newer one from the filing.
-   - **A decided row hides its buttons but not its shortcuts.** `o` still
-     opens the override editor where the Override button is not drawn. That
-     is how those overrides were made; the two should agree.
-
-6. **Retention on Postgres.** `scripts/retention.mjs` works on SQLite only, so
-   nothing sweeps production: expired parses, sign-in links and sessions are
-   hidden by their expiry but not deleted. (`cron_ticks` prunes itself to a
-   week; `worker_runs` is a few rows a day and has no rule yet.)
-
-7. **Mail:** buy and verify a domain for this application (Samuel's decision
+5. **Mail:** buy and verify a domain for this application (Samuel's decision
    and money), then set `MM_MAIL_FROM`; **rotate the Resend key**, which was
    pasted into a chat once. This is what unblocks Kay.
 
-8. **Publishing is slow and should batch.** Revision 6 took about four
-   minutes because `publishPeriod` inserts roughly 3,600 values one at a
-   time. A multi-row insert would make it seconds.
+6. **Schedule retention.** The job now runs on either engine
+   (`node scripts/retention.mjs "$MM_DATABASE_URL" --apply`), but nothing calls
+   it, so production still sweeps nothing. Putting it on a timer is a decision
+   about deleting production data automatically, not a port. (`cron_ticks`
+   prunes itself to a week; `worker_runs` is a few rows a day and has no rule
+   yet.)
 
-9. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
+7. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
    and S4 (open the generated export in Excel).
 
-10. **The pursuit data model** — a Phase 1 commitment in doc 02, not built.
+8. **The pursuit data model** — a Phase 1 commitment in doc 02, not built.
 
-11. **Hardening:** a monotonic column on `review_decisions` (today
+9. **Hardening:** a monotonic column on `review_decisions` (today
     `decisionStamp()` carries the order); the domain allowlist as a database
     trigger (doc 11; enforced in code because the portable migrations forbid
     triggers); Deloitte SSO and `MM_ALLOWED_DOMAINS=deloitte.ca` when the
-    pilot moves to Deloitte addresses. The live pipeline also records the
-    replay pipeline's `PROMPT_VERSION` rather than its own.
+   pilot moves to Deloitte addresses. The live pipeline also records the
+   replay pipeline's `PROMPT_VERSION` rather than its own.
 
-12. **Tidy-ups:** an empty tracked file named `--` at the repository root.
+10. **Tidy-ups:** an empty tracked file named `--` at the repository root.
 
 ## Working conventions
 
