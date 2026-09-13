@@ -4,6 +4,10 @@ import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { proofLine, type Bar } from "../../../lib/publish/views.ts";
 import Bars, { Footing } from "../../_ui/Bars.tsx";
+import Callout from "../../_ui/Callout.tsx";
+import Icon, { type IconName } from "../../_ui/Icon.tsx";
+import Page from "../../_ui/Page.tsx";
+import Panel, { StatRow } from "../../_ui/Panel.tsx";
 import Contents from "../../_ui/Contents.tsx";
 import Facts from "../../_ui/Facts.tsx";
 import FootprintMap from "../../_ui/FootprintMap.tsx";
@@ -68,8 +72,23 @@ const FIGURES: Array<[string, string]> = [["figure-xl", "fig-xl"], ["figure-lg",
 const SECTIONS = [
   { id: "tokens", label: "Tokens" }, { id: "type", label: "Type" }, { id: "space", label: "Space and shape" },
   { id: "themes", label: "Both themes" }, { id: "depth", label: "Depth" }, { id: "components", label: "Components" },
-  { id: "charts", label: "Charts" }, { id: "map", label: "The map" }, { id: "objects", label: "Objects" },
-  { id: "motion", label: "Motion" },
+  { id: "charts", label: "Charts" }, { id: "map", label: "The map" }, { id: "icons", label: "Icons" },
+  { id: "objects", label: "Objects" }, { id: "motion", label: "Motion" },
+];
+
+/** The vocabulary, in the order doc 18 section 8 states it. */
+const ICON_TOUR: Array<[IconName, string]> = [
+  ["circle-check", "Passed"], ["triangle-alert", "Warning"], ["octagon-alert", "Blocked"], ["info", "Information"],
+  ["shield-off", "Quarantined"], ["search-x", "No evidence"], ["git-compare", "Conflict"], ["history", "Inherited"],
+  ["check", "Accept"], ["pencil", "Override"], ["flag", "Flag"], ["list-checks", "Bulk accept"],
+  ["undo-2", "Undo"], ["lock", "Frozen"], ["badge-check", "Publish"], ["gauge", "Coverage"],
+  ["layers", "Tier"], ["map", "Footprint"], ["map-pin", "Jurisdiction"], ["landmark", "Auditor"],
+  ["building-2", "Company"], ["crosshair", "Pursuit"], ["pickaxe", "Mining stage"], ["mountain", "Production"],
+  ["gem", "Commodities"], ["hard-hat", "Development"], ["coins", "Royalty"], ["banknote", "Fees"],
+  ["scroll-text", "Evidence"], ["quote", "Excerpt"], ["external-link", "Open source"], ["trending-up", "Improved"],
+  ["trending-down", "Declined"], ["minus", "Unchanged"], ["play", "Run"], ["octagon-x", "Halted"],
+  ["clock-alert", "Stale"], ["upload", "Upload"], ["download", "Export"], ["file-spreadsheet", "Workbook"],
+  ["user-x", "Deactivate"], ["users", "Access"], ["eye", "Show working"], ["settings", "Settings"],
 ];
 
 export default async function Styleguide() {
@@ -82,6 +101,9 @@ export default async function Styleguide() {
   }
 
   return (
+    <Page title="Styleguide"
+          meta="Built from the real tokens and components"
+          actions={<a className="btn sm secondary" href="#components"><Icon name="layers" size={13} />Components</a>}>
     <div className="withrail sg">
       <aside className="rail rise" aria-label="About this page">
         <p className="k">Living styleguide</p>
@@ -93,14 +115,13 @@ export default async function Styleguide() {
         <Contents items={SECTIONS} />
       </aside>
       <div className="reading wide">
-        <h1 className="rise">Styleguide</h1>
         <p className="sub rise">
           Every token, the type scale, both themes, every component in its states, every chart form
           with its footing and its meter, the map flat and tilted, the objects, and the choreography.
           Nothing here is a screenshot, so nothing here can drift from the build.
         </p>
 
-        <Section id="tokens" title="Tokens" index={1}
+        <Section id="tokens" title="Tokens" index={1} icon="palette" lead
                  caption="Three layers. Primitives are Deloitte's values and the validator's derived steps; semantic tokens are what a component asks for; component aliases are owned by one component. Ratios are computed here against the surface they sit on, the same arithmetic the build gate runs.">
           <h3>Primitives</h3>
           <Swatches tokens={PRIMITIVES} against="ground" />
@@ -114,7 +135,7 @@ export default async function Styleguide() {
           <Swatches tokens={CHART} against="surface" />
         </Section>
 
-        <Section id="type" title="Type" index={2}
+        <Section id="type" title="Type" index={2} icon="quote"
                  caption="Open Sans for everything you read. Archivo, width axis and tabular figures, for every number that measures something. Fourteen named sizes; nothing else is legal.">
           <ul className="scale">
             {TYPE.map(([name, cls, sample]) => (
@@ -127,7 +148,7 @@ export default async function Styleguide() {
           </ul>
         </Section>
 
-        <Section id="space" title="Space and shape" index={3}
+        <Section id="space" title="Space and shape" index={3} icon="layers"
                  caption="A 4-based spacing scale, six radii, and the fixed measures: a 56px top bar, an 880px reading measure, a 232px rail, 44px rows in the grid and 36px in the roster.">
           <div className="spaces" aria-label="Spacing scale">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => (
@@ -143,7 +164,7 @@ export default async function Styleguide() {
           </div>
         </Section>
 
-        <Section id="themes" title="Both themes, side by side" index={4}
+        <Section id="themes" title="Both themes, side by side" index={4} icon="sun"
                  caption="Designed, not flipped: every dark token is its own step, validated against the dark surface. The top-bar switch changes the whole page; these two panes are pinned so the pair can be compared.">
           <div className="both">
             <div className="pane" data-theme="dark"><h3>Dark — the product's theme</h3><Sample /></div>
@@ -151,7 +172,7 @@ export default async function Styleguide() {
           </div>
         </Section>
 
-        <Section id="depth" title="Depth and material" index={5}
+        <Section id="depth" title="Depth and material" index={5} icon="layers"
                  caption="Four tiers. The ground and surface-1 are where work happens and carry no shadow; surface-2 is tracks and hover; surface-3 is the only tier with a shadow and a lift, and it is reserved for dialogs, menus, tooltips and toasts. Blur is legal on a dialog backdrop and nowhere else.">
           <div className="tiers">
             <div className="tier t0"><b>0 · ground</b><br />the page; hero, sections, tables</div>
@@ -161,29 +182,74 @@ export default async function Styleguide() {
           </div>
         </Section>
 
-        <Section id="components" title="Components and their states" index={6}
+        <Section id="components" title="Components and their states" index={6} icon="list-checks" lead
                  caption="Default, hover, focus-visible, pressed, selected, disabled, loading, error. Hover and focus are the browser's to show; move the pointer or tab through.">
           <h3>Buttons</h3>
+          <p className="note" style={{ marginTop: 0 }}>
+            Five variants, three sizes. The primary is the brand green with black on it, 9.23:1
+            in both themes: doc 09&rsquo;s fills-only rule governs a chart mark whose value has to
+            be readable another way, not a control carrying its own label. Visual height is 36px
+            on a fine pointer; the touch target is 44px on a coarse one.
+          </p>
           <div className="row">
-            <button type="button" className="btn primary">Publish</button>
-            <button type="button" className="btn">Accept <kbd>A</kbd></button>
-            <button type="button" className="btn quiet">Undo</button>
-            <button type="button" className="btn" aria-pressed="true">Whitespace only</button>
-            <button type="button" className="btn primary" disabled>Publish</button>
+            <button type="button" className="btn primary"><Icon name="badge-check" size={15} />Publish</button>
+            <button type="button" className="btn"><Icon name="check" size={15} />Accept <kbd>A</kbd></button>
+            <button type="button" className="btn secondary"><Icon name="download" size={15} />Download .xlsx</button>
+            <button type="button" className="btn quiet"><Icon name="undo-2" size={15} />Undo <kbd>⌘Z</kbd></button>
+            <button type="button" className="btn danger"><Icon name="user-x" size={15} />Deactivate</button>
+          </div>
+          <div className="row">
+            <button type="button" className="btn primary lg"><Icon name="upload" size={15} />Large, 44px</button>
+            <button type="button" className="btn secondary">Default, 36px</button>
+            <button type="button" className="btn secondary sm"><Icon name="pencil" size={13} />Small, 28px</button>
+            <button type="button" className="btn secondary icon-only" aria-label="More"><Icon name="chevron-down" size={15} /></button>
+            <button type="button" className="btn secondary" aria-pressed="true"><Icon name="check" size={15} />Pressed</button>
+            <button type="button" className="btn primary" disabled><Icon name="lock" size={15} />Disabled</button>
             <button type="button" className="btn primary loading" aria-busy="true">Publishing…</button>
             <button type="button" className="btn loading" aria-busy="true">Accept</button>
           </div>
           <h3>Pills and tags</h3>
           <div className="row">
-            <span className="pill ok">Deloitte</span><span className="pill no">blocked</span><span className="pill warn">draft</span><span className="pill quiet">Unclassified</span>
-            <span className="tag">High</span><span className="tag ok">2 sources</span><span className="tag warn">not anchored</span><span className="tag conflict">conflict</span><span className="tag done">accept</span><span className="tag retired">Won — retired</span>
+            <span className="pill ok"><Icon name="landmark" size={12} />Deloitte</span>
+            <span className="pill no"><Icon name="octagon-alert" size={12} />blocked</span>
+            <span className="pill warn"><Icon name="circle-dashed" size={12} />draft</span>
+            <span className="pill quiet">Unclassified</span>
+            <span className="tag">High</span>
+            <span className="tag ok"><Icon name="scroll-text" size={11} />2 sources</span>
+            <span className="tag warn"><Icon name="shield-off" size={11} />not anchored</span>
+            <span className="tag conflict"><Icon name="git-compare" size={11} />conflict</span>
+            <span className="tag done"><Icon name="check" size={11} />accept</span>
+            <span className="tag retired">Won — retired</span>
           </div>
-          <h3>Notices</h3>
-          <div className="states">
-            <div className="notice"><b>Not yet published</b><span>This page shows revision 8, which is what a Viewer sees.</span></div>
-            <div className="notice alert"><b>Not published</b><span>The gate is blocked for two reasons. Publish needs an Admin and a reason.</span></div>
-            <div className="notice ok"><b>Published</b><span>Revision 9 is frozen. The dashboard reads it now.</span></div>
-          </div>
+          <h3>Status callouts</h3>
+          <p className="note" style={{ marginTop: 0 }}>
+            Four tones, one reserved icon each. The tone is the icon and the title together, so it
+            survives forced colours and a greyscale print. This replaces <code>.notice</code>, which
+            carried every state in the application in one shape about thirty times.
+          </p>
+          <Callout tone="info" icon="layers" title="This run is batched">
+            Each pass goes to the Batch API: half the price, and it answers in hours rather than seconds.
+          </Callout>
+          <Callout tone="ok" title="Published">Revision 9 is frozen. The dashboard reads it now.</Callout>
+          <Callout tone="warn" title="Not yet published">
+            This page shows revision 8, which is what a Viewer sees.
+          </Callout>
+          <Callout tone="danger" title="The gate is blocked by 3 things"
+                   actions={<><button type="button" className="btn sm secondary">See the three</button>
+                              <button type="button" className="btn sm quiet">Publish anyway</button></>}>
+            You may publish through it with a reason, which is printed on the dashboard header.
+          </Callout>
+
+          <h3>Panels and the stat row</h3>
+          <Panel icon="database" title="Q3 2026 · revision 1" right="Published 10 Sep 2026" bare>
+            <StatRow items={[
+              { value: 259, label: "Companies", icon: "building-2" },
+              { value: 144, label: "TSX", icon: "trending-up" },
+              { value: 115, label: "TSXV", icon: "trending-up" },
+              { value: 17, label: "Deloitte audits", icon: "landmark" },
+              { value: 250, label: "Unresolved values", icon: "circle-dashed", quiet: true },
+            ]} />
+          </Panel>
           <h3>Evidence strip, numeral and word</h3>
           <div className="row">
             {(["low", "medium", "high", "very high"] as const).map((band, i) => (
@@ -251,13 +317,19 @@ export default async function Styleguide() {
           </dialog>
           <h3>Queue tiles, gate list, state bar, drop zone</h3>
           <ul className="queue" style={{ maxWidth: 640 }}>
-            <li className="here"><a href="#components"><span className="fig-lg">187</span><span className="lab">extract disagrees with AI</span><span className="start"><span className="dot" aria-hidden="true" />start here</span></a></li>
-            <li><a href="#components"><span className="fig-lg">512</span><span className="lab">need review</span></a></li>
-            <li><span className="cell"><span className="fig-lg">0</span><span className="lab">above threshold — bulk-acceptable</span></span></li>
+            <li className="here"><a href="#components"><span className="fig-lg">187</span>
+              <span className="lab"><Icon name="git-compare" size={13} />Extract disagrees with AI</span>
+              <span className="start"><Icon name="arrow-right" size={12} />start here</span></a></li>
+            <li><a href="#components"><span className="fig-lg">512</span>
+              <span className="lab"><Icon name="eye" size={13} />Need review</span></a></li>
+            <li><a href="#components"><span className="fig-lg">44</span>
+              <span className="lab"><Icon name="search-x" size={13} />No evidence found</span></a></li>
+            <li><span className="cell"><span className="fig-lg">0</span>
+              <span className="lab"><Icon name="history" size={13} />Accepted, then researched again</span></span></li>
           </ul>
           <ul className="gatelist" style={{ maxWidth: 640, marginTop: 16 }}>
-            <li className="gateline no"><span className="mark" aria-hidden="true">✗</span><span className="what">Stage coverage 6.6% — floor is 95%</span><span className="fig-sm">17 of 259</span></li>
-            <li className="gateline ok"><span className="mark" aria-hidden="true">✓</span><span className="what">No unresolved conflicts</span></li>
+            <li className="gateline no"><span className="mark"><Icon name="octagon-alert" size={16} /></span><span className="what">Stage coverage 6.6% — floor is 95%</span><span className="fig-sm">17 of 259</span></li>
+            <li className="gateline ok"><span className="mark"><Icon name="circle-check" size={16} /></span><span className="what">No unresolved conflicts</span></li>
           </ul>
           <div className="statebar" style={{ maxWidth: 640, marginTop: 20 }} aria-label="Jobs by state">
             {["completed", "completed", "completed", "researching", "awaiting_batch", "queued", "queued", "halted"].map((s, i) => <span key={i} className={`seg ${s}`} style={{ flex: 1 }} />)}
@@ -267,7 +339,7 @@ export default async function Styleguide() {
           <div style={{ maxWidth: 560 }}><DashboardSkeleton /></div>
         </Section>
 
-        <Section id="charts" title="Charts, with their footing and their meter" index={7}
+        <Section id="charts" title="Charts, with their footing and their meter" index={7} icon="gauge"
                  caption="Every population chart foots to its total. Below its coverage floor a chart renders its meter in the same footprint, so nothing jumps when coverage crosses the line.">
           <h3>Population bars, one hue, with the footing</h3>
           <Bars bars={FOOTPRINT} proof={proofLine(FOOTPRINT, POP)} />
@@ -291,10 +363,10 @@ export default async function Styleguide() {
           <table className="matrix" style={{ maxWidth: 560 }}>
             <thead><tr><th>From → to</th><th className="n">Companies</th><th>Direction</th></tr></thead>
             <tbody>
-              <tr><td>Tier 6 → Tier 5</td><td className="n">4</td><td className="up">▲ improved</td></tr>
-              <tr><td>Tier 2 → Tier 3</td><td className="n">1</td><td className="down">▼ declined</td></tr>
-              <tr><td>Unclassified → Tier 1</td><td className="n">12</td><td className="research">● research completed</td></tr>
-              <tr><td>Tier 4 → Tier 4</td><td className="n">17</td><td className="diag">— unchanged</td></tr>
+              <tr><td>Tier 6 → Tier 5</td><td className="n">4</td><td className="up"><Icon name="trending-up" size={13} /> improved</td></tr>
+              <tr><td>Tier 2 → Tier 3</td><td className="n">1</td><td className="down"><Icon name="trending-down" size={13} /> declined</td></tr>
+              <tr><td>Unclassified → Tier 1</td><td className="n">12</td><td className="research"><Icon name="circle-check" size={13} /> research completed</td></tr>
+              <tr><td>Tier 4 → Tier 4</td><td className="n">17</td><td className="diag"><Icon name="minus" size={13} /> unchanged</td></tr>
             </tbody>
           </table>
           <h3 style={{ marginTop: 32 }}>The hero sentence and the ledger line</h3>
@@ -302,7 +374,7 @@ export default async function Styleguide() {
           <Ledger items={[{ value: 259, label: "Companies" }, { value: 144, label: "TSX" }, { value: 115, label: "TSXV" }, { value: 12, label: "Unresolved values", quiet: true }]} />
         </Section>
 
-        <Section id="map" title="The map, tilted and flat" index={8}
+        <Section id="map" title="The map, tilted and flat" index={8} icon="map"
                  caption="The same choropleth twice. The tilted form is the hero on first load and settles on scroll or touch; height never encodes anything. Its footing is the footprint proof, because provinces count a company once each and do not add to the population.">
           <h3>Hero, tilted until touched</h3>
           <FootprintMap rows={PROVINCES} hero twinHref="#map-bars" />
@@ -313,7 +385,16 @@ export default async function Styleguide() {
           <Bars bars={PROVINCES.map((p) => ({ label: p.code, n: p.n, pct: Math.round((1000 * p.n) / 27) / 10 }))} />
         </Section>
 
-        <Section id="objects" title="The object family" index={9}
+        <Section id="icons" title="The icon vocabulary" index={9} icon="gem"
+                 caption="Seventy-three glyphs from Lucide 1.45.0, vendored as path data rather than taken as a dependency. Meanings are fixed: the first four are the severities and mean nothing else.">
+          <div className="icons">
+            {ICON_TOUR.map(([name, meaning]) => (
+              <div key={name}><Icon name={name} size={17} /><div><b>{meaning}</b><small>{name}</small></div></div>
+            ))}
+          </div>
+        </Section>
+
+        <Section id="objects" title="The object family" index={10}
                  caption="The full stop first, then three drawn from the subject's world. Each has a rendering brief in public/brand/objects and a flat fallback; none may appear inside a working grid.">
           <div className="objects">
             <figure><div style={{ background: "var(--ground)", borderRadius: 10, padding: 8 }}><Orb size={200} /></div><figcaption>The full stop. Matte satin, lit upper-left, contact shadow. Rendered.</figcaption></figure>
@@ -324,7 +405,7 @@ export default async function Styleguide() {
           </div>
         </Section>
 
-        <Section id="motion" title="Motion, with a play control" index={10}
+        <Section id="motion" title="Motion, with a play control" index={11} icon="play"
                  caption="Durations 120 / 180 / 260 / 400 / 600ms; one ease-out for entrances, one ease-in-out for state changes. First load: sections rise in a 60ms stagger, bars grow from the left, the footing's addends arrive in order and the total lands last. Nothing on grid rows. Nothing loops.">
           <Replay>
             <div className="section rise" style={{ "--i": 0, paddingTop: 0 } as CSSProperties}>
@@ -335,6 +416,7 @@ export default async function Styleguide() {
         </Section>
       </div>
     </div>
+    </Page>
   );
 }
 
@@ -352,7 +434,9 @@ function Sample() {
         <span className="pill ok">Deloitte</span><span className="tag conflict">conflict</span><span className="tag warn">not anchored</span>
         <a href="#themes">A link</a>
       </div>
-      <p className="notice" style={{ marginTop: 16, marginBottom: 0 }}><b>Published through a blocked gate</b><span>Stage coverage 6.6% against a 95% floor; day-one baseline.</span></p>
+      <Callout tone="warn" title="Published through a blocked gate" className="rise">
+        Stage coverage 6.6% against a 95% floor; day-one baseline.
+      </Callout>
     </>
   );
 }

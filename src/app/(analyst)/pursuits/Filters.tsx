@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { SORTS, UNASSIGNED, type PursuitFilter, type PursuitSort } from "../../../lib/pursuit/index.ts";
 import type { Person } from "./[id]/PursuitDesk.tsx";
+import Icon from "../../_ui/Icon.tsx";
 
 /**
  * A plain GET form, and therefore no JavaScript at all.
@@ -57,7 +58,7 @@ export default function Filters({ filter, sort, people, priorities, active, tota
         </select>
       </p>
       <p className="field actions">
-        <button type="submit" className="btn">Narrow</button>
+        <button type="submit" className="btn primary sm"><Icon name="search" size={13} />Narrow</button>
         {active && <Link href={"/pursuits" as Route} prefetch={false}>Clear</Link>}
       </p>
       {active && (

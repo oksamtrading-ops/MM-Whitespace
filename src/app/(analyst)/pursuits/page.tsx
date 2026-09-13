@@ -10,9 +10,12 @@ import {
 import Filters from "./Filters.tsx";
 import type { Person } from "./[id]/PursuitDesk.tsx";
 import Sweep from "./Sweep.tsx";
+import Callout from "../../_ui/Callout.tsx";
+import Icon from "../../_ui/Icon.tsx";
+import Page from "../../_ui/Page.tsx";
+import Panel, { StatRow } from "../../_ui/Panel.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
-import Facts from "../../_ui/Facts.tsx";
 import { fmtDate } from "../../_ui/format.ts";
 
 export const dynamic = "force-dynamic";
@@ -66,8 +69,7 @@ export default async function Pursuits(
   const soon = allOpen.reduce((n, p) => n + p.dueSoonActions, 0);
 
   return (
-    <>
-      <h1>Pursuits</h1>
+    <Page title="Pursuits" count={allOpen.length}>
       <p className="lede">
         What the practice has decided to do about a company, and who is doing it.
         Everything here is somebody&rsquo;s judgement rather than a researched value,
@@ -75,27 +77,25 @@ export default async function Pursuits(
       </p>
 
       {(overdue > 0 || soon > 0) && (
-        <p className={`notice${overdue > 0 ? " alert" : ""}`} role="status">
-          <b>
-            {overdue > 0
-              ? `${overdue} action${overdue === 1 ? " is" : "s are"} past its due date.`
-              : `${soon} action${soon === 1 ? " is" : "s are"} due within a week.`}
-          </b>
-          <span>
-            {overdue > 0 && soon > 0 && `${soon} more ${soon === 1 ? "is" : "are"} due within a week. `}
-            A date nothing ever mentions is not a date, which is why this is here
-            rather than only on the action.
-          </span>
-        </p>
+        <Callout tone={overdue > 0 ? "danger" : "warn"} live icon="calendar-clock"
+                 title={overdue > 0
+                   ? `${overdue} action${overdue === 1 ? " is" : "s are"} past its due date`
+                   : `${soon} action${soon === 1 ? " is" : "s are"} due within a week`}>
+          {overdue > 0 && soon > 0 && `${soon} more ${soon === 1 ? "is" : "are"} due within a week. `}
+          A date nothing ever mentions is not a date, which is why this is here rather than
+          only on the action.
+        </Callout>
       )}
 
-      <Facts items={[
-        { label: "Pursuits", value: allOpen.length, figure: true },
-        { label: "Open actions", value: open, figure: true },
-        { label: "Overdue", value: overdue, figure: true },
-        { label: "Unprioritised", value: allOpen.filter((p) => !p.priority).length, figure: true },
-        { label: "Closed", value: closed.length, figure: true },
-      ]} />
+      <Panel icon="crosshair" title="What is open" bare>
+        <StatRow items={[
+          { value: allOpen.length, label: "Pursuits", icon: "crosshair" },
+          { value: open, label: "Open actions", icon: "list-checks" },
+          { value: overdue, label: "Overdue", icon: "calendar-clock" },
+          { value: allOpen.filter((p) => !p.priority).length, label: "Unprioritised", icon: "circle-dashed", quiet: true },
+          { value: closed.length, label: "Closed", icon: "lock", quiet: true },
+        ]} />
+      </Panel>
 
       {stranded.length > 0 && (
         <Section id="stranded" title="Left behind by a renamed term"
@@ -132,9 +132,9 @@ export default async function Pursuits(
                 <th scope="col">Company</th>
                 <th scope="col">Priority</th>
                 <th scope="col">Owner</th>
-                <th scope="col">Actions</th>
+                <th scope="col" className="n">Actions</th>
                 <th scope="col">Due</th>
-                <th scope="col">Notes</th>
+                <th scope="col" className="n">Notes</th>
                 <th scope="col">Last activity</th>
               </tr>
             </thead>
@@ -155,19 +155,19 @@ export default async function Pursuits(
                   {/* One text node, not three: React separates adjacent ones
                       in server-rendered HTML, which breaks the reading of
                       "1 open of 3" as much for a screen reader as for a test. */}
-                  <td className="fig-sm">
+                  <td className="n fig-sm">
                     {p.totalActions > p.openActions
                       ? `${p.openActions} open of ${p.totalActions}`
                       : `${p.openActions} open`}
                   </td>
                   <td>
                     {p.overdueActions > 0
-                      ? <span className="tag alert">{p.overdueActions} overdue</span>
+                      ? <span className="tag alert"><Icon name="calendar-clock" size={11} />{p.overdueActions} overdue</span>
                       : p.dueSoonActions > 0
-                        ? <span className="tag">{p.dueSoonActions} due soon</span>
+                        ? <span className="tag"><Icon name="clock" size={11} />{p.dueSoonActions} due soon</span>
                         : <span className="meta">—</span>}
                   </td>
-                  <td className="fig-sm">{p.notes}</td>
+                  <td className="n fig-sm">{p.notes}</td>
                   <td>{fmtDate(p.lastActivityAt)}</td>
                 </tr>
               ))}
@@ -207,6 +207,6 @@ export default async function Pursuits(
           </table>
         </Section>
       )}
-    </>
+    </Page>
   );
 }

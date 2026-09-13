@@ -4,6 +4,8 @@ import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import Facts from "../../_ui/Facts.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
+import Icon from "../../_ui/Icon.tsx";
+import Page from "../../_ui/Page.tsx";
 import { fmtDate, periodName } from "../../_ui/format.ts";
 import UploadForm from "./UploadForm.tsx";
 
@@ -26,9 +28,10 @@ export default async function Upload() {
   const latest = await ctx.db.get("select label, status, market_cap_as_of from periods order by market_cap_as_of desc limit 1") as { label: string; status: string; market_cap_as_of: string } | undefined;
 
   return (
+    <Page title="Upload a workbook"
+          meta={latest ? `Latest: ${periodName(latest.label).name} · ${latest.status}` : undefined}>
     <div className="withrail">
       <div className="reading">
-        <h1 className="rise">Upload a workbook</h1>
         <p className="sub rise">
           The quarter starts here. The workbook is read and checked; nothing reaches the
           database until you have seen what it found.
@@ -52,12 +55,15 @@ export default async function Upload() {
               { label: "Period", value: periodName(latest.label).name, figure: true },
               { label: "Market cap as of", value: fmtDate(latest.market_cap_as_of) },
               { label: "Status", value: (
-                  <span className={`pill ${latest.status === "published" ? "ok" : "warn"}`}>{latest.status}</span>
+                  <span className={`pill ${latest.status === "published" ? "ok" : "warn"}`}>
+                    <Icon name={latest.status === "published" ? "circle-check" : "circle-dashed"} size={12} />{latest.status}
+                  </span>
                 ) },
             ]} />
           </>
         )}
       </aside>
     </div>
+    </Page>
   );
 }

@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { requestSignInLink, type SignInResult } from "./actions.ts";
+import Callout from "../_ui/Callout.tsx";
 
 function Submit() {
   const { pending } = useFormStatus();
@@ -20,10 +21,9 @@ export default function SignInForm({ invalid = false }: { invalid?: boolean }) {
   return (
     <form action={action} className="magiclink">
       {invalid && !state && (
-        <p className="notice alert" role="status">
-          That sign-in link cannot be used. Links last fifteen minutes and work once —
-          ask for another below.
-        </p>
+        <Callout tone="danger" live title="That sign-in link cannot be used">
+          Links last fifteen minutes and work once — ask for another below.
+        </Callout>
       )}
       <label htmlFor="email">Work email</label>
       <input id="email" name="email" type="email" autoComplete="email" required
@@ -35,7 +35,7 @@ export default function SignInForm({ invalid = false }: { invalid?: boolean }) {
       <Submit />
       {/* One live region for the one answer this form ever gives. */}
       <div role="status" aria-live="polite">
-        {state && <p className="notice" style={{ marginTop: 16 }}>{state.message}</p>}
+        {state && <Callout tone="ok" title="Check your inbox">{state.message}</Callout>}
       </div>
     </form>
   );

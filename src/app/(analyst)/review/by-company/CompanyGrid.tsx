@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useOptimistic, useRef, useState } from "react";
 import { useDecide } from "../useDecide.ts";
 import ShortcutsDialog from "../[field]/ShortcutsDialog.tsx";
+import Icon from "../../../_ui/Icon.tsx";
 
 export type Cell = {
   fieldKey: string;
@@ -201,7 +202,7 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                  }} />
           {!query && <kbd aria-hidden="true">/</kbd>}
         </div>
-        <button type="button" className="btn" onClick={() => setShowHelp(true)} aria-expanded={showHelp}>
+        <button type="button" className="btn quiet" onClick={() => setShowHelp(true)} aria-expanded={showHelp}>
           Keys <kbd>?</kbd>
         </button>
         <span className="spacer" />
@@ -260,9 +261,9 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                           <i key={n} className={n <= (BAND_CELLS[c.band] ?? 0) ? "on" : ""} />
                         ))}
                       </span>
-                      {c.conflict && <span className="tag conflict">conflict</span>}
-                      {c.decided && <span className="tag done">{c.decision}</span>}
-                      {c.newerThanDecision && <span className="tag warn">newer research</span>}
+                      {c.conflict && <span className="tag conflict"><Icon name="git-compare" size={11} />conflict</span>}
+                      {c.decided && <span className="tag done"><Icon name="check" size={11} />{c.decision}</span>}
+                      {c.newerThanDecision && <span className="tag warn"><Icon name="history" size={11} />newer research</span>}
                     </>
                   ) : <span className="meta">—</span>}
                 </div>
@@ -297,7 +298,9 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
               <p className="anchor">
                 <span>{cell.anchorMode.replace(/_/g, " ")}</span>
                 {cell.sourceUrl && (
-                  <a href={cell.sourceUrl} target="_blank" rel="noopener noreferrer">open source ↗</a>
+                  <a href={cell.sourceUrl} target="_blank" rel="noopener noreferrer">
+                    open source<Icon name="external-link" size={12} />
+                  </a>
                 )}
               </p>
               {cell.tierNote && <p className="tiernote">{cell.tierNote}</p>}
@@ -313,9 +316,9 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                   )}
                   {cell.conflict ? (
                     <>
-                      <button type="button" className="btn" disabled={busy} onClick={keep}>
+                      <button type="button" className="btn secondary" disabled={busy} onClick={keep}>
                         Keep extract <kbd>K</kbd></button>
-                      <button type="button" className="btn" disabled={busy} onClick={() => submit("accept")}>
+                      <button type="button" className="btn primary" disabled={busy} onClick={() => submit("accept")}>
                         Use AI <kbd>A</kbd></button>
                     </>
                   ) : (
@@ -323,9 +326,9 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                             onClick={() => submit("accept")}>
                       {cell.decided ? "Take the newer research" : "Accept"} <kbd>A</kbd></button>
                   )}
-                  <button type="button" className="btn" disabled={busy} onClick={() => setEditing(true)}>
+                  <button type="button" className="btn secondary" disabled={busy} onClick={() => setEditing(true)}>
                     Override <kbd>O</kbd></button>
-                  <button type="button" className="btn" disabled={busy} onClick={() => setFlagging(true)}>
+                  <button type="button" className="btn quiet" disabled={busy} onClick={() => setFlagging(true)}>
                     Flag <kbd>F</kbd></button>
                 </div>
               )}

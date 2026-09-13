@@ -5,6 +5,7 @@ import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import { cellLabel, companyRows, formatValue, tierConsequence } from "../../../../lib/review/queue.ts";
 import Facts from "../../../_ui/Facts.tsx";
 import Refusal from "../../../_ui/Refusal.tsx";
+import Page from "../../../_ui/Page.tsx";
 import { periodName } from "../../../_ui/format.ts";
 import CompanyGrid, { type Row } from "./CompanyGrid.tsx";
 
@@ -60,15 +61,9 @@ export default async function ByCompany(
   })));
 
   return (
-    <>
-      <p className="crumb rise"><Link href="/review" prefetch={false}>← Review</Link></p>
-      <div className="titlerow rise">
-        <h1>By company</h1>
-        <Facts items={[
-          { label: "Period", value: periodName(period.label).name, figure: true },
-          { label: "Companies", value: rows.length, figure: true },
-        ]} />
-      </div>
+    <Page title="By company" count={rows.length}
+          back={{ href: "/review", label: "Review" }}
+          meta={periodName(period.label).name}>
       <p className="sub rise" style={{ maxWidth: "68ch" }}>
         One company across the row, for the conversation where the unit of interest genuinely
         is one company. Reviewing is faster down a column, because judging one field reuses a
@@ -79,6 +74,6 @@ export default async function ByCompany(
 
       <CompanyGrid periodId={period.id} fields={fields.map((f) => ({ fieldKey: f.fieldKey, label: f.label }))}
                    rows={grid} initialQuery={q} />
-    </>
+    </Page>
   );
 }

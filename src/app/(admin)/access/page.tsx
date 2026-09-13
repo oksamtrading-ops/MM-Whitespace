@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden } from "../../../lib/auth/session.ts";
-import Ledger from "../../_ui/Ledger.tsx";
+import Callout from "../../_ui/Callout.tsx";
+import Icon from "../../_ui/Icon.tsx";
+import Page from "../../_ui/Page.tsx";
+import Panel, { StatRow } from "../../_ui/Panel.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
 import { setActive } from "./actions.ts";
@@ -42,25 +45,30 @@ export default async function AccessReview() {
   });
 
   return (
+    <Page title="Access review" count={users.length}>
     <div className="reading">
-      <h1 className="rise">Access review</h1>
       <p className="sub rise">
         Whitespace sits outside Deloitte&rsquo;s own estate, so there is no leaver process
         behind it. Deactivating an account here is the only thing that removes access.
       </p>
 
       <div className="rise" style={{ "--i": 1 } as React.CSSProperties}>
-        <Ledger items={[
-          { value: active.length, label: "Active" },
-          { value: users.length - active.length, label: "Deactivated", quiet: true },
-          { value: stale.length, label: `Not seen in ${STALE_DAYS} days` },
-        ]} />
+        <Panel icon="users" title="Accounts" bare>
+          <StatRow items={[
+            { value: active.length, label: "Active", icon: "circle-check" },
+            { value: users.length - active.length, label: "Deactivated", icon: "user-x", quiet: true },
+            { value: stale.length, label: `Not seen in ${STALE_DAYS} days`, icon: "clock-alert" },
+          ]} />
+        </Panel>
       </div>
 
       {stale.length > 0 && (
-        <div className="notice rise" role="status" style={{ "--i": 2 } as React.CSSProperties}>
-          <b>{stale.length} active account{stale.length === 1 ? "" : "s"} to review</b>
-          <span>Never signed in, or not seen for more than {STALE_DAYS} days. Each is one click from deactivation below.</span>
+        <div className="rise" style={{ "--i": 2 } as React.CSSProperties}>
+          <Callout tone="warn" live
+                   title={`${stale.length} active account${stale.length === 1 ? "" : "s"} to review`}>
+            Never signed in, or not seen for more than {STALE_DAYS} days. Each is one click from
+            deactivation below.
+          </Callout>
         </div>
       )}
 
@@ -68,8 +76,9 @@ export default async function AccessReview() {
         <table className="accounts">
           <caption>Every change is written to the audit log with the actor and the target.</caption>
           <thead>
-            <tr><th>Email</th><th>Role</th><th>Last sign-in</th><th>Status</th>
-                <th><span className="sr-only">Action</span></th></tr>
+            <tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last sign-in</th>
+                <th scope="col">Status</th>
+                <th scope="col" className="act"><span className="sr-only">Action</span></th></tr>
           </thead>
           <tbody>
             {users.map((u) => {
@@ -78,7 +87,7 @@ export default async function AccessReview() {
               const self = u.id === ctx.user.id;
               return (
                 <tr key={u.id}>
-                  <td>{u.email}{self && <span className="pill quiet you">you</span>}</td>
+                  <th scope="row">{u.email}{self && <span className="pill quiet you">you</span>}</th>
                   <td style={{ textTransform: "capitalize" }}>{u.role}</td>
                   <td>
                     {u.last_sign_in_at
@@ -87,14 +96,14 @@ export default async function AccessReview() {
                               own text nodes with comment markers between them. */}
                           <span className="meta">{`(${agoLabel(days as number)})`}</span></>
                       : <span className="meta">never</span>}
-                    {isStale && <> <span className="pill warn">review</span></>}
+                    {isStale && <> <span className="pill warn"><Icon name="clock-alert" size={12} />review</span></>}
                   </td>
                   <td>
                     {u.is_active
-                      ? <span className="pill ok">active</span>
-                      : <span className="pill no">deactivated</span>}
+                      ? <span className="pill ok"><Icon name="circle-check" size={12} />active</span>
+                      : <span className="pill no"><Icon name="user-x" size={12} />deactivated</span>}
                   </td>
-                  <td>
+                  <td className="act">
                     <form action={setActive} className="inline">
                       <input type="hidden" name="userId" value={u.id} />
                       <input type="hidden" name="active" value={u.is_active ? "0" : "1"} />
@@ -109,5 +118,6 @@ export default async function AccessReview() {
         </table>
       </Section>
     </div>
+    </Page>
   );
 }

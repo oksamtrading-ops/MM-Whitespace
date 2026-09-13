@@ -6,6 +6,7 @@ import {
   CONFIRM_ABOVE, estimate, parseTickers, type Estimate, type Pass, type Scope,
 } from "../../../lib/enrich/scope.ts";
 import { formatMoney } from "../../../lib/format/fields.ts";
+import Callout from "../../_ui/Callout.tsx";
 
 /** One thing the Analyst may start: a scope, and in live mode the pass it belongs to. */
 export type ScopeOffer = {
@@ -99,9 +100,8 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
         <span className="hint">Warns at 80%, halts at 100%. A run cannot exist without one.</span>
       </p>
 
-      <div className={`notice${overBudget ? " alert" : ""}`} role="status" aria-live="polite">
-        <b>Estimate</b>
-        <span>
+      <Callout tone={overBudget ? "danger" : "info"} live icon="coins" title="Estimate">
+        <>
           {est.count} {est.count === 1 ? "company" : "companies"}, about{" "}
           <strong>{formatMoney(est.estimatedUsd, "USD", { cents: true })}</strong> and{" "}
           <strong>{est.estimatedMinutes} min</strong> at the current worker cap.
@@ -109,8 +109,8 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
           {chosen.pass
             ? " The per-company figure is Run 1's measured cost for this pass, plus a margin."
             : " The per-company figure is the design's placeholder."}
-        </span>
-      </div>
+        </>
+      </Callout>
 
       {est.needsTypedCount && (
         <p className="field">
@@ -125,7 +125,7 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
 
       <div role="status" aria-live="polite">
         {state && !state.ok && (
-          <div className="notice alert"><b>Not started</b><span>{state.message}</span></div>
+          <Callout tone="danger" title="Not started">{state.message}</Callout>
         )}
       </div>
 

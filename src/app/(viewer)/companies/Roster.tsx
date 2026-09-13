@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CompanyRow } from "../../../lib/profile/company.ts";
 import { provinceCode, provinceName } from "../../../lib/publish/jurisdictions.ts";
 import { formatMoney } from "../../../lib/format/fields.ts";
+import Icon from "../../_ui/Icon.tsx";
 
 const TIER_WORD: Record<string, string> = {
   unclassified_no_stage_evidence: "No stage research",
@@ -29,7 +30,6 @@ type Sort = { key: Key; dir: 1 | -1 };
 const COLUMNS: Array<{ key: Key; label: string; numeric?: boolean }> = [
   { key: "name", label: "Company" },
   { key: "ticker", label: "Ticker" },
-  { key: "exchange", label: "Exchange" },
   { key: "tier", label: "Tier" },
   { key: "stage", label: "Stage" },
   { key: "footprint", label: "Footprint" },
@@ -48,7 +48,10 @@ export default function Roster({ rows, deloitteAudits, province = null }: {
 }) {
   const [query, setQuery] = useState("");
   const [onlyWhitespace, setOnlyWhitespace] = useState(false);
-  const [sort, setSort] = useState<Sort>({ key: "name", dir: 1 });
+  // Market cap descending, not alphabetical: alphabetical puts 1911 Gold
+  // above Agnico Eagle, and the first screen of 259 rows should be the names
+  // that matter.
+  const [sort, setSort] = useState<Sort>({ key: "marketCap", dir: -1 });
   const findRef = useRef<HTMLInputElement | null>(null);
   const prov = province ? provinceCode(province) : null;
 
@@ -94,13 +97,14 @@ export default function Roster({ rows, deloitteAudits, province = null }: {
                  value={query} onChange={(e) => setQuery(e.target.value)} />
           {!query && <kbd aria-hidden="true">/</kbd>}
         </div>
-        <button type="button" className="btn" aria-pressed={onlyWhitespace}
+        <button type="button" className={`btn secondary${onlyWhitespace ? " on" : ""}`} aria-pressed={onlyWhitespace}
                 onClick={() => setOnlyWhitespace((v) => !v)}>
+          <Icon name={onlyWhitespace ? "check" : "landmark"} size={15} />
           {onlyWhitespace ? "Showing whitespace only" : "Whitespace only"}
         </button>
         {prov && (
-          <Link className="btn quiet" href="/companies" prefetch={false}>
-            With a property in {provinceName(prov)} — clear
+          <Link className="btn secondary" href="/companies" prefetch={false}>
+            <Icon name="x" size={15} />With a property in {provinceName(prov)}
           </Link>
         )}
         <span className="spacer" />
@@ -122,7 +126,7 @@ export default function Roster({ rows, deloitteAudits, province = null }: {
                         aria-sort={sort.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
                       <button type="button" className="sort" onClick={() => toggle(c.key)}>
                         {c.label}
-                        {sort.key === c.key && <span className="dir" aria-hidden="true">{sort.dir === 1 ? "▲" : "▼"}</span>}
+                        <Icon name={sort.key === c.key && sort.dir === -1 ? "chevron-down" : "chevron-up"} size={12} />
                       </button>
                     </th>
                   ))}
@@ -134,19 +138,21 @@ export default function Roster({ rows, deloitteAudits, province = null }: {
                     <th scope="row">
                       <Link href={`/companies/${r.companyId}` as Route} prefetch={false}>{r.name}</Link>
                     </th>
-                    <td className="fig-sm">{r.ticker ?? "—"}</td>
-                    <td className="meta">{r.exchange ?? "—"}</td>
+                    <td className="fig-sm">
+                      {r.ticker ?? "—"}
+                      {r.exchange && <span className="dim">{` · ${r.exchange}`}</span>}
+                    </td>
                     <td>
                       {r.tier === null
                         ? <span className="pill quiet">{TIER_WORD[r.status] ?? "Unclassified"}</span>
-                        : <span className="fig-sm">Tier {r.tier}</span>}
+                        : <span className="fig-sm">{`Tier ${r.tier}`}</span>}
                     </td>
                     <td>{r.tier === null ? <span className="meta">—</span> : STAGE_OF_TIER[r.tier]}</td>
                     <td>{FOOTPRINT_WORD[r.footprint] ?? r.footprint}</td>
                     <td>{r.market ?? <span className="meta">no Deloitte market</span>}</td>
                     <td>
                       {r.auditor === "Deloitte"
-                        ? <span className="pill ok">Deloitte</span>
+                        ? <span className="pill ok"><Icon name="landmark" size={12} />Deloitte</span>
                         : r.auditor ?? <span className="meta">not known</span>}
                     </td>
                     <td className="n fig-sm">{r.marketCap === null ? "—" : formatMoney(r.marketCap, "CAD", { compact: true })}</td>

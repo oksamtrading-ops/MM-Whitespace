@@ -10,6 +10,9 @@ import { evidenceBand } from "../../../../lib/review/decide.ts";
 import Facts from "../../../_ui/Facts.tsx";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Section from "../../../_ui/Section.tsx";
+import Callout from "../../../_ui/Callout.tsx";
+import Icon from "../../../_ui/Icon.tsx";
+import Page from "../../../_ui/Page.tsx";
 import { fmtDate, periodName } from "../../../_ui/format.ts";
 
 export const dynamic = "force-dynamic";
@@ -83,19 +86,16 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
   const researched = p.values.filter((v) => v.source === "ai_accepted" || v.strength !== null);
 
   return (
+    <Page title={p.name}
+          back={{ href: "/companies", label: "Companies" }}
+          meta={p.ticker ? `${p.ticker}${p.exchange ? ` · ${p.exchange}` : ""}` : undefined}
+          actions={canPursue ? <PursuitLink companyId={id} pursuitId={pursuitId} /> : undefined}>
     <div className="withrail">
       <div className="reading">
-        <p className="crumb rise"><Link href="/companies" prefetch={false}>← Companies</Link></p>
-        <h1 className="rise">{p.name}</h1>
-
-        {canPursue && (
-          <PursuitLink companyId={id} pursuitId={pursuitId} />
-        )}
 
         {pending && (pending.fields.length > 0 || pending.tier) && (
-          <div className="notice rise" role="status">
-            <b>Not yet published</b>
-            <span>
+          <Callout tone="warn" live title="Not yet published" className="rise">
+            <>
               This page shows revision {pending.revision}, which is what a Viewer sees.{" "}
               {pending.tier && <>Since then its tier has moved to <strong>{tierWords(pending.tier.to)}</strong>
                 {" "}(published: {tierWords(pending.tier.from)}). </>}
@@ -104,8 +104,8 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
                 {" "}in review: {pending.fields.join(", ")}.{" "}
               </>}
               <Link href={"/publish" as Route} prefetch={false}>Publish revision {pending.revision + 1}</Link> to show them.
-            </span>
-          </div>
+            </>
+          </Callout>
         )}
 
         {/* The two things a partner opened this page to learn. */}
@@ -113,7 +113,7 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
           {p.tier
             ? (p.tier.tier === null
                 ? <>{UNCLASSIFIED[p.tier.status] ?? "Unclassified"}.</>
-                : <><span className="fig-lg">Tier {p.tier.tier}</span>.</>)
+                : <><span className="fig-lg">{`Tier ${p.tier.tier}`}</span>.</>)
             : <>No tier has been computed.</>}
           {" "}
           {p.tier && <span className="quiet">{FOOTPRINT[p.tier.footprint] ?? p.tier.footprint}.</span>}
@@ -126,7 +126,7 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
             : <>The auditor is <b>not yet known</b>. <span className="quiet">Nothing can be said about the relationship until it is.</span></>}
         </p>
 
-        <Section id="why" title="Why this tier" index={1}
+        <Section id="why" title="Why this tier" index={1} icon="layers" lead
                  caption={p.trace
                    ? "Each rule in order. The one that fired decides, and the inputs it read are shown beside it."
                    : "The rule trace is not part of the frozen snapshot, and the rules have been re-run since this revision was published."}>
@@ -136,7 +136,7 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
             <ol className="trace">
               {p.trace.map((step) => (
                 <li key={step.ord} className={step.matched ? "fired" : ""}>
-                  <span className="mark" aria-hidden="true">{step.matched ? "●" : "○"}</span>
+                  <span className="mark"><Icon name={step.matched ? "circle-check" : "circle-dashed"} size={14} /></span>
                   {/* An unmapped rule id shows as itself once, not twice: the
                       map is a courtesy and the id is the fact. */}
                   <span className="what">
@@ -162,15 +162,15 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
               {/* Not when review has already classified it: the stage is
                   researched, and only waiting to be published. */}
               {p.tier.tier === null && canReview && !pending?.tier && (
-                <Link href={"/review/stage_evidence_state?bucket=need_review" as Route} prefetch={false}>
-                  Research the stage →
+                <Link className="btn sm secondary" href={"/review/stage_evidence_state?bucket=need_review" as Route} prefetch={false}>
+                  <Icon name="pickaxe" size={13} />Research the stage
                 </Link>
               )}
             </p>
           )}
         </Section>
 
-        <Section id="fees" title="Fees" index={2}
+        <Section id="fees" title="Fees" index={2} icon="banknote"
                  caption="From the company's own filings, in the currency it reports in, for the fiscal year shown.">
           {fees.length === 0 || fees.every((f) => f.value === null)
             ? <p className="empty">No fee has been recorded for this company.</p>
@@ -179,11 +179,12 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
             )}
         </Section>
 
-        <Section id="values" title="Every value, and where it came from" index={3}
+        <Section id="values" title="Every value, and where it came from" index={3} icon="scroll-text"
                  caption="Nothing here is presented without its provenance. A researched value carries the evidence that produced it.">
           <table className="provenance">
             <thead>
-              <tr><th>Field</th><th>Value</th><th>Source</th><th>Evidence</th></tr>
+              <tr><th scope="col">Field</th><th scope="col">Value</th>
+                  <th scope="col">Source</th><th scope="col">Evidence</th></tr>
             </thead>
             <tbody>
               {p.values.map((v) => <ValueRow key={v.fieldKey} v={v} />)}
@@ -197,14 +198,14 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
           )}
         </Section>
 
-        <Section id="changed" title="Since last period" index={4}>
+        <Section id="changed" title="Since last period" index={4} icon="history">
           {p.tier?.priorTier === null || p.tier?.priorTier === undefined
             ? <p className="empty">
                 This is the first published period, so there is nothing to compare against.
                 Next quarter this says what moved and why.
               </p>
             : <p>
-                Tier {p.tier.priorTier} → {p.tier.tier ?? "Unclassified"}
+                {`Tier ${p.tier.priorTier} → ${p.tier.tier ?? "Unclassified"}`}
                 {p.tier.changed ? " — changed" : " — unchanged"}.
               </p>}
         </Section>
@@ -224,7 +225,9 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
         ]} />
         {websiteUrl && (
           <p style={{ marginTop: 20 }}>
-            <a href={websiteUrl} target="_blank" rel="noopener noreferrer">Company website ↗</a>
+            <a className="btn sm secondary" href={websiteUrl} target="_blank" rel="noopener noreferrer">
+              <Icon name="external-link" size={13} />Company website
+            </a>
           </p>
         )}
         {!p.publication && (
@@ -234,6 +237,7 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
         )}
       </aside>
     </div>
+    </Page>
   );
 }
 
@@ -276,12 +280,12 @@ function ValueRow({ v }: { v: ProfileValue }) {
   const band = v.strength === null ? null : evidenceBand(v.strength);
   return (
     <tr>
-      <td>{v.label}</td>
-      <td>
+      <th scope="row">{v.label}</th>
+      <td className="wrap">
         {v.display}
         {v.inheritedFrom && (
           <span className="pill warn" title={`From ${v.inheritedFrom.label}`}>
-            inherited · {v.inheritedFrom.ageDays}d old
+            <Icon name="history" size={12} />inherited · {v.inheritedFrom.ageDays}d old
           </span>
         )}
         {v.excerpt && (
@@ -291,14 +295,16 @@ function ValueRow({ v }: { v: ProfileValue }) {
             {v.sources.length > 0 && (
               <p className="meta">
                 {v.sources.map((s, i) => (
-                  <a key={i} href={s} target="_blank" rel="noopener noreferrer">source {i + 1} ↗</a>
+                  <a key={i} href={s} target="_blank" rel="noopener noreferrer">
+                    source {i + 1}<Icon name="external-link" size={12} />
+                  </a>
                 ))}
               </p>
             )}
           </details>
         )}
       </td>
-      <td className="meta">{SOURCE_LABEL[v.source] ?? v.source}</td>
+      <td className="meta wrap">{SOURCE_LABEL[v.source] ?? v.source}</td>
       <td>
         {band === null
           ? <span className="meta">{v.evidenceState === "asserted" ? "—" : v.evidenceState.replace(/_/g, " ")}</span>

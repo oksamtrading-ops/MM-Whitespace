@@ -6,11 +6,14 @@ import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import { getPursuit, vocabulary } from "../../../../lib/pursuit/index.ts";
 import Refusal from "../../../_ui/Refusal.tsx";
+import Icon from "../../../_ui/Icon.tsx";
+import Page from "../../../_ui/Page.tsx";
 import Section from "../../../_ui/Section.tsx";
 import Facts from "../../../_ui/Facts.tsx";
 import { fmtDate } from "../../../_ui/format.ts";
 import PursuitDesk, { type Person } from "./PursuitDesk.tsx";
 import ActionsTable from "./ActionsTable.tsx";
+import Callout from "../../../_ui/Callout.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Pursuit" };
@@ -42,9 +45,12 @@ export default async function Pursuit({ params }: { params: Promise<{ id: string
     .map((p): Person => ({ id: String(p.id), email: String(p.email) }));
 
   return (
-    <>
-      <p className="crumb"><Link href="/pursuits">← All pursuits</Link></p>
-      <h1>{pursuit.companyName}</h1>
+    <Page title={pursuit.companyName}
+          back={{ href: "/pursuits", label: "Pursuits" }}
+          meta={pursuit.closedAt ? `Closed · ${pursuit.outcome}` : (pursuit.priority ?? "No priority set")}
+          actions={<Link className="btn sm secondary" href={`/companies/${pursuit.companyId}` as Route} prefetch={false}>
+                     <Icon name="building-2" size={13} />Company profile
+                   </Link>}>
       <p className="lede">
         The practice&rsquo;s own judgement about this company.{" "}
         <Link href={`/companies/${pursuit.companyId}` as Route}>The evidence is on its profile</Link>,
@@ -62,23 +68,13 @@ export default async function Pursuit({ params }: { params: Promise<{ id: string
       ]} />
 
       {pursuit.closedAt && (
-        <p className="notice" role="status">
-          <b>Closed as “{pursuit.outcome}”{pursuit.outcomeRetired && " — an outcome no longer in use"}.</b>
-          <span>
-            {pursuit.closedByEmail ? `${pursuit.closedByEmail} closed it. ` : ""}
-            Everything below stands as it was.
-          </span>
-        </p>
+        <Callout tone="info" live title={<>Closed as “{pursuit.outcome}”{pursuit.outcomeRetired && " — an outcome no longer in use"}.</>}>{pursuit.closedByEmail ? `${pursuit.closedByEmail} closed it. ` : ""}
+            Everything below stands as it was.</Callout>
       )}
 
       {pursuit.priorityRetired && (
-        <p className="notice alert">
-          <b>{pursuit.priority} is no longer one of the priorities in use.</b>
-          <span>
-            It stands as the judgement that was made. Setting a new one replaces it;
-            nothing rewrites it on its own.
-          </span>
-        </p>
+        <Callout tone="danger" title={<>{pursuit.priority} is no longer one of the priorities in use.</>}>It stands as the judgement that was made. Setting a new one replaces it;
+            nothing rewrites it on its own.</Callout>
       )}
 
       <Section id="desk" title={pursuit.closedAt ? "This pursuit is closed" : "Record what happened"}
@@ -111,6 +107,6 @@ export default async function Pursuit({ params }: { params: Promise<{ id: string
           </ol>
         )}
       </Section>
-    </>
+    </Page>
   );
 }

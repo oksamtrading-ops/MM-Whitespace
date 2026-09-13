@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Callout from "../_ui/Callout.tsx";
 
 const ACCOUNTS = [
   { email: "admin@example.invalid", role: "Admin",
@@ -51,7 +52,7 @@ export default function SignInButtons({ currentEmail = null }: { currentEmail?: 
         })}
       </div>
       <div role="status" aria-live="polite">
-        {message && <div className="notice alert" style={{ marginTop: 20 }}>{message}</div>}
+        {message && <Callout tone="danger" title="Sign-in failed" className="rise">{message}</Callout>}
       </div>
     </>
   );

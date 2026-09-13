@@ -6,6 +6,9 @@ import { findDuplicateCandidates } from "../../../lib/identity/merge.ts";
 import { listCompanies } from "../../../lib/profile/company.ts";
 import Refusal from "../../_ui/Refusal.tsx";
 import Roster from "./Roster.tsx";
+import Callout from "../../_ui/Callout.tsx";
+import Icon from "../../_ui/Icon.tsx";
+import Page from "../../_ui/Page.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Companies" };
@@ -37,22 +40,22 @@ export default async function Companies(
     : 0;
 
   return (
+    <Page title="Companies" count={rows.length}>
     <div className="reading wide rise">
-      <h1>Companies</h1>
       <p className="sub">
         Every company in the published population. Open one before a pursuit conversation:
         its tier, the rule that produced it, and the evidence behind every researched value.
       </p>
       {duplicates > 0 && (
-        <p className="notice" role="status">
-          <b>{duplicates} possible duplicate{duplicates === 1 ? "" : "s"}</b>
-          <span>
-            Pairs of rows that look like one company.{" "}
-            <Link href="/companies/merge" prefetch={false}>Look at them →</Link>
-          </span>
-        </p>
+        <Callout tone="warn" title={`${duplicates} possible duplicate${duplicates === 1 ? "" : "s"}`}
+                 icon="merge"
+                 actions={<Link className="btn sm secondary" href="/companies/merge" prefetch={false}>
+                            Look at them<Icon name="arrow-right" size={13} /></Link>}>
+          Pairs of rows that look like one company.
+        </Callout>
       )}
       <Roster rows={rows} deloitteAudits={deloitteAudits} province={province ?? null} />
     </div>
+    </Page>
   );
 }

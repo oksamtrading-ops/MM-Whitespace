@@ -15,6 +15,9 @@ import { getNumber } from "../../../lib/settings/index.ts";
 import Facts from "../../_ui/Facts.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
+import Callout from "../../_ui/Callout.tsx";
+import Icon from "../../_ui/Icon.tsx";
+import Page from "../../_ui/Page.tsx";
 import { fmtDate, fmtMoney, periodName } from "../../_ui/format.ts";
 import StartRunForm, { type ScopeOffer } from "./StartRunForm.tsx";
 
@@ -107,20 +110,16 @@ export default async function Runs() {
                  ? "One run at a time. This section returns when the current run finishes."
                  : "The estimate blocks: scope, spend and duration are shown before anything is queued."}>
       {mode.mode !== null && batched && (
-        <p className="notice" role="status">
-          <b>Batched.</b>
-          <span>
-            Each pass&rsquo;s model call goes to the Batch API, which costs half and
-            answers within hours rather than seconds. The estimates below are the
-            batched price. A run still starts here and nothing researches until it does.
-          </span>
-        </p>
+        <Callout tone="info" icon="layers" title="This run is batched">
+          Each pass&rsquo;s model call goes to the Batch API: half the price, and it answers in
+          hours rather than seconds. The estimates below are the batched price. A run still
+          starts here, and nothing researches until it does.
+        </Callout>
       )}
       {mode.mode === null ? (
-        <div className="notice" role="status">
-          <b>Not available</b>
-          <span>{mode.reason}</span>
-        </div>
+        <Callout tone="warn" icon="lock" title="Research is not available on this deployment">
+          {mode.reason}
+        </Callout>
       ) : inProgress ? null : (
         <StartRunForm periodId={period.id} offers={offers} defaultBudgetUsd={budget} mode={mode.mode}
                       batched={batched}
@@ -131,9 +130,9 @@ export default async function Runs() {
 
   if (runs.length === 0) {
     return (
+      <Page title="Runs" meta={periodName(period.label).name}>
       <div className="withrail">
         <div className="reading">
-          <h1 className="rise">Runs</h1>
           <p className="sub rise">
             No enrichment has run against {periodName(period.label).name}.
           </p>
@@ -145,34 +144,36 @@ export default async function Runs() {
         </div>
         <WorkerRail health={health} />
       </div>
+      </Page>
     );
   }
 
   const [current, ...earlier] = runs;
 
   return (
+    <Page title="Runs" count={`${current.finished}/${current.total}`}
+          meta={`${periodName(period.label).name} · ${current.mode}`}>
     <div className="withrail">
       <div className="reading">
-        <h1 className="rise">Runs</h1>
         <p className="sub rise">
           What enrichment is doing, in the words it would use to explain itself.
         </p>
 
-        <div className={`notice rise${ALARMING.has(current.phase) ? " alert" : current.phase.startsWith("completed") ? " ok" : ""}`}
-             role="status">
-          <b>{PHASE_COPY[current.phase].label}</b>
-          <span>{PHASE_COPY[current.phase].detail}</span>
+        <div className="rise">
+          <Callout live
+                   tone={ALARMING.has(current.phase) ? "danger" : current.phase.startsWith("completed") ? "ok" : "info"}
+                   icon={ALARMING.has(current.phase) ? "octagon-x" : current.phase.startsWith("completed") ? "circle-check" : "play"}
+                   title={PHASE_COPY[current.phase].label}>
+            <p className="d">{PHASE_COPY[current.phase].detail}</p>
+            {current.haltReason && <p className="d"><b>Reason:</b> {current.haltReason}</p>}
+          </Callout>
         </div>
-
-        {current.haltReason && (
-          <p className="note rise"><b>Reason:</b> {current.haltReason}</p>
-        )}
 
         <Section id="progress" title="Progress" index={1}
                  caption={`${current.finished} of ${current.total} jobs have finished. A job is finished when it completed, halted, or was abandoned.`}>
           <StateBar run={current} />
           <table>
-            <thead><tr><th>State</th><th className="n">Jobs</th><th>Meaning</th></tr></thead>
+            <thead><tr><th scope="col">State</th><th scope="col" className="n">Jobs</th><th scope="col">Meaning</th></tr></thead>
             <tbody>
               {STATE_ORDER.filter((s) => current.counts.some((c) => c.state === s)).map((s) => (
                 <tr key={s}>
@@ -219,14 +220,14 @@ export default async function Runs() {
           <Section id="abandoned" title="Abandoned" index={4}
                    caption="These exhausted their attempts. They are not stalled; they are finished and wrong.">
             <table>
-              <thead><tr><th>Company</th><th>Fields</th><th className="n">Attempts</th><th>Last error</th></tr></thead>
+              <thead><tr><th scope="col">Company</th><th scope="col">Fields</th><th scope="col" className="n">Attempts</th><th scope="col">Last error</th></tr></thead>
               <tbody>
                 {current.deadLetters.map((d, i) => (
                   <tr key={i}>
                     <td>{d.companyName}</td>
                     <td className="meta">{d.fieldGroup}</td>
                     <td className="n">{d.attempts}</td>
-                    <td className="meta">{d.lastError ?? "—"}</td>
+                    <td className="meta wrap">{d.lastError ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -240,7 +241,7 @@ export default async function Runs() {
           <Section id="earlier" title="Earlier runs" index={6}>
             <table>
               <thead>
-                <tr><th>Started</th><th>State</th><th className="n">Jobs</th><th className="n">Spend</th><th>Mode</th></tr>
+                <tr><th scope="col">Started</th><th scope="col">State</th><th scope="col" className="n">Jobs</th><th scope="col" className="n">Spend</th><th scope="col">Mode</th></tr>
               </thead>
               <tbody>
                 {earlier.map((r) => (
@@ -248,6 +249,7 @@ export default async function Runs() {
                     <td>{fmtDate(r.createdAt)}</td>
                     <td>
                       <span className={`pill ${ALARMING.has(r.phase) ? "no" : r.phase.startsWith("completed") ? "ok" : "quiet"}`}>
+                        <Icon name={ALARMING.has(r.phase) ? "octagon-x" : r.phase.startsWith("completed") ? "circle-check" : "play"} size={12} />
                         {PHASE_COPY[r.phase].label}
                       </span>
                     </td>
@@ -275,11 +277,14 @@ export default async function Runs() {
         ]} />
         <WorkerFacts health={health} />
         <p className="meta" style={{ marginTop: 20 }}>
-          A stalled or halted run is diagnosed in the runbook, not by restarting it.{" "}
-          <Link href="/review" prefetch={false}>Review board →</Link>
+          A stalled or halted run is diagnosed in the runbook, not by restarting it.
         </p>
+        <Link className="btn sm secondary" href="/review" prefetch={false} style={{ marginTop: 12 }}>
+          <Icon name="clipboard-check" size={13} />Review board
+        </Link>
       </aside>
     </div>
+    </Page>
   );
 }
 

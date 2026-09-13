@@ -4,9 +4,8 @@ import { cookies } from "next/headers";
 import { Archivo, Open_Sans } from "next/font/google";
 import { authContext } from "../lib/auth/context.ts";
 import { resolveUser } from "../lib/auth/session.ts";
-import Nav, { type NavItem } from "./_ui/Nav.tsx";
-import ThemeToggle from "./_ui/ThemeToggle.tsx";
-import { THEME_COOKIE, type Theme } from "./_ui/theme.ts";
+import Sidebar, { type NavItem } from "./_ui/Sidebar.tsx";
+import { RAIL_COOKIE, THEME_COOKIE, type Theme } from "./_ui/theme.ts";
 import { periodName } from "./_ui/format.ts";
 
 /* Open Sans is the brand face and carries everything you read. Archivo carries
@@ -24,7 +23,7 @@ const figure = Archivo({
 
 /* The theme is a cookie so the first paint is already in it. Absent a choice
    the product is dark: that is the brand decision (docs/design/18), and the
-   light theme is one press away in the top bar. */
+   light theme is one press away in the rail's foot. */
 async function readTheme(): Promise<Theme> {
   const v = (await cookies()).get(THEME_COOKIE)?.value;
   return v === "light" || v === "system" ? v : "dark";
@@ -53,23 +52,28 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const email = await ctx.claims.emailClaim(ctx.cookieHeader);
   const user = await resolveUser(ctx.db, email);
   const canReview = user?.role === "analyst" || user?.role === "admin";
+  const jar = await cookies();
   const theme = await readTheme();
+  const railCollapsed = jar.get(RAIL_COOKIE)?.value === "1";
 
+  /* Three groups, because the destinations are three things: the product a
+     partner reads, the period an analyst builds, and the administration
+     behind both. A Viewer sees the first group only. */
   const items: NavItem[] = [];
-  if (canReview) items.push({ href: "/upload", label: "Upload" });
-  if (canReview) items.push({ href: "/runs", label: "Runs" });
-  if (canReview) items.push({ href: "/review", label: "Review" });
-  if (canReview) items.push({ href: "/publish", label: "Publish" });
-  // Deloitte internal, so never offered to a Viewer.
-  if (canReview) items.push({ href: "/pursuits", label: "Pursuits" });
-  items.push({ href: "/companies", label: "Companies" });
-  items.push({ href: "/dashboard", label: "Dashboard" });
-  if (user?.role === "admin") items.push({ href: "/access", label: "Access" });
-  if (user?.role === "admin") items.push({ href: "/settings", label: "Settings" });
-  if (user?.role === "admin") items.push({ href: "/styleguide", label: "Styleguide" });
+  items.push({ href: "/dashboard", label: "Dashboard", icon: "layout-dashboard", group: "product" });
+  items.push({ href: "/companies", label: "Companies", icon: "building-2", group: "product" });
+  // A pursuit is Deloitte internal, so it is never offered to a Viewer.
+  if (canReview) items.push({ href: "/pursuits", label: "Pursuits", icon: "crosshair", group: "product" });
+  if (canReview) items.push({ href: "/upload", label: "Upload", icon: "upload", group: "period" });
+  if (canReview) items.push({ href: "/runs", label: "Runs", icon: "play", group: "period" });
+  if (canReview) items.push({ href: "/review", label: "Review", icon: "clipboard-check", group: "period" });
+  if (canReview) items.push({ href: "/publish", label: "Publish", icon: "badge-check", group: "period" });
+  if (user?.role === "admin") items.push({ href: "/access", label: "Access", icon: "users", group: "admin" });
+  if (user?.role === "admin") items.push({ href: "/settings", label: "Settings", icon: "settings", group: "admin" });
+  if (user?.role === "admin") items.push({ href: "/styleguide", label: "Styleguide", icon: "palette", group: "admin" });
 
-  // The period chip. A Viewer is shown a period only once it is published;
-  // draft state is the workstation's business.
+  // The period, in the rail's foot. A Viewer is shown one only once it is
+  // published; draft state is the workstation's business.
   const period = user
     ? await ctx.db.get(
         `select p.label, p.status,
@@ -81,28 +85,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en-CA" data-theme={theme} className={`${text.variable} ${figure.variable}`}>
-      <body>
+      <body className={canReview ? undefined : "working-off"}>
         <a className="skip" href="#main">Skip to content</a>
-        <header className="topbar">
-          <a className="brand" href="/" translate="no">Whitespace<span className="stop" aria-hidden="true" /></a>
-          <Nav items={items} />
-          <div className="right">
-            <ThemeToggle initial={theme} />
-            {showPeriod && (
-              <span className="chip">
-                <span className={`dot${period.revision === null ? " draft" : ""}`} aria-hidden="true" />
-                <span className="fig-sm">{periodName(period.label).name}</span>
-                <span className="rev">{period.revision === null ? "draft" : `rev ${period.revision}`}</span>
-              </span>
-            )}
-            <div className="who">
-              {user
-                ? <><span className="email">{user.email}</span><span className="role">{user.role}</span></>
-                : <a href="/signin">Sign in</a>}
-            </div>
-          </div>
-        </header>
-        <main id="main" tabIndex={-1}>{children}</main>
+        <div className="app">
+          <Sidebar items={items} collapsed={railCollapsed} theme={theme}
+                   period={showPeriod ? { name: periodName(period.label).name, draft: period.revision === null } : null}
+                   user={user ? { email: user.email, role: user.role } : null} />
+          <main id="main" tabIndex={-1}>{children}</main>
+        </div>
       </body>
     </html>
   );

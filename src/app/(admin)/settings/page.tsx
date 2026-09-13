@@ -5,6 +5,8 @@ import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { readSettings } from "../../../lib/settings/index.ts";
 import Facts from "../../_ui/Facts.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
+import Icon from "../../_ui/Icon.tsx";
+import Page from "../../_ui/Page.tsx";
 import Section from "../../_ui/Section.tsx";
 import { fmtDate, fmtInt, periodName } from "../../_ui/format.ts";
 import SettingsForm from "./SettingsForm.tsx";
@@ -41,9 +43,9 @@ export default async function Settings() {
       where a.event = 'setting_changed' order by a.created_at desc limit 8`) as Array<{ detail: string; created_at: string; email: string | null }>;
 
   return (
+    <Page title="Settings">
     <div className="withrail">
       <div className="reading">
-        <h1 className="rise">Settings</h1>
         <p className="sub rise">
           What the practice has decided, in the two places it can be decided. Everything
           else on this page is policy the interface will not quietly move.
@@ -63,7 +65,9 @@ export default async function Settings() {
               { label: "Operator", value: period.threshold_operator === "gte" ? "At or above" : "Above" },
               { label: "Proximity band", value: `±${Number(period.proximity_band_pct)}%`, figure: true },
               { label: "Status", value: (
-                  <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>{period.status}</span>
+                  <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>
+                    <Icon name={period.status === "published" ? "circle-check" : "circle-dashed"} size={12} />{period.status}
+                  </span>
                 ) },
             ]} />
           </Section>
@@ -73,7 +77,8 @@ export default async function Settings() {
                  caption="Not editable here, and that is the design. A chart below its floor is replaced by a gauge and blocks a publish; the way past it is an override with a recorded reason that prints on the dashboard header. A quietly lowered floor is the same decision with nobody named against it.">
           <table>
             <thead>
-              <tr><th>Chart</th><th>Driven by</th><th className="n">Floor</th><th>Blocks publish</th></tr>
+              <tr><th scope="col">Chart</th><th scope="col">Driven by</th>
+                  <th scope="col" className="n">Floor</th><th scope="col">Blocks publish</th></tr>
             </thead>
             <tbody>
               {floors.map((f) => (
@@ -144,6 +149,7 @@ export default async function Settings() {
         </ul>
       </aside>
     </div>
+    </Page>
   );
 }
 

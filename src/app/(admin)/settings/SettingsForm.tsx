@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { saveSettings } from "./actions.ts";
 import type { Setting } from "../../../lib/settings/index.ts";
+import Callout from "../../_ui/Callout.tsx";
 
 export default function SettingsForm({ settings }: { settings: Setting[] }) {
   const [state, action, pending] = useActionState(saveSettings, null);
@@ -36,10 +37,8 @@ export default function SettingsForm({ settings }: { settings: Setting[] }) {
 
       <div role="status" aria-live="polite">
         {state && (
-          <div className={`notice ${state.ok ? "ok" : "alert"}`}>
-            <b>{state.ok ? "Saved" : "Not saved"}</b>
-            <span>{state.message}</span>
-          </div>
+          <Callout tone={state.ok ? "ok" : "danger"}
+                   title={state.ok ? "Saved" : "Not saved"}>{state.message}</Callout>
         )}
       </div>
 

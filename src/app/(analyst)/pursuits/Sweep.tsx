@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { sweepStatus, type ActionResult } from "./actions.ts";
 import { strandedNoun, type Stranded, type Vocabulary } from "../../../lib/pursuit/index.ts";
+import Callout from "../../_ui/Callout.tsx";
 
 /**
  * The repair for a renamed term, offered only when there is something to
@@ -59,10 +60,8 @@ export default function Sweep({ stranded, vocabulary }: {
       })}
       <div role="status" aria-live="polite">
         {state && (
-          <div className={`notice ${state.ok ? "ok" : "alert"}`}>
-            <b>{state.ok ? "Moved" : "Not moved"}</b>
-            <span>{state.message}</span>
-          </div>
+          <Callout tone={state.ok ? "ok" : "danger"}
+                   title={state.ok ? "Moved" : "Not moved"}>{state.message}</Callout>
         )}
       </div>
     </>

@@ -43,6 +43,12 @@ async function signIn(email) {
 }
 
 /**
+ * A row carrying the review flag. The pill holds an icon before its word
+ * (docs/design/18 section 8), so the class and the word are not adjacent.
+ */
+const FLAGGED = /class="pill warn">(?:<svg[\s\S]*?<\/svg>)?review<\/span>/;
+
+/**
  * One account's row, so an assertion is about that account and not the page.
  * Scoped to the table: the signed-in Admin's address is also in the top bar.
  */
@@ -334,17 +340,18 @@ async function journeys(dbPath) {
         /\(today\)/.test(adminRow), adminRow.replace(/\s+/g, " ").slice(0, 160));
   const dormantRow = accountRow(access.html, "dormant@example.invalid");
   check("a dormant account is counted in days and flagged for review",
-        /\(\d+d ago\)/.test(dormantRow) && /pill warn">review/.test(dormantRow),
+        /\(\d+d ago\)/.test(dormantRow) && FLAGGED.test(dormantRow),
         dormantRow.replace(/\s+/g, " ").slice(0, 160));
   const neverRow = accountRow(access.html, "never@example.invalid");
   check("an account that has never signed in says so, and is flagged",
-        /never<\/span>/.test(neverRow) && /pill warn">review/.test(neverRow),
+        /never<\/span>/.test(neverRow) && FLAGGED.test(neverRow),
         neverRow.replace(/\s+/g, " ").slice(0, 160));
   // Stamps are stored as UTC without a zone; read as local time they land in
   // the future, which is how every same-day sign-in once read "-1d ago".
   check("no sign-in is reported as being in the future",
         !/\(-\d+d ago\)/.test(access.html));
-  const staleTile = access.html.match(/(\d+)<\/dd><dt class="k">Not seen in 90 days<\/dt>/);
+  const staleTile = access.html.match(
+    /<div class="v">(\d+)<\/div><div class="l">(?:(?!<\/div>)[\s\S])*?Not seen in 90 days/);
   check("the count of accounts to review is the number actually flagged",
         staleTile?.[1] === "2", `tile reads ${staleTile?.[1] ?? "nothing"}, expected 2`);
   check("an Admin cannot deactivate themselves",

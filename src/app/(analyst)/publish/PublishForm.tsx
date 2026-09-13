@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { publish } from "./actions.ts";
+import Callout from "../../_ui/Callout.tsx";
 
 const MIN_REASON = 20;
 
@@ -20,13 +21,8 @@ export default function PublishForm({ periodId, publishable, isAdmin, amending, 
 
   if (overriding && !isAdmin) {
     return (
-      <div className="notice alert">
-        <b>Blocked</b>
-        <span>
-          {blockers} thing{blockers === 1 ? "" : "s"} must be resolved before this period can be
-          published. An Admin may publish through a blocked gate with a recorded reason.
-        </span>
-      </div>
+      <Callout tone="danger" title="Blocked">{blockers} thing{blockers === 1 ? "" : "s"} must be resolved before this period can be
+          published. An Admin may publish through a blocked gate with a recorded reason.</Callout>
     );
   }
 
@@ -63,7 +59,7 @@ export default function PublishForm({ periodId, publishable, isAdmin, amending, 
 
       <div role="status" aria-live="polite">
         {state && !state.ok && (
-          <div className="notice alert"><b>Not published</b><span>{state.message}</span></div>
+          <Callout tone="danger" title="Not published">{state.message}</Callout>
         )}
       </div>
 

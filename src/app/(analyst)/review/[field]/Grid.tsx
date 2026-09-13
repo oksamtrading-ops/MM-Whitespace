@@ -23,6 +23,7 @@ import {
   useCallback, useEffect, useMemo, useOptimistic, useRef, useState,
   type ReactNode,
 } from "react";
+import Icon from "../../../_ui/Icon.tsx";
 import { bulkAccept, confirmationText } from "./actions.ts";
 import { useDecide } from "../useDecide.ts";
 import BulkDialog from "./BulkDialog.tsx";
@@ -263,14 +264,14 @@ export default function Grid(props: Props) {
                  }} />
           {!query && <kbd aria-hidden="true">/</kbd>}
         </div>
-        <button type="button" className="btn" onClick={() => void openBulk()} disabled={busy}>
-          Accept ≥ {threshold.toFixed(2)} in bulk <kbd>⇧A</kbd>
+        <button type="button" className="btn secondary" onClick={() => void openBulk()} disabled={busy}>
+          <Icon name="list-checks" size={15} />Accept ≥ {threshold.toFixed(2)} in bulk <kbd>⇧A</kbd>
         </button>
-        <button type="button" className="btn" disabled={busy} onClick={doUndo}>
-          Undo <kbd>⌘Z</kbd>
+        <button type="button" className="btn quiet" disabled={busy} onClick={doUndo}>
+          <Icon name="undo-2" size={15} />Undo <kbd>⌘Z</kbd>
         </button>
-        <button type="button" className="btn" onClick={() => setShowHelp(true)} aria-expanded={showHelp}>
-          Keys <kbd>?</kbd>
+        <button type="button" className="btn quiet" onClick={() => setShowHelp(true)} aria-expanded={showHelp}>
+          <Icon name="keyboard" size={15} />Keys <kbd>?</kbd>
         </button>
         <span className="spacer" />
         <span className="statusline">
@@ -331,7 +332,7 @@ export default function Grid(props: Props) {
                 className="val"
               >
                 {r.value}
-                {r.conflict && <span className="tag conflict">conflict</span>}
+                {r.conflict && <span className="tag conflict"><Icon name="git-compare" size={11} />conflict</span>}
               </div>
               {/* Evidence is never colour alone: strip, numeral and band word. */}
               <span role="gridcell" aria-colindex={3} className="ev">
@@ -344,17 +345,17 @@ export default function Grid(props: Props) {
               <span role="gridcell" aria-colindex={4} className="st">
                 {r.decided
                   ? <>
-                      <span className="tag done">{r.decision}</span>
+                      <span className="tag done"><Icon name="check" size={11} />{r.decision}</span>
                       {r.newerThanDecision &&
                         <span className="tag warn" title="A later run proposed a better value than this decision saw">
-                          newer research
+                          <Icon name="history" size={11} />newer research
                         </span>}
                     </>
                   : r.sourceCount === 0
-                    ? <span className="tag warn">no sources</span>
+                    ? <span className="tag warn"><Icon name="search-x" size={11} />no sources</span>
                     : r.anchorMode === "label_only" || r.anchorMode === "none"
-                      ? <span className="tag warn">not anchored</span>
-                      : <span className="tag ok">{r.sourceCount} source{r.sourceCount === 1 ? "" : "s"}</span>}
+                      ? <span className="tag warn"><Icon name="shield-off" size={11} />not anchored</span>
+                      : <span className="tag ok"><Icon name="scroll-text" size={11} />{r.sourceCount} source{r.sourceCount === 1 ? "" : "s"}</span>}
               </span>
             </div>
           ))}
@@ -370,7 +371,7 @@ export default function Grid(props: Props) {
         >
           {row && (
             <div className="body fadein" key={row.companyId}>
-              <p className="eyebrow">Evidence</p>
+              <p className="eyebrow"><Icon name="scroll-text" size={12} /> Evidence</p>
               <h3>{row.companyName}</h3>
               {row.conflict && (
                 <div className="diff">
@@ -392,7 +393,9 @@ export default function Grid(props: Props) {
               <p className="anchor">
                 <span>{ANCHOR_WORD[row.anchorMode] ?? row.anchorMode}</span>
                 {row.sourceUrl && (
-                  <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer">open source ↗</a>
+                  <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer">
+                    open source<Icon name="external-link" size={12} />
+                  </a>
                 )}
               </p>
               {row.tierNote && <p className="tiernote">{row.tierNote}</p>}
@@ -413,24 +416,30 @@ export default function Grid(props: Props) {
                   )}
                   {row.conflict ? (
                     <>
-                      <button type="button" className="btn" disabled={busy}
-                              onClick={keepExtract}>Keep extract <kbd>K</kbd></button>
-                      <button type="button" className="btn" disabled={busy}
-                              onClick={() => submit("accept")}>Use AI <kbd>A</kbd></button>
-                      <button type="button" className="btn" disabled={busy}
-                              onClick={() => setEditing(true)}>Enter my own <kbd>O</kbd></button>
+                      <button type="button" className="btn secondary" disabled={busy}
+                              onClick={keepExtract}>
+                        <Icon name="file-search" size={15} />Keep extract <kbd>K</kbd></button>
+                      <button type="button" className="btn primary" disabled={busy}
+                              onClick={() => submit("accept")}>
+                        <Icon name="check" size={15} />Use AI <kbd>A</kbd></button>
+                      <button type="button" className="btn secondary" disabled={busy}
+                              onClick={() => setEditing(true)}>
+                        <Icon name="pencil" size={15} />Enter my own <kbd>O</kbd></button>
                     </>
                   ) : (
                     <>
                       <button type="button" className="btn primary" disabled={busy}
                               onClick={() => submit("accept")}>
+                        <Icon name="check" size={15} />
                         {row.decided ? "Take the newer research" : "Accept"} <kbd>A</kbd></button>
-                      <button type="button" className="btn" disabled={busy}
-                              onClick={() => setEditing(true)}>Override <kbd>O</kbd></button>
+                      <button type="button" className="btn secondary" disabled={busy}
+                              onClick={() => setEditing(true)}>
+                        <Icon name="pencil" size={15} />Override <kbd>O</kbd></button>
                     </>
                   )}
-                  <button type="button" className="btn" disabled={busy}
-                          onClick={() => setFlagging(true)}>Flag <kbd>F</kbd></button>
+                  <button type="button" className="btn quiet" disabled={busy}
+                          onClick={() => setFlagging(true)}>
+                    <Icon name="flag" size={15} />Flag <kbd>F</kbd></button>
                 </div>
               )}
 

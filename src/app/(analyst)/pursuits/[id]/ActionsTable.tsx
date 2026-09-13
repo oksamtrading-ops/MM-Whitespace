@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { assignAction, dateAction, moveAction, type ActionResult } from "../actions.ts";
 import type { Action, Vocabulary } from "../../../../lib/pursuit/index.ts";
 import type { Person } from "./PursuitDesk.tsx";
+import Callout from "../../../_ui/Callout.tsx";
 
 /**
  * Moving an action lives on the row it belongs to.
@@ -87,10 +88,8 @@ export default function ActionsTable({ pursuitId, actions, vocabulary, people }:
       </table>
       <div role="status" aria-live="polite">
         {latest && (
-          <div className={`notice ${latest.ok ? "ok" : "alert"}`}>
-            <b>{latest.ok ? "Recorded" : "Not recorded"}</b>
-            <span>{latest.message}</span>
-          </div>
+          <Callout tone={latest.ok ? "ok" : "danger"}
+                   title={latest.ok ? "Recorded" : "Not recorded"}>{latest.message}</Callout>
         )}
       </div>
     </>

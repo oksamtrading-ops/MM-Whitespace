@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { commitParsed } from "../actions.ts";
+import Callout from "../../../_ui/Callout.tsx";
 
 /**
  * The commit. The period label is required and editable because the quarter is
@@ -15,10 +16,7 @@ export default function CommitForm({ parseId, suggestedLabel, warnings, blocked 
 
   if (blocked) {
     return (
-      <div className="notice alert">
-        <b>Cannot be committed</b>
-        <span>{blocked}</span>
-      </div>
+      <Callout tone="danger" title="Cannot be committed">{blocked}</Callout>
     );
   }
 
@@ -46,7 +44,7 @@ export default function CommitForm({ parseId, suggestedLabel, warnings, blocked 
 
       <div role="status" aria-live="polite">
         {state && !state.ok && (
-          <div className="notice alert"><b>Not committed</b><span>{state.message}</span></div>
+          <Callout tone="danger" title="Not committed">{state.message}</Callout>
         )}
       </div>
 

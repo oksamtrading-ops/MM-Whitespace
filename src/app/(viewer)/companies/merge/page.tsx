@@ -6,6 +6,7 @@ import {
   findDuplicateCandidates, mergePreview, MergeRefused, reasonLabel,
 } from "../../../../lib/identity/merge.ts";
 import Refusal from "../../../_ui/Refusal.tsx";
+import Page from "../../../_ui/Page.tsx";
 import Section from "../../../_ui/Section.tsx";
 import MergeForm from "./MergeForm.tsx";
 
@@ -52,9 +53,8 @@ export default async function Merge(
   }
 
   return (
+    <Page title="Possible duplicates" back={{ href: "/companies", label: "Companies" }}>
     <div className="reading">
-      <p className="crumb rise"><Link href="/companies" prefetch={false}>← Companies</Link></p>
-      <h1 className="rise">Possible duplicates</h1>
       <p className="sub rise">
         The workbook carries no rename history, so a company that changes its name arrives
         as a second row and its history stops there. These are pairs that look like one
@@ -65,7 +65,7 @@ export default async function Merge(
         <Section id="pair" title={`${(await pair).loser.name} and ${(await pair).winner.name}`} index={1}
                  caption="A merge is a redirect, not a deletion: the row merged away keeps its id, so every frozen snapshot that pointed at it still resolves.">
           <table>
-            <thead><tr><th>What moves</th><th className="n">Rows</th></tr></thead>
+            <thead><tr><th scope="col">What moves</th><th scope="col" className="n">Rows</th></tr></thead>
             <tbody>
               {(await pair).moves.length === 0
                 ? <tr><td colSpan={2} className="meta">Nothing is recorded against it yet.</td></tr>
@@ -127,5 +127,6 @@ export default async function Merge(
         )}
       </Section>
     </div>
+    </Page>
   );
 }

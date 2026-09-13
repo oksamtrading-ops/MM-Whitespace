@@ -39,7 +39,7 @@ export default function BulkDialog({ open, text, needsStage, onConfirm, onCancel
         </>
       )}
       <div className="acts">
-        <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn quiet" onClick={onCancel}>Cancel</button>
         <button type="button" className="btn primary" disabled={!text || !armed}
                 onClick={() => onConfirm(typed)}>
           {count ? `Accept ${count} value${count === "1" ? "" : "s"}` : "Accept"}

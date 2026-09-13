@@ -17,6 +17,11 @@ import Gauge from "../../_ui/Gauge.tsx";
 import Ledger from "../../_ui/Ledger.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
+import Callout from "../../_ui/Callout.tsx";
+import Icon from "../../_ui/Icon.tsx";
+import Page from "../../_ui/Page.tsx";
+import Panel, { StatRow } from "../../_ui/Panel.tsx";
+import WorkingToggle from "../../_ui/WorkingToggle.tsx";
 import Facts from "../../_ui/Facts.tsx";
 import { fmtDate, periodName } from "../../_ui/format.ts";
 import { formatMoney } from "../../../lib/format/fields.ts";
@@ -134,6 +139,14 @@ export default async function Dashboard() {
   const threshold = formatMoney(Number(period.threshold_amount), period.threshold_currency, { compact: true });
 
   return (
+    <Page title="Dashboard" count={population}
+          meta={`${periodTitle} · revision ${snap.publication.revision}${snap.publication.override_reason ? " · through a blocked gate" : ""}`}
+          actions={<>
+            <WorkingToggle initial={canReview} />
+            <a className="btn sm secondary" href={`/api/export?period=${period.id}` as Route} download>
+              <Icon name="file-spreadsheet" size={13} />Export
+            </a>
+          </>}>
     <div className="withrail">
       <h1 className="sr-only">{periodTitle} dashboard</h1>
       <aside className="rail rise" aria-label="About this period">
@@ -151,10 +164,9 @@ export default async function Dashboard() {
             ) },
         ]} />
         {snap.publication.override_reason && (
-          <div className="notice" role="status">
-            <b>Published through a blocked gate</b>
-            <span>{snap.publication.override_reason}</span>
-          </div>
+          <Callout tone="warn" title="Published through a blocked gate">
+            {snap.publication.override_reason}
+          </Callout>
         )}
         <Contents items={SECTIONS} />
       </aside>
@@ -186,13 +198,19 @@ export default async function Dashboard() {
         </div>
 
         <div className="rise" style={{ "--i": 4 } as React.CSSProperties}>
-          <Ledger items={[
-            ...tiles.map((t) => ({ value: t.value, label: t.label })),
-            { value:snap.publication.unresolved_count, label: "Unresolved values", quiet: true },
-          ]} />
+          <Panel icon="database" title="The population" bare
+                 right={<>as of {fmtDate(period.market_cap_as_of)}</>}>
+            <StatRow items={[
+              ...tiles.map((t, i) => ({
+                value: t.value, label: t.label,
+                icon: (["building-2", "trending-up", "trending-up", "landmark"] as const)[i] ?? "building-2",
+              })),
+              { value: snap.publication.unresolved_count, label: "Unresolved values", icon: "circle-dashed", quiet: true },
+            ]} />
+          </Panel>
         </div>
 
-        <Section id="coverage" title="Enrichment coverage" queryKey="coverage" index={4}
+        <Section id="coverage" title="Enrichment coverage" queryKey="coverage" index={4} icon="gauge" lead
                  caption="How much of each field has been researched. A chart below its floor is replaced by its gauge.">
           <div className="gauges">
             {floors.map((f, i) => {
@@ -213,7 +231,7 @@ export default async function Dashboard() {
           </p>
         </Gated>
 
-        <Section id="footprint" title="Footprint" queryKey="footprint" index={6}
+        <Section id="footprint" title="Footprint" queryKey="footprint" index={6} icon="map"
                  caption="Where each company holds properties: Canada, abroad, both, or none.">
           <Bars bars={footprint} proof={proofLine(footprint, population)} />
           <p className="note">
@@ -222,7 +240,7 @@ export default async function Dashboard() {
           </p>
         </Section>
 
-        <Section id="market" title="Corporate office by Deloitte market" queryKey="market" index={7}
+        <Section id="market" title="Corporate office by Deloitte market" queryKey="market" index={7} icon="landmark"
                  caption="Sorted by count. Foreign head offices sit last because they belong to no Deloitte market.">
           <Bars bars={market.bars} proof={market.proof} />
         </Section>
@@ -233,17 +251,17 @@ export default async function Dashboard() {
           <Bars bars={auditor.bars} proof={auditor.proof} />
         </Gated>
 
-        <Section id="province" title={PROVINCE_TITLE} queryKey="province_footprint" index={9}
+        <Section id="province" title={PROVINCE_TITLE} queryKey="province_footprint" index={9} icon="map-pin"
                  caption="A company is counted in every province or territory where it holds a property. This is not producing mines by province: property location and stage are recorded separately, with no link between them.">
           <Bars bars={province.bars} />
         </Section>
 
-        <Section id="jurisdiction" title={JURISDICTION_TITLE} queryKey="jurisdiction_footprint" index={10}
+        <Section id="jurisdiction" title={JURISDICTION_TITLE} queryKey="jurisdiction_footprint" index={10} icon="map-pin"
                  caption="The twelve most common, with the remainder grouped.">
           <Bars bars={jurisdiction.bars} />
         </Section>
 
-        <Section id="migration" title="Tier migration" queryKey="migration" index={11}
+        <Section id="migration" title="Tier migration" queryKey="migration" index={11} icon="trending-up"
                  caption="Prior tier against current. Direction carries an icon and a word, never colour alone.">
           {migration.kind === "first_period"
             ? <p className="empty">{migration.message}</p>
@@ -257,17 +275,21 @@ export default async function Dashboard() {
                   )}
                 </p>
                 <table className="matrix">
-                  <thead><tr><th>From → to</th><th className="n">Companies</th><th>Direction</th></tr></thead>
+                  <thead><tr><th scope="col">From → to</th><th scope="col" className="n">Companies</th>
+                                 <th scope="col">Direction</th></tr></thead>
                   <tbody>
                     {migration.cells.map((c) => (
                       <tr key={`${c.from}-${c.to}`}>
                         <td>{TIER_LABEL[c.from] ?? c.from} → {TIER_LABEL[c.to] ?? c.to}</td>
                         <td className="n">{c.n}</td>
                         <td className={c.direction === "same" ? "diag" : c.direction}>
-                          {c.direction === "up" ? "▲ improved"
-                            : c.direction === "down" ? "▼ declined"
-                            : c.direction === "research" ? "● research completed"
-                            : "— unchanged"}
+                          {c.direction === "up"
+                            ? <><Icon name="trending-up" size={13} /> improved</>
+                            : c.direction === "down"
+                              ? <><Icon name="trending-down" size={13} /> declined</>
+                              : c.direction === "research"
+                                ? <><Icon name="circle-check" size={13} /> research completed</>
+                                : <><Icon name="minus" size={13} /> unchanged</>}
                         </td>
                       </tr>
                     ))}
@@ -277,7 +299,7 @@ export default async function Dashboard() {
             )}
         </Section>
 
-        <Section id="entrants" title="Entrants and drop-outs" queryKey="movement" index={12}
+        <Section id="entrants" title="Entrants and drop-outs" queryKey="movement" index={12} icon="history"
                  caption={`Companies within ${period.proximity_band_pct}% of the threshold are marked: an ordinary market move crosses the line without anything having happened.`}>
           <p className="empty">
             Nothing to compare against until a second period is published. Then this view
@@ -292,6 +314,7 @@ export default async function Dashboard() {
         </footer>
       </div>
     </div>
+    </Page>
   );
 }
 
@@ -320,7 +343,9 @@ function Gated({ id, title, queryKey, caption, index, gate, canReview, children 
             <>{" "}
               {/* typedRoutes cannot validate a href built from a field key; the
                   value comes from coverage_floors, not user input. */}
-              <Link href={gate.reviewLink as Route}>Review the gap →</Link>
+              <Link className="btn sm secondary" href={gate.reviewLink as Route}>
+                <Icon name="clipboard-check" size={13} />Review the gap
+              </Link>
             </>
           )}
         </p>

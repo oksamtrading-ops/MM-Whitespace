@@ -6,9 +6,12 @@ import { periodAdmissibility } from "../../../../lib/db/commit.ts";
 import { readParse, suggestLabel, type ParseFinding } from "../../../../lib/ingest/quarantine.ts";
 import Facts from "../../../_ui/Facts.tsx";
 import Refusal from "../../../_ui/Refusal.tsx";
+import Icon from "../../../_ui/Icon.tsx";
+import Page from "../../../_ui/Page.tsx";
 import Section from "../../../_ui/Section.tsx";
 import { fmtDate } from "../../../_ui/format.ts";
 import CommitForm from "./CommitForm.tsx";
+import Callout from "../../../_ui/Callout.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Validation report" };
@@ -52,9 +55,8 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
       : await periodAdmissibility(ctx.db, asOf);
 
   return (
+    <Page title="Validation report" back={{ href: "/upload", label: "Upload" }}>
     <div className="reading">
-      <p className="crumb rise"><Link href="/upload" prefetch={false}>← Upload</Link></p>
-      <h1 className="rise">Validation report</h1>
       <Facts className="rise" items={[
         { label: "Workbook", value: parse.filename },
         { label: "Market cap as of", value: asOf ? fmtDate(asOf) : "unresolved" },
@@ -63,18 +65,13 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
       ]} />
 
       {blocked
-        ? <div className="notice alert rise" role="status">
-            <b>Cannot be committed</b><span>{blocked}</span>
-          </div>
-        : <div className="notice ok rise" role="status">
-            <b>Ready to commit</b>
-            <span>
-              Nothing is blocking.{" "}
-              {report.warnings.length > 0
-                ? `Read the ${report.warnings.length} warnings below and acknowledge them.`
-                : "There are no warnings."}
-            </span>
-          </div>}
+        ? <Callout tone="danger" live title="Cannot be committed" className="rise">{blocked}</Callout>
+        : <Callout tone="ok" live title="Ready to commit" className="rise">
+            Nothing is blocking.{" "}
+            {report.warnings.length > 0
+              ? `Read the ${report.warnings.length} warnings below and acknowledge them.`
+              : "There are no warnings."}
+          </Callout>}
 
       <Section id="blocking" title="Blocking" index={1}
                caption={report.blocking.length === 0
@@ -100,7 +97,7 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
                 const ties = actual === expected;
                 return (
                   <li key={label} className={`gateline ${ties ? "ok" : "no"}`}>
-                    <span className="mark" aria-hidden="true">{ties ? "✓" : "✗"}</span>
+                    <span className="mark"><Icon name={ties ? "circle-check" : "octagon-alert"} size={16} /></span>
                     <span className="what">{label}</span>
                     <span className="fig-sm">{ties ? actual : `${actual} vs ${expected}`}</span>
                   </li>
@@ -130,6 +127,7 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
                     blocked={blocked} />
       </Section>
     </div>
+    </Page>
   );
 }
 

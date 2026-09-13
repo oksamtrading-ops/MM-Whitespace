@@ -4,6 +4,8 @@ import { useActionState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { beginPursuit, type ActionResult } from "../../../(analyst)/pursuits/actions.ts";
+import Callout from "../../../_ui/Callout.tsx";
+import Icon from "../../../_ui/Icon.tsx";
 
 /**
  * The way into the pursuit workflow, from the one screen that has the evidence.
@@ -23,20 +25,21 @@ export default function PursuitLink({ companyId, pursuitId }: {
 
   if (id) {
     return (
-      <p className="meta">
-        <Link href={`/pursuits/${id}` as Route} prefetch={false}>Open the pursuit →</Link>
-      </p>
+      <Link className="btn sm secondary" href={`/pursuits/${id}` as Route} prefetch={false}>
+        <Icon name="crosshair" size={13} />Open the pursuit
+      </Link>
     );
   }
   return (
     <form action={begin} className="inline">
       <input type="hidden" name="companyId" value={companyId} />
-      <button type="submit" className="btn" disabled={starting}>
-        {starting ? "Opening…" : "Start a pursuit"}
+      <button type="submit" className={`btn sm primary${starting ? " loading" : ""}`}
+              disabled={starting} aria-busy={starting || undefined}>
+        <Icon name="crosshair" size={13} />Start a pursuit
       </button>
       <div role="status" aria-live="polite">
         {state && !state.ok && (
-          <div className="notice alert"><b>Not opened</b><span>{state.message}</span></div>
+          <Callout tone="danger" title="Not opened">{state.message}</Callout>
         )}
       </div>
     </form>

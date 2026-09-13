@@ -3,6 +3,8 @@
 import { useActionState } from "react";
 import { action, assign, endPursuit, note, prioritise, reopen, type ActionResult } from "../actions.ts";
 import type { Vocabulary } from "../../../../lib/pursuit/index.ts";
+import Callout from "../../../_ui/Callout.tsx";
+import Icon from "../../../_ui/Icon.tsx";
 
 export type Person = { id: string; email: string };
 
@@ -27,10 +29,8 @@ function Notice({ state }: { state: ActionResult | null }) {
   return (
     <div role="status" aria-live="polite">
       {state && (
-        <div className={`notice ${state.ok ? "ok" : "alert"}`}>
-          <b>{state.ok ? "Recorded" : "Not recorded"}</b>
-          <span>{state.message}</span>
-        </div>
+        <Callout tone={state.ok ? "ok" : "danger"}
+                 title={state.ok ? "Recorded" : "Not recorded"}>{state.message}</Callout>
       )}
     </div>
   );
@@ -66,8 +66,8 @@ export default function PursuitDesk(props: Props) {
             Reopening it is recorded, and the outcome it was closed under stays
             on the record.
           </p>
-          <button type="submit" className="btn" disabled={opening}>
-            {opening ? "Reopening…" : "Reopen this pursuit"}
+          <button type="submit" className={`btn secondary${opening ? " loading" : ""}`} disabled={opening}>
+            <Icon name="history" size={15} />Reopen this pursuit
           </button>
         </form>
         <Notice state={latest} />
@@ -86,8 +86,8 @@ export default function PursuitDesk(props: Props) {
               <option value="" disabled>Choose one</option>
               {vocabulary.priorities.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
-            <button type="submit" className="btn" disabled={judging}>
-              {judging ? "Setting…" : "Set"}
+            <button type="submit" className={`btn secondary${judging ? " loading" : ""}`} disabled={judging}>
+              <Icon name="check" size={15} />Set
             </button>
           </span>
         </form>
@@ -100,8 +100,8 @@ export default function PursuitDesk(props: Props) {
               <option value="">Unassigned</option>
               {people.map((p) => <option key={p.id} value={p.id}>{p.email}</option>)}
             </select>
-            <button type="submit" className="btn" disabled={assigning}>
-              {assigning ? "Assigning…" : "Assign"}
+            <button type="submit" className={`btn secondary${assigning ? " loading" : ""}`} disabled={assigning}>
+              <Icon name="circle-user" size={15} />Assign
             </button>
           </span>
         </form>
@@ -112,8 +112,8 @@ export default function PursuitDesk(props: Props) {
         <label htmlFor="body">Add a note</label>
         <textarea id="body" name="body" rows={3} required maxLength={4000}
                   placeholder="What happened, and what it means for the pursuit." />
-        <button type="submit" className="btn" disabled={noting}>
-          {noting ? "Adding…" : "Add note"}
+        <button type="submit" className={`btn primary${noting ? " loading" : ""}`} disabled={noting}>
+          <Icon name="quote" size={15} />Add note
         </button>
       </form>
 
@@ -130,8 +130,8 @@ export default function PursuitDesk(props: Props) {
             <option value="">Unassigned</option>
             {people.map((p) => <option key={p.id} value={p.id}>{p.email}</option>)}
           </select>
-          <button type="submit" className="btn" disabled={acting}>
-            {acting ? "Adding…" : "Add action"}
+          <button type="submit" className={`btn primary${acting ? " loading" : ""}`} disabled={acting}>
+            <Icon name="list-checks" size={15} />Add action
           </button>
         </span>
         <span className="hint">
@@ -146,8 +146,8 @@ export default function PursuitDesk(props: Props) {
           <select id="outcome" name="outcome" defaultValue={vocabulary.outcomes[0]}>
             {vocabulary.outcomes.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
-          <button type="submit" className="btn" disabled={ending}>
-            {ending ? "Closing…" : "Close"}
+          <button type="submit" className={`btn danger${ending ? " loading" : ""}`} disabled={ending}>
+            <Icon name="lock" size={15} />Close
           </button>
         </span>
         <span className="hint">

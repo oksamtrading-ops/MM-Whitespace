@@ -36,7 +36,7 @@ export default function ShortcutsDialog({ open, onClose }: { open: boolean; onCl
         </tbody>
       </table>
       <div className="acts">
-        <button type="button" className="btn" onClick={onClose}>Close</button>
+        <button type="button" className="btn quiet" onClick={onClose}>Close</button>
       </div>
     </dialog>
   );

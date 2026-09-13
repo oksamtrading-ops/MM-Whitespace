@@ -7,6 +7,10 @@ import Facts from "../../_ui/Facts.tsx";
 import Gauge from "../../_ui/Gauge.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
+import Callout from "../../_ui/Callout.tsx";
+import Icon from "../../_ui/Icon.tsx";
+import Page from "../../_ui/Page.tsx";
+import Panel, { StatRow } from "../../_ui/Panel.tsx";
 import { fmtDate, periodName } from "../../_ui/format.ts";
 import PublishForm from "./PublishForm.tsx";
 
@@ -58,54 +62,68 @@ export default async function Publish() {
   const isAdmin = ctx.user.role === "admin";
 
   return (
+    <Page title={`Publish ${periodTitle}`}
+          meta={revisions.length > 0 ? `Latest: revision ${revisions[0].revision}` : "Never published"}
+          actions={<>
+            <a className="btn sm secondary" href={`/api/export?period=${period.id}` as Route} download>
+              <Icon name="file-spreadsheet" size={13} />Workbook
+            </a>
+            <a className="btn sm quiet" href="#publish"><Icon name="badge-check" size={13} />Publish</a>
+          </>}>
     <div className="withrail">
       <div className="reading">
-        <h1 className="rise">Publish {periodTitle}</h1>
         <p className="sub rise">
           Publishing freezes a snapshot of every resolved value. Dashboards read only that,
           which is why a published revision is never edited — corrections are amendments
           that stand beside it.
         </p>
 
-        {gate.publishable
-          ? <div className="notice ok rise" role="status">
-              <b>The gate is open</b>
-              <span>Every floor is met and nothing is unresolved. This period may be published.</span>
-            </div>
-          : <div className="notice rise" role="status">
-              <b>The gate is blocked</b>
-              <span>
-                {gate.blockers.length} thing{gate.blockers.length === 1 ? "" : "s"} below.{" "}
+        <div className="rise">
+          {gate.publishable
+            ? <Callout tone="ok" title="The gate is open">
+                Every floor is met and nothing is unresolved. This period may be published.
+              </Callout>
+            : <Callout tone="danger"
+                       title={`The gate is blocked by ${gate.blockers.length} thing${gate.blockers.length === 1 ? "" : "s"}`}>
                 {isAdmin
-                  ? "You may publish through it with a reason, which is printed on the dashboard header."
+                  ? "You may publish through it with a reason, which is printed on the dashboard header for as long as the revision stands."
                   : "An Admin may publish through it with a recorded reason."}
-              </span>
-            </div>}
+              </Callout>}
+        </div>
 
-        <Section id="gate" title="The gate" index={1}
+        <Section id="gate" title="The gate" index={1} icon="badge-check"
                  caption={gate.blockers.length === 0
                    ? "Nothing is holding this period back."
                    : "Each of these is a fact about the data, not a setting."}>
-          {gate.blockers.length === 0
-            ? <p className="gateline ok"><span className="mark" aria-hidden="true">✓</span>
-                <span className="what">Open</span></p>
-            : (
-              <ul className="gatelist">
-                {gate.blockers.map((b, i) => {
-                  const fix = fixAt(b.kind, "chart" in b ? b.chart : undefined);
-                  return (
-                    <li key={i} className="gateline no">
-                      <span className="mark" aria-hidden="true">✗</span>
-                      <span className="what">{b.detail}</span>
-                      {fix && <Link href={fix.href} prefetch={false}>{fix.label} →</Link>}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+          <Panel icon={gate.blockers.length === 0 ? "circle-check" : "octagon-alert"}
+                 title={gate.blockers.length === 0 ? "Open" : `Blocked by ${gate.blockers.length}`} bare>
+            {gate.blockers.length === 0
+              ? <p className="gateline ok">
+                  <span className="mark"><Icon name="circle-check" size={16} /></span>
+                  <span className="what">Nothing is holding this period back.</span>
+                </p>
+              : (
+                <ul className="gatelist">
+                  {gate.blockers.map((b, i) => {
+                    const fix = fixAt(b.kind, "chart" in b ? b.chart : undefined);
+                    return (
+                      <li key={i} className="gateline no">
+                        <span className="mark"><Icon name="octagon-alert" size={16} /></span>
+                        <span className="what">{b.detail}</span>
+                        {fix && (
+                          <Link className="btn sm quiet" href={fix.href} prefetch={false}>
+                            {fix.label}<Icon name="arrow-right" size={13} />
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+          </Panel>
         </Section>
 
-        <Section id="coverage" title="Coverage against its floors" index={2}
+        <Section id="coverage" title="Coverage against its floors" index={2} icon="gauge"
                  caption="A chart below its floor is not drawn on the dashboard, so publishing does not make it appear.">
           <div className="gauges">
             {gate.coverage.map((c, i) => (
@@ -115,13 +133,15 @@ export default async function Publish() {
           </div>
         </Section>
 
-        <Section id="freeze" title="What gets frozen" index={3}
+        <Section id="freeze" title="What gets frozen" index={3} icon="lock"
                  caption="A revision is a copy, not a pointer. This is what it will contain.">
-          <Facts items={[
-            { label: "Companies", value:gate.population, figure: true },
-            { label: "Companies with unresolved values", value:gate.unresolvedCount, figure: true },
-            { label: "Revision", value: revisions.length + 1, figure: true },
-          ]} />
+          <Panel icon="lock" title="The next revision" bare>
+            <StatRow items={[
+              { value: gate.population, label: "Companies", icon: "building-2" },
+              { value: gate.unresolvedCount, label: "With unresolved values", icon: "circle-dashed", quiet: true },
+              { value: revisions.length + 1, label: "Revision", icon: "badge-check" },
+            ]} />
+          </Panel>
         </Section>
 
         {revisions.length > 0 && (
@@ -129,7 +149,8 @@ export default async function Publish() {
                    caption="None of these change. A correction is the next one down.">
             <table>
               <thead>
-                <tr><th className="n">Rev</th><th>Published</th><th>By</th><th>Note</th></tr>
+                <tr><th scope="col" className="n">Rev</th><th scope="col">Published</th>
+                    <th scope="col">By</th><th scope="col">Note</th></tr>
               </thead>
               <tbody>
                 {revisions.map((r) => (
@@ -137,11 +158,11 @@ export default async function Publish() {
                     <td className="n">{r.revision}</td>
                     <td>{fmtDate(r.published_at)}</td>
                     <td>{r.by_email ?? <span className="meta">a script</span>}</td>
-                    <td>
+                    <td className="wrap">
                       {r.override_reason
-                        ? <><span className="pill warn">override</span> {r.override_reason}</>
+                        ? <><span className="pill warn"><Icon name="triangle-alert" size={12} />override</span> {r.override_reason}</>
                         : r.amendment_reason
-                          ? <><span className="pill quiet">amendment</span> {r.amendment_reason}</>
+                          ? <><span className="pill quiet"><Icon name="history" size={12} />amendment</span> {r.amendment_reason}</>
                           : <span className="meta">first publication</span>}
                     </td>
                   </tr>
@@ -151,20 +172,20 @@ export default async function Publish() {
           </Section>
         )}
 
-        <Section id="publish" title={revisions.length > 0 ? "Publish an amendment" : "Publish"} index={5}>
+        <Section id="publish" title={revisions.length > 0 ? "Publish an amendment" : "Publish"} index={5} icon="badge-check" lead>
           <PublishForm periodId={period.id} publishable={gate.publishable} isAdmin={isAdmin}
                        amending={revisions.length > 0} blockers={gate.blockers.length} />
         </Section>
 
-        <Section id="export" title="Take it away as a workbook" index={6}
+        <Section id="export" title="Take it away as a workbook" index={6} icon="file-spreadsheet"
                  caption={"A clean template the application controls. The uploaded workbook is an " +
                           "input artifact and is never written back into; this is the deliverable."}>
-          <p>
-            <a className="btn" href={`/api/export?period=${period.id}` as Route} download>
-              Download .xlsx
-            </a>{" "}
-            <a className="btn quiet" href={`/api/export?period=${period.id}&format=csv` as Route} download>
-              Flat .csv
+          <p className="actions">
+            <a className="btn secondary" href={`/api/export?period=${period.id}` as Route} download>
+              <Icon name="file-spreadsheet" size={15} />Download .xlsx
+            </a>
+            <a className="btn secondary" href={`/api/export?period=${period.id}&format=csv` as Route} download>
+              <Icon name="download" size={15} />Flat .csv
             </a>
           </p>
           <p className="note">
@@ -182,16 +203,19 @@ export default async function Publish() {
           { label: "Period", value: periodTitle, figure: true },
           { label: "Market cap as of", value: fmtDate(period.market_cap_as_of) },
           { label: "Status", value: (
-              <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>{period.status}</span>
+              <span className={`pill ${period.status === "published" ? "ok" : "warn"}`}>
+                <Icon name={period.status === "published" ? "circle-check" : "circle-dashed"} size={12} />{period.status}
+              </span>
             ) },
           { label: "Gate", value:gate.publishable
-              ? <span className="pill ok">open</span>
-              : <span className="pill no">blocked</span> },
+              ? <span className="pill ok"><Icon name="circle-check" size={12} />open</span>
+              : <span className="pill no"><Icon name="octagon-alert" size={12} />blocked</span> },
           ...(revisions.length > 0
             ? [{ label: "Published", value: `Revision ${revisions[0].revision}`, figure: true }]
             : []),
         ]} />
       </aside>
     </div>
+    </Page>
   );
 }

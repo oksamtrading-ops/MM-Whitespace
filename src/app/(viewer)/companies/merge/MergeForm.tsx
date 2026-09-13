@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { merge } from "./actions.ts";
+import Callout from "../../../_ui/Callout.tsx";
 
 /**
  * The direction is the whole decision: one name survives and the other becomes
@@ -19,10 +20,10 @@ export default function MergeForm({ a, b, blocked }: {
   const kept = winner === null ? null : winner === a.id ? a : b;
 
   if (blocked) {
-    return <div className="notice alert"><b>Cannot be merged</b><span>{blocked}</span></div>;
+    return <Callout tone="danger" title="Cannot be merged">{blocked}</Callout>;
   }
   if (state?.ok) {
-    return <div className="notice ok" role="status"><b>Merged</b><span>{state.message}</span></div>;
+    return <Callout tone="ok" live title="Merged">{state.message}</Callout>;
   }
 
   return (
@@ -52,7 +53,7 @@ export default function MergeForm({ a, b, blocked }: {
 
       <div role="status" aria-live="polite">
         {state && !state.ok && (
-          <div className="notice alert"><b>Not merged</b><span>{state.message}</span></div>
+          <Callout tone="danger" title="Not merged">{state.message}</Callout>
         )}
       </div>
 

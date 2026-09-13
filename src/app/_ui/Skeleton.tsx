@@ -2,7 +2,7 @@
 
 export function DashboardSkeleton() {
   return (
-    <div className="reading" aria-busy="true" aria-label="Loading the dashboard">
+    <div className="page reading" aria-busy="true" aria-label="Loading the dashboard">
       <div className="sk line" style={{ width: 360 }} />
       <div className="sk sk-hero" />
       <div className="sk sk-map" />
@@ -23,7 +23,7 @@ export function DashboardSkeleton() {
 
 export function BoardSkeleton() {
   return (
-    <div className="reading" aria-busy="true" aria-label="Loading the review board">
+    <div className="page reading" aria-busy="true" aria-label="Loading the review board">
       <div className="sk line" style={{ width: 240, height: 28, marginBottom: 12 }} />
       <div className="sk line" style={{ width: 320, marginBottom: 40 }} />
       {[0, 1, 2].map((i) => (
@@ -35,7 +35,7 @@ export function BoardSkeleton() {
 
 export function GridSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading the grid">
+    <div className="page" aria-busy="true" aria-label="Loading the grid">
       <div className="sk line" style={{ width: 200, height: 28, marginBottom: 24 }} />
       <div className="sk-rows" style={{ border: "1px solid var(--rule)", borderRadius: 6 }}>
         {Array.from({ length: 9 }, (_, i) => <div key={i} />)}

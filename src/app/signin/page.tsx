@@ -30,7 +30,7 @@ export default async function SignIn(
   const user = await resolveUser(ctx.db, await ctx.claims.emailClaim(ctx.cookieHeader));
 
   return (
-    <div className="signin rise">
+    <div className="page"><div className="signin rise">
       {/* The lockup: the mark with the firm beneath it. Sign-in, print and the
           export are the only places the firm's name joins the mark; inside the
           product the wordmark stands alone. The lettering here is a
@@ -71,6 +71,6 @@ export default async function SignIn(
           refuses to run outside development.
         </p>
       )}
-    </div>
+    </div></div>
   );
 }

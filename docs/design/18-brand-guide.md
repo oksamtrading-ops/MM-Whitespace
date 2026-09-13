@@ -6,7 +6,7 @@ This guide extends doc 17. It reverses one decision there, records why, and leav
 
 ## 1. Thesis and principles
 
-**The reversal, recorded.** Doc 17 kept decision 8, light-first, and doc 16 called the alternative "a taste-and-brand decision wearing an accessibility argument." This guide makes the product dark-first with the light system kept whole as a second theme. Three reasons, in order of weight. First, the brand green passes on black (9.23:1) and fails on white (2.27:1), so on the dark ground the one colour the product is known by may carry text, lines, focus and the footing's tick, where on white it may only fill. Second, the demonstration is a partner opening a lit map of Canada, and that image does not exist on white. Third, doc 16's worry stands and is answered rather than dismissed: the dark theme is Deloitte's own black with surfaces mixed from Deloitte's own cool grey, the neutrals never leave the firm's ramp, and the light theme is one press away in the top bar for a partner reading the screen beside a light deck. Print always renders light.
+**The reversal, recorded.** Doc 17 kept decision 8, light-first, and doc 16 called the alternative "a taste-and-brand decision wearing an accessibility argument." This guide makes the product dark-first with the light system kept whole as a second theme. Three reasons, in order of weight. First, the brand green passes on black (9.23:1) and fails on white (2.27:1), so on the dark ground the one colour the product is known by may carry text, lines, focus and the footing's tick, where on white it may only fill. Second, the demonstration is a partner opening a lit map of Canada, and that image does not exist on white. Third, doc 16's worry stands and is answered rather than dismissed: the dark theme is Deloitte's own black with surfaces mixed from Deloitte's own cool grey, the neutrals never leave the firm's ramp, and the light theme is one press away in the rail's foot for a partner reading the screen beside a light deck. Print always renders light.
 
 Five principles, each with what it forbids.
 
@@ -22,9 +22,9 @@ Five principles, each with what it forbids.
 
 ## 2. Identity
 
-**The wordmark.** *Whitespace* in Open Sans 700 at −0.02em tracking, followed by the full stop: a circle of 0.3 cap-heights in `#86BC25`, its centre on the baseline plus 0.02em, set 0.06em after the *e*. The stop is a shape, not a character: it carries `aria-hidden` and does not translate. Clear space is the height of the *W* on every side. Minimum size is 17px in the top bar and 12px anywhere else; below that the stop is drawn as a 3px dot and the word is dropped.
+**The wordmark.** *Whitespace* in Open Sans 700 at −0.02em tracking, followed by the full stop: a circle of 0.3 cap-heights in `#86BC25`, its centre on the baseline plus 0.02em, set 0.06em after the *e*. The stop is a shape, not a character: it carries `aria-hidden` and does not translate. Clear space is the height of the *W* on every side. Minimum size is 15px in the rail and 12px anywhere else; below that the stop is drawn as a 3px dot and the word is dropped.
 
-**The lockup.** *Whitespace.* with DELOITTE beneath in Open Sans 600, 11px, tracked 0.16em, in ink-2. It appears on sign-in, on print headers and on the export cover, and nowhere inside the product, where the wordmark stands alone under a Deloitte-internal top bar. The lettering is a placeholder: the brand hub's own Deloitte wordmark asset replaces it, at the hub's clear-space rule, before any external showing *[confirm the co-branding rule on the brand hub]*.
+**The lockup.** *Whitespace.* with DELOITTE beneath in Open Sans 600, 11px, tracked 0.16em, in ink-2. It appears on sign-in, on print headers and on the export cover, and nowhere inside the product, where the wordmark stands alone at the head of the rail. The lettering is a placeholder: the brand hub's own Deloitte wordmark asset replaces it, at the hub's clear-space rule, before any external showing *[confirm the co-branding rule on the brand hub]*.
 
 **Dark and light.** On dark the word is white; on light it is black. The stop is the same green on both. There is no reversed or one-colour version: the stop is the brand and it is always green.
 
@@ -32,9 +32,9 @@ Five principles, each with what it forbids.
 
 **The full stop in three dimensions.** A matte satin sphere in the brand green, lit from the upper left at 35° elevation, with one soft white highlight at no more than 55% opacity, the shaded side falling through `#26890D` to black, and a black contact shadow that reveals a ground plane. No gloss, no rim light, no glow. It may appear on sign-in, in empty states beside the sentence, and beside a loading skeleton. It may fade in over 400ms and drift with the hero's parallax; it never rotates, bounces or pulses. Under reduced motion, forced colours and in print it is absent or flat. The drawing is `public/brand/full-stop-3d.svg`; the brief is `public/brand/objects/01-full-stop.md`.
 
-**Misuse.** Do not set the stop in any other colour. Do not outline it. Do not put a shadow on the flat stop. Do not set *Whitespace* in Archivo. Do not use white on green anywhere. Do not add a tagline to the lockup. Do not put the lockup on a page that also has the top bar.
+**Misuse.** Do not set the stop in any other colour. Do not outline it. Do not put a shadow on the flat stop. Do not set *Whitespace* in Archivo. Do not use white on green anywhere. Do not add a tagline to the lockup. Do not put the lockup on a page that also shows the rail's wordmark.
 
-**Acceptance.** `public/brand/` contains wordmark and lockup SVGs for both grounds, the icon family, the 3D stop with its flat fallback and a README stating licence and use; the sign-in page shows the lockup and the top bar shows the wordmark alone.
+**Acceptance.** `public/brand/` contains wordmark and lockup SVGs for both grounds, the icon family, the 3D stop with its flat fallback and a README stating licence and use; the sign-in page shows the lockup and the rail shows the wordmark alone.
 
 ## 3. Colour
 
@@ -139,11 +139,17 @@ Uppercase tracked labels are reserved for column headers and eyebrows. Tabular f
 
 Spacing is 4-based: `--space-1` to `--space-10` are 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. Radii: `0` for tables, `2` for marks, `4` for rows, `6` for controls, `10` for panels, pill for pills and chips. Breakpoints as tokens: 640, 860, 1100, 1240 (`--bp-*`, repeated in the media queries because CSS cannot read them there).
 
-The top bar is 56px, sticky, on the ground with a hairline. The reading measure is 880px with the 232px rail at 1100px and above; the rail folds above the reading column below that. The workbench splits the grid from the evidence panel at 1100px. Grid rows are 44px with 16px cell padding and a sticky 36px header; the roster is denser at 36px rows with 12px padding.
+**The shell is a left rail and a page header. There is no top bar** — a bar plus a header is two horizontal bands before any content. The rail is 208px expanded and 56px collapsed, sticky at full height, and its collapsed state is a cookie so the server renders it at the width the reader chose and it does not jump on first paint. It holds ten destinations in three groups: **Product** (Dashboard, Companies, Pursuits), **Period** (Upload, Runs, Review, Publish) and **Admin** (Access, Settings, Styleguide). A Viewer sees the first group only, and the rail is two rows tall. Its foot carries the period, the theme control and the account. Below 860px it collapses to icons and stays there.
+
+The page header is one 60px sticky band: a back link where the page is inside another, the title, an optional count pill, the period line, and the page's actions on the right. Every route has one. It is also where **show working** lives, the control that reveals each section's query key; it is on by default for anyone who can review and off for a Viewer. It never hides a footing.
+
+The reading measure is 880px with the 232px right rail at 1100px and above; that rail folds above the reading column below that, and it carries what the page is *about* — period facts, provenance, the in-page index — while the left rail carries where you can go. The workbench splits the grid from the evidence panel at 1100px. Grid rows are 44px with 16px cell padding and a sticky 36px header; the roster is denser at 36px rows with 12px padding.
 
 **The all-companies table** (`/companies`, the `.roster`) is full width, 259 rows, no pagination. Columns in this order: Company (sticky, row header), Ticker, Exchange, Tier, Stage, Footprint, Deloitte market, Auditor, Market cap. Every header sorts on click and announces `aria-sort`; the find box takes `/`; "Whitespace only" is a pressed button; `?province=BC` narrows to companies with a property there, which is where the map's hover link lands. Stage is derived from the published tier, never from live stage rows, so a Viewer cannot see a stage that is not yet published. Market cap is the compact Canadian figure in Archivo, right-aligned.
 
-**Acceptance.** At 1440px the roster shows all nine columns without a horizontal scrollbar; at 1024px the first column and the header stay put while the rest scrolls.
+**Tables have one anatomy and three densities.** Rows are 36px and middle-aligned by default, 30px compact, 44px roomy; a cell holding prose, a form or a disclosure takes `.wrap` and grows. The header is a quiet band — 12px medium in secondary ink on surface-2 — because a column name should not out-weigh the data under it; the old 11px uppercase at .08em tracking over a solid ink rule did. Numbers are Archivo, tabular, right-aligned, always. The action column is right-aligned, tight, and holds a 28px control that fits inside its own row. Every header cell carries a `scope`.
+
+**Acceptance.** At 1440px the roster shows all its columns without a horizontal scrollbar; at 1024px the first column and the header stay put while the rest scrolls. No control in a table row is taller than the row.
 
 ## 6. Depth and material
 
@@ -159,7 +165,7 @@ Blur is legal on a dialog backdrop (6px) and nowhere else. Never over data. Ligh
 
 Durations `--dur-1` to `--dur-5` are 120, 180, 260, 400, 600ms. Two easings: `--ease-out` for entrances and `--ease-in-out` for state changes. Everything is behind `prefers-reduced-motion: no-preference`.
 
-**First load.** The top bar is in place. The hero sentence rises 6px over 400ms. The map tilts in and its provinces fill in count order, 40ms apart, from 200ms. The footing's addends fade in in order, 60ms apart, and the total rises last with the green tick. Then the sections rise in the existing 60ms stagger and the bars grow from the left over 600ms. **Map to table.** The map settles from its tilt to flat over 600ms on the first scroll or touch; the rest of the page does not move. **Count-up** is the hero figure only, and only on the dashboard. **Hover and press.** Every control transitions background and colour in 120–180ms and presses down 1px. **The evidence panel** cross-fades in 120ms as the cursor moves. **Skeleton to content** dissolves in 180ms. **Under reduced motion** nothing enters, grows, tilts or turns; the button's loading ring is a static ring.
+**First load.** The rail and the page header are in place. The hero sentence rises 6px over 400ms. The map tilts in and its provinces fill in count order, 40ms apart, from 200ms. The footing's addends fade in in order, 60ms apart, and the total rises last with the green tick. Then the sections rise in the existing 60ms stagger and the bars grow from the left over 600ms. **Map to table.** The map settles from its tilt to flat over 600ms on the first scroll or touch; the rest of the page does not move. **Count-up** is the hero figure only, and only on the dashboard. **Hover and press.** Every control transitions background and colour in 120–180ms and presses down 1px. **The evidence panel** cross-fades in 120ms as the cursor moves. **Skeleton to content** dissolves in 180ms. **Under reduced motion** nothing enters, grows, tilts or turns; the button's loading ring is a static ring.
 
 The rule: motion explains a change of state. Nothing on grid rows. Nothing loops.
 
@@ -167,22 +173,24 @@ The rule: motion explains a change of state. Nothing on grid rows. Nothing loops
 
 ## 8. Iconography
 
-One set: **Lucide** (ISC licence, which permits internal use without attribution in the interface; the notice is kept in `public/brand/README.md`). Stroke 1.5px at 16px optical size in text; 2px at 20px in toolbars. An icon never appears without a text label, except in a toolbar with a tooltip, and a tooltip never gates a value.
+**Seventy-three glyphs from Lucide 1.45.0 (ISC), vendored.** They live in `src/app/_ui/Icon.tsx` as path data, about 11 KB, with the licence at `public/brand/LICENSE-lucide.txt`. Not a dependency: the product self-hosts its faces through `next/font` for the same reason, and `lucide-react` unpacks to 35 MB to deliver the same paths. Add an icon by copying its path data from the same version; never draw one.
 
-The glyphs the build currently draws with Unicode, and their names in the set:
+Stroke 1.75 at 12–17px optical size, `currentColor`, decorative by default — the word beside it carries the meaning, so the glyph is hidden from assistive technology. An icon never appears without a text label, **except** in a toolbar or the collapsed rail, where it carries a tooltip and an accessible name.
 
-| Now | Icon | Where |
+**The four severities are reserved and mean nothing else.**
+
+| Icon | Means | Where |
 |---|---|---|
-| ▲ ▼ | `chevron-up`, `chevron-down` | sort direction, migration polarity (with the word) |
-| ● ○ | `circle` filled / outline | the rule that fired, the queue's "start here" |
-| ✓ ✗ | `check`, `x` | the footing's tick, the gate list |
-| ↗ | `arrow-up-right` | an external source |
-| → | `arrow-right` | an in-product link's end, the role chooser |
-| ⇧ ⌘ | text in `<kbd>`, not icons | shortcuts |
+| `circle-check` | passed, accepted, active | the ok callout, a met floor, an active account |
+| `triangle-alert` | warning | the warn callout, an override, a stale account |
+| `octagon-alert` | blocked, refused | the danger callout, a gate blocker |
+| `info` | information | the info callout |
 
-Until the set is installed, the Unicode glyphs stay; they are inside `aria-hidden` spans and the word beside them carries the meaning, so nothing depends on the swap.
+The rest of the vocabulary, by job: **review** — `check` accept, `pencil` override, `flag` flag, `git-compare` conflict, `search-x` no evidence, `shield-off` quarantined, `history` inherited or superseded, `list-checks` bulk accept, `undo-2` undo, `eye` show working, `keyboard` shortcuts. **The domain** — `gauge` coverage, `layers` tier, `map` footprint, `map-pin` jurisdiction, `landmark` auditor, `building-2` company, `crosshair` pursuit, `pickaxe` stage, `mountain` production, `hard-hat` development, `gem` commodities, `coins` royalty, `banknote` fees. **Data and actions** — `scroll-text` evidence, `quote` excerpt, `external-link` an outside source, `lock` frozen, `database` the population, `download` export, `file-spreadsheet` the workbook, `badge-check` publish, `upload` upload, `play` run, `octagon-x` halted, `user-x` deactivate, `users` access, `clock-alert` stale, `settings`, `palette`. **Direction** — `trending-up` improved, `trending-down` declined, `minus` unchanged; polarity still ships with its word.
 
-**Acceptance.** Every icon in the product has a text label beside it or a tooltip on its toolbar button; no icon is the only carrier of a state.
+The Unicode marks the build used to draw — ▲ ▼ ● ○ ✓ ✗ ↗ → ← — are gone from the interface. Two survive on purpose: the footing's `= N ✓` is one string the journeys assert, and an arrow inside prose ("Tier 6 → Tier 5") is typography, not an icon.
+
+**Acceptance.** `/styleguide` lists the vocabulary with its names; no icon in the product is the only carrier of a state; `grep` finds no ▲▼●○✗↗ in `src/app` outside the footing.
 
 ## 9. Data visualisation
 
@@ -230,10 +238,13 @@ Every component in `src/app/_ui` and every pattern in `globals.css`, with its st
 
 | Component | Variants and sizes | States that change its look | Tokens | Keyboard and screen reader | Do / don't |
 |---|---|---|---|---|---|
-| Top bar `.topbar` | one | current section underlined | ground, rule, ink-2, green-mark | a labelled nav; `aria-current="page"` | Do keep it opaque. Don't blur it over the map |
-| Nav `.nav a` | — | hover, current | ink-2 → ink, green-mark | tab order left to right | Don't add icons |
-| Period chip `.chip` | published / draft dot | — | rule, green-line, warn | text, not a button | Don't drop the period name before the revision |
-| Theme switch `.theme` | Dark / Light / System | pressed | ink, on-ink | a group of three `aria-pressed` buttons | Don't use an icon-only toggle |
+| Rail `.sidebar` | expanded 208px / collapsed 56px | hover, current, collapsed | sidebar-bg, surface-2, sidebar-active, green-mark | one labelled `nav` per group; `aria-current="page"`; collapsed items keep their label as the accessible name and gain a tooltip | Do keep the collapse in a cookie. Don't hide a group behind a disclosure |
+| Page header `.pagehead` | with back, count, meta, actions | sticky | pagehead-bg, rule, surface-2 | the `h1` for the route | Do give every route one. Don't put a second bar above it |
+| Period, in the rail's foot | published / draft dot | — | green-line, warn | text with an `sr-only` expansion when collapsed | Don't repeat the revision here; that is the header's |
+| Theme control `.railbtn` | Dark → Light → System | hover | ink-3 → ink | one button; the label names the current state and the next | Don't make it icon-only without a label |
+| Callout `.callout` | info / ok / warn / danger | live (`role="status"`) | the tone's edge, soft ground and reserved icon | title then body; `role="status"` only when it reports something the reader just did | Do let the icon and the word carry the tone together. Don't use colour alone |
+| Panel `.panel` | with icon, title, right slot, bare | — | rule-raised, surface-1, surface-2 | a labelled `section` | Do put loose figures in one. Don't give it a shadow |
+| Stat row `.statrow` | quiet items, linked items | hover on a linked cell | rule, figure-lg, ink-3 | plain text | Do keep the cells equal. Don't let one orphan on a row |
 | Skip link `.skip` | — | focus | skip-bg, skip-ink | first tab stop | — |
 | Facts `.facts` | inline / rail | — | ink-3 label, ink value | a `<dl>` | Don't set a fact as a sentence |
 | Ledger `.ledger` | quiet item | — | rule, figure-lg | a `<dl>` | Don't make it cards |
@@ -243,14 +254,14 @@ Every component in `src/app/_ui` and every pattern in `globals.css`, with its st
 | Footing `.footing` | ties / fails | addend hot | ink, alert, green-text | one string, `aria-label="Proof: …"` | Don't split `= N ✓` |
 | Gauge `.gauge` | below / warn / over / compact | — | green-line, demote, warn, alert | `role="img"` naming percent and floor | Don't fill below the floor in green |
 | Meter `.meter` | — | — | figure-md | text with a link into review | Don't let it change the footprint |
-| Notice `.notice` | default / alert / ok | — | warn, alert, green-mark | `role="status"` | Don't fill the background |
+
 | Pills `.pill`, tags `.tag` | ok / no / warn / quiet / conflict / done / retired | — | soft grounds and their text | text | Don't rely on the colour: the word is the state |
-| Tables, matrix, roster | `.matrix`, `.provenance`, `.accounts`, `.roster` | sorted, hover | rule, ink, figures | `th scope`, `aria-sort` | Don't zebra-stripe |
+| Tables | one anatomy; `.t-compact` 30px, default 36px, `.t-roomy` 44px; `.roster`, `.matrix`, `.provenance`, `.accounts` | row hover, sorted header, sticky header and first column | surface-1, surface-2, rule, rule-raised | `th scope` on every header, `aria-sort` on a sortable one, a row header per row | Do right-align every number and middle-align every row. Don't zebra-stripe, and don't put a 44px control in a 36px row |
 | Review grid `.grid` | field-major / company-major | selected row, decided row, focused cell | surface-1, surface-2, green-mark | one tab stop, roving index, live region | Don't animate rows |
 | Evidence strip `.ev` | four bands | — | green-mark, warn, alert | strip hidden; numeral and word visible | Don't show a strip without its numeral |
 | Evidence panel `.evidence` | with diff / editor / flag | cross-fade | surface-1, rule | a labelled region referenced by `aria-describedby` | Don't make it a tooltip |
 | Diff `.diff` | — | — | rule, surface-1 | two named cells | Don't pre-select |
-| Buttons `.btn` | default / primary / quiet; 44px, 40px in the panel, 32px inline | hover, active (1px press), pressed, disabled, loading | btn-*, on-ink | `aria-pressed`, `aria-busy` when loading | Don't change width while loading |
+| Buttons `.btn` | primary / default / secondary / quiet / danger; 44px `lg`, 36px default, 28px `sm`, `icon-only` square | hover, active (1px press), pressed, disabled, loading | brand-fill and on-brand for primary; btn-bg, rule-raised, alert-edge | `aria-pressed` on a toggle, `aria-busy` and a kept label when loading, an `aria-label` when icon-only | Do use danger for the one control that takes something away. Don't style an action as a text link, and don't change width while loading |
 | Filters `.filters` | chips with counts | current | ink, on-ink | links with `aria-current` | — |
 | Find `.find` | in tools, in the palette | — | input-bg, rule | labelled, `/` focuses it | — |
 | Status line `.statusline` | — | announcement | ink-2 | `aria-live="polite"` | — |
@@ -265,7 +276,7 @@ Every component in `src/app/_ui` and every pattern in `globals.css`, with its st
 | State bar `.statebar` | eight states | — | brand-fill, green-line, warn, alert, demote | labelled | — |
 | Trace `.trace` | fired / not | — | green-mark, ink-3 | fired state in sr-only text | — |
 | Verdict `.verdict` | tier / unclassified | — | figure-lg | a sentence | — |
-| **Tooltip** `.tooltip` | on `.has-tip` | visible on hover and focus-within | surface-3, shadow-2 | `role="tooltip"`, `aria-describedby`; never the only carrier | Don't put a control inside |
+| **Tooltip** `.tip > .bubble` | on the collapsed rail and icon-only controls | visible on hover and focus-within | surface-3, shadow-2 | `role="tooltip"`; never the only carrier of a value | Don't put a control inside |
 | **Toast** `.toast` | default / alert / warn | — | surface-3, green-mark | `role="status"`, one at a time, bottom left | Don't stack more than one |
 | **Segmented** `.segmented` | 2–4 words | pressed | ink, on-ink | `aria-pressed` buttons or `aria-current` links | Don't use for more than four |
 | **Switch** `.switch` | — | checked, disabled | rule-raised, green-mark | `role="switch"` with the word beside it | Don't use for anything that saves on change without saying so |
@@ -290,9 +301,9 @@ Plain verbs, sentence case, no filler. An action keeps its name through the flow
 
 ## 14. Accessibility and print
 
-WCAG 2.1 AA is the floor. Text 4.5:1 and non-text 3:1 in both themes, by script. Targets 44px. One tab stop with a roving index in the grid; a polite live region for every decision; the evidence panel a labelled region, never a tooltip. Focus indicators are 2px in `--focus` with 2px offset, which is the darkened green on light and the brand on dark. At 200% zoom the grid scrolls horizontally under the data-table exception while the toolbar and filters reflow; the roster does the same. Forced-colours mode: bars, gauges, the state bar and the map keep `forced-color-adjust: none` and take `CanvasText` and `GrayText`, the selected row takes a `Highlight` outline, the orb disappears. Reduced motion: section 7.
+WCAG 2.1 AA is the floor. Text 4.5:1 and non-text 3:1 in both themes, by script. **Targets: 44px where the obligation applies.** WCAG 2.1's 44px rule is AAA, not AA, and a 44px control in a 36px table row is the defect it produced here; so a button is 36px tall on a fine pointer and 28px in a table row, and a pseudo-element expands every button's target to 44px under `@media (pointer: coarse)`, which is where a thumb actually needs it. One tab stop with a roving index in the grid; a polite live region for every decision; the evidence panel a labelled region, never a tooltip. Focus indicators are 2px in `--focus` with 2px offset, which is the darkened green on light and the brand on dark. At 200% zoom the grid scrolls horizontally under the data-table exception while the toolbar and filters reflow; the roster does the same. Forced-colours mode: bars, gauges, the state bar and the map keep `forced-color-adjust: none` and take `CanvasText` and `GrayText`, the selected row takes a `Highlight` outline, the orb disappears. Reduced motion: section 7.
 
-Print always renders light: the `@media print` block restates the light tokens on the root, removes the top bar, the switch, the map's readout and the toasts, flattens the tilt, opens the bars twin, keeps every footing, and ends with the three licence notices. The export workbook is the paper form of the brand: the same wordmark on its cover *[confirm the lockup]*, the same footings on every population sheet, Open Sans throughout, figures right-aligned and tabular, and no colour on any cell but the brand green on the cover's stop.
+Print always renders light: the `@media print` block restates the light tokens on the root, removes the rail, the header's actions, the map's readout and the toasts, flattens the tilt, opens the bars twin, keeps every footing, and ends with the three licence notices. The export workbook is the paper form of the brand: the same wordmark on its cover *[confirm the lockup]*, the same footings on every population sheet, Open Sans throughout, figures right-aligned and tabular, and no colour on any cell but the brand green on the cover's stop.
 
 **Acceptance.** `npm run e2e` reports no serious findings on every route; printing `/dashboard` from the dark theme produces a light page with the footings.
 
@@ -312,16 +323,23 @@ Ordered so the demonstration path is finished first. Effort is in engineer-days 
 | 8 | The living styleguide | 1 | ✓ |
 | 9 | Brand assets and the object briefs | 0.5 | ✓ |
 | 10 | Before/after screenshots in both themes | 0.5 | ✓ |
-| 11 | Install Lucide and swap the Unicode glyphs (section 8) | 0.5 | — |
-| 12 | Wire the toast to the decision announcer and the publish progress to the publish job | 1 | — |
-| 13 | Grow the `/` find into the command palette (companies, fields, sections) | 1 | — |
-| 14 | The hero figure's count-up | 0.25 | — |
-| 15 | Render the drill core, claim grid and ore body to the briefs; place them in the empty states | 2 (plus a renderer) | — |
-| 16 | The key-jurisdictions inset, once the foreign vocabulary separates countries from states | 1 | — |
-| 17 | Fold the export's cover and sheets onto the brand (section 14) | 1 | — |
+| 11 | Vendor the icon set and swap every Unicode glyph (section 8) | 0.5 | ✓ |
+| 12 | The button system: five variants, three sizes, the green primary | 0.5 | ✓ |
+| 13 | Status callouts, replacing `.notice` in ~30 places | 0.5 | ✓ |
+| 14 | The table system: one anatomy, three densities, `scope`, the aligned action column | 1 | ✓ |
+| 15 | Panels and the stat row, for every loose figure | 0.5 | ✓ |
+| 16 | The shell: the left rail, the page header on all seventeen routes, no top bar | 2 | ✓ |
+| 17 | Section rhythm, section icons, "show working" | 0.5 | ✓ |
 | 18 | Fix the zero-count queue tile's inline collapse | 0.1 | ✓ |
+| 19 | Wire the toast to the decision announcer and the publish progress to the publish job | 1 | — |
+| 20 | Grow the `/` find into the command palette (companies, fields, sections) | 1 | — |
+| 21 | The hero figure's count-up | 0.25 | — |
+| 22 | Render the drill core, claim grid and ore body to the briefs; place them in the empty states | 2 (plus a renderer) | — |
+| 23 | The key-jurisdictions inset, once the foreign vocabulary separates countries from states | 1 | — |
+| 24 | Fold the export's cover and sheets onto the brand (section 14) | 1 | — |
+| 25 | Drill-down links from every bar into the filtered roster, and one "since last period" empty state | 1 | — |
 
-**Acceptance.** Steps 1–10 and 18 are in the tree; `npm run check:contrast`, `npm test` and `npm run e2e:isolated` pass on it.
+**Acceptance.** Steps 1–18 are in the tree; `npm run check:contrast`, `npm test` and `npm run e2e:isolated` pass on it.
 
 ## 16. Open questions and placeholders
 

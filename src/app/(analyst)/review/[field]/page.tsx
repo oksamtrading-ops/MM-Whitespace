@@ -10,6 +10,7 @@ import Refusal from "../../../_ui/Refusal.tsx";
 import Facts from "../../../_ui/Facts.tsx";
 import { periodName } from "../../../_ui/format.ts";
 import Grid, { type GridRow } from "./Grid.tsx";
+import Page from "../../../_ui/Page.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Review" };
@@ -89,15 +90,9 @@ export default async function FieldReview(
       : (await fieldRows(ctx.db, period.id, field, key, threshold)).length])));
 
   return (
-    <>
-      <p className="crumb rise"><Link href="/review" prefetch={false}>← Review</Link></p>
-      <div className="titlerow rise">
-        <h1>{catalogue.label}</h1>
-        <Facts items={[
-          { label: "Period", value: periodName(period.label).name, figure: true },
-          { label: "Sorted by", value: "Evidence, weakest first" },
-        ]} />
-      </div>
+    <Page title={catalogue.label} count={rows.length}
+          back={{ href: "/review", label: "Review" }}
+          meta={`${periodName(period.label).name} · evidence, weakest first`}>
 
       <nav className="filters rise" aria-label="Filter" style={{ "--i": 1 } as React.CSSProperties}>
         {BUCKETS.map(([key, label]) => (
@@ -133,6 +128,6 @@ export default async function FieldReview(
         rows={rows}
         initialQuery={q}
       />
-    </>
+    </Page>
   );
 }

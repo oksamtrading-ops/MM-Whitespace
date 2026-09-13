@@ -2,6 +2,7 @@
 
 import { useActionState, useRef, useState } from "react";
 import { uploadWorkbook } from "./actions.ts";
+import Callout from "../../_ui/Callout.tsx";
 
 /** Choose a workbook, or drop one on the same target. */
 export default function UploadForm() {
@@ -39,10 +40,7 @@ export default function UploadForm() {
 
       <div role="status" aria-live="polite">
         {state && !state.ok && (
-          <div className="notice alert">
-            <b>Not read</b>
-            <span>{state.message}{state.detail ? ` ${state.detail}` : ""}</span>
-          </div>
+          <Callout tone="danger" title="Not read">{state.message}{state.detail ? ` ${state.detail}` : ""}</Callout>
         )}
       </div>
 
