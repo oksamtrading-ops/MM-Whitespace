@@ -44,7 +44,9 @@ export default function ActionsTable({ pursuitId, actions, vocabulary }: {
                         action's status, so it stays selectable rather than
                         silently becoming the first option. */}
                     {a.statusRetired && <option value={a.status}>{a.status} — retired</option>}
-                    {vocabulary.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {vocabulary.statuses.map((s) => (
+                      <option key={s.name} value={s.name}>{s.name}</option>
+                    ))}
                   </select>
                   <button type="submit" className="btn" disabled={moving}>Move</button>
                 </form>

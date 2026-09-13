@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { memorySql } from "../db/open.ts";
 import type { Sql } from "../db/sql.ts";
 import {
-  addAction, addNote, getPursuit, listPursuits, PursuitRefused, setActionStatus,
-  setOwner, setPriority, startPursuit, vocabulary,
+  addAction, addNote, closedStatuses, getPursuit, listPursuits, parseStatuses, PursuitRefused,
+  setActionStatus, setOwner, setPriority, startPursuit, statusNames, vocabulary,
 } from "./index.ts";
 import { validate, InvalidSetting, putSettings } from "../settings/index.ts";
 import { publicRow } from "../enrich/worker.ts";
@@ -24,13 +24,13 @@ test("the vocabularies come from settings, and migration 0020 seeds them", async
   const { db } = await seeded();
   const v = await vocabulary(db);
   assert.deepEqual(v.priorities, ["High", "Medium", "Low"]);
-  assert.deepEqual(v.statuses, ["Open", "Done"]);
+  assert.deepEqual(v.statuses, [{ name: "Open", closed: false }, { name: "Done", closed: true }]);
 });
 
 test("a changed vocabulary changes the screen, with no deployment", async () => {
   const { db, actor } = await seeded();
-  await putSettings(db, { pursuit_action_statuses: "To do, Doing, Done" }, actor);
-  assert.deepEqual((await vocabulary(db)).statuses, ["To do", "Doing", "Done"]);
+  await putSettings(db, { pursuit_action_statuses: "To do, Doing, Done*" }, actor);
+  assert.deepEqual(statusNames(await vocabulary(db)), ["To do", "Doing", "Done"]);
 });
 
 test("a vocabulary that is not a choice is refused", async () => {
@@ -213,4 +213,69 @@ test("and if one ever did, the egress scan is the second line", async () => {
   assert.throws(
     () => egressScan({ content: "the Pursuit priority is High" }, restrictions),
     EgressViolation);
+});
+
+
+/* --------------------------------- finished is not the same as abandoned */
+
+test("a star marks a status that CLOSES an action, and more than one may", async () => {
+  // "Closed" used to be position -- the last status in the list -- so exactly
+  // one status could end an action. Finished and abandoned shared a word, and a
+  // count of completed work silently included the work nobody did.
+  const { db, northco, actor } = await seeded();
+  await putSettings(db, { pursuit_action_statuses: "Open, Done*, Superseded*" }, actor);
+  const v = await vocabulary(db);
+  assert.deepEqual(statusNames(v), ["Open", "Done", "Superseded"]);
+  assert.deepEqual(closedStatuses(v), ["Done", "Superseded"]);
+
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "finished this one" }, actor);
+  await addAction(db, id, { description: "gave up on this one" }, actor);
+  const [done, dropped] = (await getPursuit(db, id))!.actions;
+  assert.equal(done.status, "Open", "a new action starts in the first status, which never closes");
+
+  await setActionStatus(db, done.id, "Done", actor);
+  assert.equal((await listPursuits(db))[0].openActions, 1);
+  await setActionStatus(db, dropped.id, "Superseded", actor);
+  assert.equal((await listPursuits(db))[0].openActions, 0,
+               "abandoned stops counting as open, without claiming to be done");
+
+  // And the two are still distinguishable on the record, which is the point.
+  const after = (await getPursuit(db, id))!.actions.map((a) => a.status);
+  assert.deepEqual(after, ["Done", "Superseded"]);
+});
+
+test("a status list that closes nothing, or everything, is refused", async () => {
+  assert.throws(() => validate("pursuit_action_statuses", "Open, Doing"),
+                /no action can ever be closed/);
+  assert.throws(() => validate("pursuit_action_statuses", "Open*, Done*"),
+                /closed the moment it is made/);
+  assert.throws(() => validate("pursuit_action_statuses", "Open*, Done"),
+                /first status is where a new action starts/);
+  assert.equal(validate("pursuit_action_statuses", " Open , Done* "), "Open, Done*");
+  // A star closes an action. A priority closes nothing.
+  assert.throws(() => validate("pursuit_priorities", "High*, Low"), /does not close anything/);
+});
+
+test("a value written before the star existed still closes on its last term", async () => {
+  // Otherwise every action in the database becomes open again the day this
+  // ships, which is a migration that silently reopens finished work.
+  assert.deepEqual(parseStatuses(["Open", "Done"]),
+                   [{ name: "Open", closed: false }, { name: "Done", closed: true }]);
+});
+
+test("a status the vocabulary no longer knows counts as OPEN", async () => {
+  // The safe direction: work stays visible rather than vanishing from the list
+  // because somebody renamed a term.
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "x" }, actor);
+  const action = (await getPursuit(db, id))!.actions[0];
+  await setActionStatus(db, action.id, "Done", actor);
+  assert.equal((await listPursuits(db))[0].openActions, 0);
+
+  await putSettings(db, { pursuit_action_statuses: "Open, Finished*" }, actor);
+  assert.equal((await listPursuits(db))[0].openActions, 1,
+               "“Done” no longer closes anything, so the action is open again and visible");
+  assert.equal((await getPursuit(db, id))!.actions[0].statusRetired, true);
 });

@@ -106,7 +106,7 @@ export default function PursuitDesk(props: Props) {
           </button>
         </span>
         <span className="hint">
-          It starts as “{vocabulary.statuses[0]}”. Move it below as it goes.
+          It starts as “{vocabulary.statuses[0].name}”. Move it below as it goes.
         </span>
       </form>
 

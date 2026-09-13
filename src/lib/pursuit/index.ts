@@ -30,20 +30,50 @@ import { getList } from "../settings/index.ts";
 
 /** Used only where the settings table has no answer. See migration 0020. */
 export const FALLBACK_PRIORITIES = ["High", "Medium", "Low"] as const;
-export const FALLBACK_STATUSES = ["Open", "Done"] as const;
+export const FALLBACK_STATUSES = ["Open", "Done*"] as const;
 
-export type Vocabulary = { priorities: string[]; statuses: string[] };
+/**
+ * A status, and whether reaching it CLOSES the action.
+ *
+ * "Closed" was position for a while -- the last status in the list -- which
+ * meant exactly one status could end an action. Finished and abandoned then had
+ * to share a word, so anything given up on was recorded as done, and a count of
+ * completed work silently included the work nobody did. A star in the settings
+ * value marks each status that closes: "Open, Done*, Superseded*".
+ *
+ * One field rather than two, because a separate list of closing statuses can
+ * name a status the first list does not have, and then the two disagree with
+ * nothing to say which is right.
+ */
+export type Status = { name: string; closed: boolean };
+export type Vocabulary = { priorities: string[]; statuses: Status[] };
+
+export function parseStatuses(terms: readonly string[]): Status[] {
+  const parsed = terms.map((t) => ({
+    name: t.replace(/\*$/, "").trim(),
+    closed: t.trim().endsWith("*"),
+  })).filter((s) => s.name.length > 0);
+  // A value written before the star existed closes on its last term, which is
+  // what it meant then. Without this every action in the database becomes open
+  // again the moment this ships.
+  if (parsed.length > 0 && !parsed.some((s) => s.closed)) {
+    parsed[parsed.length - 1].closed = true;
+  }
+  return parsed;
+}
 
 export async function vocabulary(db: Sql): Promise<Vocabulary> {
   return {
     priorities: await getList(db, "pursuit_priorities", FALLBACK_PRIORITIES),
-    statuses: await getList(db, "pursuit_action_statuses", FALLBACK_STATUSES),
+    statuses: parseStatuses(await getList(db, "pursuit_action_statuses", FALLBACK_STATUSES)),
   };
 }
 
-/** The status a new action starts in, and the one that counts as finished. */
-export const firstStatus = (v: Vocabulary): string => v.statuses[0];
-export const doneStatus = (v: Vocabulary): string => v.statuses[v.statuses.length - 1];
+/** The status a new action starts in: the first, which never closes. */
+export const firstStatus = (v: Vocabulary): string => v.statuses[0].name;
+export const statusNames = (v: Vocabulary): string[] => v.statuses.map((s) => s.name);
+export const closedStatuses = (v: Vocabulary): string[] =>
+  v.statuses.filter((s) => s.closed).map((s) => s.name);
 
 export class PursuitRefused extends Error {
   constructor(message: string) { super(message); this.name = "PursuitRefused"; }
@@ -84,13 +114,17 @@ export type Action = {
  */
 export async function listPursuits(db: Sql): Promise<PursuitRow[]> {
   const v = await vocabulary(db);
+  // A status the vocabulary no longer knows counts as OPEN. It is not known to
+  // close anything, and the safe direction is that work stays visible rather
+  // than vanishing from the list because a term was renamed.
+  const closed = closedStatuses(v);
   const rows = await db.all(
     `select p.id, p.company_id, c.canonical_name as company_name, p.priority,
             p.owner_id, u.email as owner_email, p.created_at,
             (select count(*) from pursuit_notes n where n.pursuit_id = p.id) as notes,
             (select count(*) from pursuit_actions a where a.pursuit_id = p.id) as total_actions,
             (select count(*) from pursuit_actions a
-              where a.pursuit_id = p.id and a.status != ?) as open_actions,
+              where a.pursuit_id = p.id and a.status not in (SLOTS)) as open_actions,
             (select max(t) from (
                select p.created_at as t
                union all select n2.created_at from pursuit_notes n2 where n2.pursuit_id = p.id
@@ -98,7 +132,9 @@ export async function listPursuits(db: Sql): Promise<PursuitRow[]> {
              ) x) as last_activity_at
        from pursuits p
        join companies c on c.id = p.company_id
-       left join app_users u on u.id = p.owner_id`, doneStatus(v)) as Array<Record<string, unknown>>;
+       left join app_users u on u.id = p.owner_id`
+      .replace("SLOTS", closed.map(() => "?").join(", ")),
+    ...closed) as Array<Record<string, unknown>>;
 
   const rank = new Map(v.priorities.map((p, i) => [p, i]));
   return rows.map((r) => ({
@@ -130,7 +166,7 @@ export async function getPursuit(
   const pursuit = all.find((p) => p.id === id);
   if (!pursuit) return null;
   const v = await vocabulary(db);
-  const known = new Set(v.statuses);
+  const known = new Set(statusNames(v));
 
   const notes = (await db.all(
     `select n.id, n.body, n.created_at, u.email as author_email
@@ -251,9 +287,9 @@ export async function setActionStatus(
   db: Sql, actionId: string, status: string, actorId: string | null,
 ): Promise<void> {
   const v = await vocabulary(db);
-  if (!v.statuses.includes(status)) {
+  if (!statusNames(v).includes(status)) {
     throw new PursuitRefused(
-      `"${status}" is not one of the statuses in use (${v.statuses.join(", ")}).`);
+      `"${status}" is not one of the statuses in use (${statusNames(v).join(", ")}).`);
   }
   const r = await db.run("update pursuit_actions set status = ? where id = ?", status, actionId);
   if (r.changes !== 1) throw new PursuitRefused("There is no such action.");

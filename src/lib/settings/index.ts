@@ -49,8 +49,10 @@ const DEFINITIONS: Array<Pick<Setting, "key" | "label" | "help" | "kind">> = [
           "remove keeps it and shows it as retired, because rewriting somebody's " +
           "judgement to fit a new list is not a settings change." },
   { key: "pursuit_action_statuses", label: "Pursuit action statuses", kind: "list",
-    help: "The first is what a new action starts as, and the last counts as done. " +
-          "Two is a working default; more is fine." },
+    help: "The first is what a new action starts as. Put a star on any status that " +
+          "CLOSES an action — “Open, Done*, Superseded*” — so that finished and " +
+          "abandoned can both stop counting as open without pretending to be the " +
+          "same thing. At least one must close, and at least one must not." },
 ];
 
 export class InvalidSetting extends Error {}
@@ -110,10 +112,25 @@ export function validate(key: SettingKey, raw: string): string {
       const terms = splitList(value);
       if (terms.length < 2) throw new InvalidSetting("A vocabulary of fewer than two terms is not a choice.");
       if (terms.length > 8) throw new InvalidSetting("More than eight terms is a form nobody reads. Eight is already a lot.");
-      if (terms.some((t) => t.length > 32)) throw new InvalidSetting("A term longer than 32 characters is a sentence, not a label.");
-      const seen = new Set(terms.map((t) => t.toLowerCase()));
-      if (seen.size !== terms.length) throw new InvalidSetting("Two terms differing only in case are the same term.");
-      return terms.join(", ");
+      const bare = terms.map((t) => t.replace(/\*$/, "").trim());
+      if (bare.some((t) => t.length === 0)) throw new InvalidSetting("A star needs a status in front of it.");
+      if (bare.some((t) => t.length > 32)) throw new InvalidSetting("A term longer than 32 characters is a sentence, not a label.");
+      if (bare.some((t) => t.includes("*"))) throw new InvalidSetting("A star marks the END of a status that closes an action.");
+      const seen = new Set(bare.map((t) => t.toLowerCase()));
+      if (seen.size !== bare.length) throw new InvalidSetting("Two terms differing only in case are the same term.");
+      if (key === "pursuit_priorities") {
+        if (terms.some((t) => t.endsWith("*"))) {
+          throw new InvalidSetting("A star closes an ACTION. A priority does not close anything.");
+        }
+        return bare.join(", ");
+      }
+      // A status list that closes nothing leaves every action open for ever;
+      // one that closes everything leaves nowhere for an action to start.
+      const closing = terms.filter((t) => t.endsWith("*")).length;
+      if (closing === 0) throw new InvalidSetting("Star at least one status, or no action can ever be closed.");
+      if (closing === terms.length) throw new InvalidSetting("Star at least one fewer, or a new action is closed the moment it is made.");
+      if (terms[0].endsWith("*")) throw new InvalidSetting("The first status is where a new action starts, so it cannot be one that closes it.");
+      return terms.map((t, i) => (t.endsWith("*") ? `${bare[i]}*` : bare[i])).join(", ");
     }
   }
 }
