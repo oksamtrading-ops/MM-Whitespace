@@ -195,7 +195,7 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 363 Node tests, 72 Python tests, the authorisation check, the
+**Checks:** 364 Node tests, 72 Python tests, the authorisation check, the
 colour-contrast check, the build, and 128 end-to-end checks.
 
 ```bash
@@ -266,6 +266,11 @@ are committed; none is deployed until someone pushes.
 - **The Batch API is built and off.** See item 2 below and
   `docs/decisions/BATCH-API.md`. Migrations `0016` and `0017` ARE applied to
   Supabase; only `MM_ENRICH_BATCH` is still unset.
+- **The pursuit tables ship**, empty and policied. See item 7 below.
+- **Every table a migration creates must now have row-level security**, checked
+  in `commit.test.ts`. That is 0008's lesson as an invariant: Supabase serves
+  `public` over PostgREST as `anon`, so a table without it is readable by
+  anyone until somebody notices.
 - **The publish gate stopped counting decided fields as conflicts.** Its
   message said "no adjudication" and its query never looked at the decisions,
   so all 13 of Run 2's EDGAR-versus-filing disagreements were reported for
@@ -481,7 +486,13 @@ it. Never run `git add -A` outside this project's folder.
 6. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
    and S4 (open the generated export in Excel).
 
-7. **The pursuit data model** — a Phase 1 commitment in doc 02, not built.
+7. **~~The pursuit data model~~ — done.** `pursuits`, `pursuit_notes` and
+   `pursuit_actions` ship empty and policied (migrations `0018`/`0019`, applied
+   to Supabase). Doc 02 scopes Phase 1 to "data model and access policy only";
+   the workflow and its interface are Phase 2. **`lcsp` holds a person's name
+   and `fy_tax_nsr` holds Deloitte's revenue from a client** — the class of data
+   the POC excludes. Both are empty, and filling either needs the firm's own
+   due diligence, like the tax-client flag.
 
 8. **Hardening:** a monotonic column on `review_decisions` (today
     `decisionStamp()` carries the order); the domain allowlist as a database
