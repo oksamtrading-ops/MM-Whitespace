@@ -196,7 +196,7 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 382 Node tests, 72 Python tests, the authorisation check, the
+**Checks:** 388 Node tests, 72 Python tests, the authorisation check, the
 colour-contrast check, the build, and 140 end-to-end checks.
 
 ```bash
@@ -501,10 +501,13 @@ it. Never run `git add -A` outside this project's folder.
    2026; doc 05 and migration `0018` both say so, so do not "restore" them to
    match the document.
 
-   The priority and status vocabularies live in `app_settings` (`0020`, seeded
-   High/Medium/Low and Open/Done), so an Admin changes them on `/settings`
-   without a deployment; a term retired from a list is shown as retired and
-   never rewritten. Nothing is ever deleted. **A pursuit's own words must never
+   The priority and status vocabularies live in `app_settings` (`0020`, `0021`),
+   so an Admin changes them on `/settings` without a deployment; a term retired
+   from a list is shown as retired and never rewritten. **A star marks a status
+   that CLOSES an action** — production reads `Open, Done*, Superseded*` — so
+   finished and abandoned both stop counting as open without pretending to be
+   the same thing. A status the vocabulary no longer knows counts as open, so
+   work stays visible when a term is renamed. Nothing is ever deleted. **A pursuit's own words must never
    reach a prompt** (doc 06) — a canary test pushes one through `publicRow` and
    `buildPrompt`, and it was watched failing against a planted leak.
 
