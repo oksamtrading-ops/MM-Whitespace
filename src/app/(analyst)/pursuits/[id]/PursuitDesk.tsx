@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { action, assign, note, prioritise, type ActionResult } from "../actions.ts";
+import { action, assign, endPursuit, note, prioritise, reopen, type ActionResult } from "../actions.ts";
 import type { Vocabulary } from "../../../../lib/pursuit/index.ts";
 
 export type Person = { id: string; email: string };
@@ -12,6 +12,8 @@ type Props = {
   people: Person[];
   priority: string | null;
   ownerId: string | null;
+  outcome: string | null;
+  closed: boolean;
 };
 
 /**
@@ -35,7 +37,7 @@ function Notice({ state }: { state: ActionResult | null }) {
 }
 
 export default function PursuitDesk(props: Props) {
-  const { pursuitId, vocabulary, people, priority, ownerId } = props;
+  const { pursuitId, vocabulary, people, priority, ownerId, closed } = props;
   const [judged, judge, judging] = useActionState(
     async (_: ActionResult | null, form: FormData) => prioritise(form), null);
   const [assigned, doAssign, assigning] = useActionState(
@@ -44,7 +46,34 @@ export default function PursuitDesk(props: Props) {
     async (_: ActionResult | null, form: FormData) => note(form), null);
   const [acted, doAct, acting] = useActionState(
     async (_: ActionResult | null, form: FormData) => action(form), null);
-  const latest = [judged, assigned, noted, acted].filter(Boolean).at(-1) ?? null;
+  const [ended, end, ending] = useActionState(
+    async (_: ActionResult | null, form: FormData) => endPursuit(form), null);
+  const [opened, open, opening] = useActionState(
+    async (_: ActionResult | null, form: FormData) => reopen(form), null);
+
+  const latest = [judged, assigned, noted, acted, ended, opened].filter(Boolean).at(-1) ?? null;
+
+  // A closed pursuit is read, not worked. Its record stays whole and visible;
+  // reopening is the one thing offered, and it is deliberate rather than a
+  // side effect of typing into a form that should not have been there.
+  if (closed) {
+    return (
+      <div className="desk">
+        <form action={open} className="field">
+          <input type="hidden" name="pursuitId" value={pursuitId} />
+          <p className="hint">
+            This pursuit is closed. Its notes and actions stand as they are.
+            Reopening it is recorded, and the outcome it was closed under stays
+            on the record.
+          </p>
+          <button type="submit" className="btn" disabled={opening}>
+            {opening ? "Reopening…" : "Reopen this pursuit"}
+          </button>
+        </form>
+        <Notice state={latest} />
+      </div>
+    );
+  }
 
   return (
     <div className="desk">
@@ -107,6 +136,23 @@ export default function PursuitDesk(props: Props) {
         </span>
         <span className="hint">
           It starts as “{vocabulary.statuses[0].name}”. Move it below as it goes.
+        </span>
+      </form>
+
+      <form action={end} className="field">
+        <input type="hidden" name="pursuitId" value={pursuitId} />
+        <label htmlFor="outcome">Close this pursuit</label>
+        <span className="withunit">
+          <select id="outcome" name="outcome" defaultValue={vocabulary.outcomes[0]}>
+            {vocabulary.outcomes.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <button type="submit" className="btn" disabled={ending}>
+            {ending ? "Closing…" : "Close"}
+          </button>
+        </span>
+        <span className="hint">
+          What happened, not just that it is over. Open actions do not stop this —
+          a pursuit is often lost with work outstanding.
         </span>
       </form>
 

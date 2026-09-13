@@ -7,6 +7,9 @@ import {
   findDuplicateCandidates, mergeCompanies, mergePreview, MergeRefused,
   nameStem, resolveCompanyId,
 } from "./merge.ts";
+import {
+  addAction, addNote, getPursuit, setPriority, startPursuit,
+} from "../pursuit/index.ts";
 
 async function seeded() {
   const db = memorySql();
@@ -178,4 +181,44 @@ test("the preview counts what will move and what will not", async () => {
   assert.deepEqual((await preview).moves, [{ table: "company_period_facts", rows: 2 }]);
   assert.deepEqual((await preview).overlappingPeriods, []);
   assert.equal((await preview).frozenRevisions, 0);
+});
+
+
+test("a merge takes the pursuit with it, and both survive when both had one", async () => {
+  // pursuits was not in MOVES when the table was added, so the loser's pursuit
+  // went on pointing at a company that no longer exists: it showed under the
+  // old name, and startPursuit on the winner made a SECOND one because it
+  // could not see the first.
+  const { db, company } = await seeded();
+  const oldCo = await company("Northco Mining Corp.", "northco mining corp");
+  const newCo = await company("Northco Metals Inc.", "northco metals inc");
+  const actor = await db.get(
+    "insert into app_users (email, role) values ('a@example.invalid','analyst') returning id") as { id: string };
+
+  const loserPursuit = await startPursuit(db, oldCo, actor.id);
+  await setPriority(db, loserPursuit, "High", actor.id);
+  await addNote(db, loserPursuit, "The partner already met them.", actor.id);
+  await addAction(db, loserPursuit, { description: "Send the benchmark" }, actor.id);
+  const winnerPursuit = await startPursuit(db, newCo, actor.id);
+  await addNote(db, winnerPursuit, "Separate team, same company as it turns out.", actor.id);
+
+  await mergeCompanies(db, { winnerId: newCo, loserId: oldCo, actorId: actor.id });
+
+  const rows = await db.all("select id, company_id from pursuits") as
+    Array<{ id: string; company_id: string }>;
+  assert.equal(rows.length, 2, "neither pursuit was discarded to keep the merge tidy");
+  assert.ok(rows.every((r) => r.company_id === newCo),
+            "both now point at the surviving company");
+
+  // And what each carried came with it.
+  const kept = await getPursuit(db, loserPursuit);
+  assert.equal(kept!.pursuit.priority, "High");
+  assert.equal(kept!.notes.length, 1);
+  assert.equal(kept!.actions.length, 1);
+  assert.equal(kept!.pursuit.companyName, (await db.get(
+    "select canonical_name from companies where id = ?", newCo) as { canonical_name: string }).canonical_name);
+
+  // Starting one again returns the earliest rather than making a third.
+  assert.equal(await startPursuit(db, newCo, actor.id), loserPursuit);
+  assert.equal((await db.get("select count(*) n from pursuits") as { n: number }).n, 2);
 });

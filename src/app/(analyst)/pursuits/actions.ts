@@ -16,8 +16,8 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/context.ts";
 import {
-  addAction, addNote, PursuitRefused, setActionDueDate, setActionOwner, setActionStatus, setOwner,
-  setPriority, startPursuit, sweepTerm, type StrandedKind,
+  addAction, addNote, closePursuit, PursuitRefused, reopenPursuit, setActionDueDate, setActionOwner,
+  setActionStatus, setOwner, setPriority, startPursuit, sweepTerm, type StrandedKind,
 } from "../../../lib/pursuit/index.ts";
 
 export type ActionResult = { ok: boolean; message: string; pursuitId?: string };
@@ -94,6 +94,23 @@ export async function assignAction(form: FormData): Promise<ActionResult> {
     () => setActionOwner(db, String(form.get("actionId") ?? ""), raw === "" ? null : raw, user.id),
     raw === "" ? "Action unassigned." : "Action assigned.",
     ["/pursuits", `/pursuits/${pursuitId}`]);
+}
+
+/** End a pursuit, with what happened. */
+export async function endPursuit(form: FormData): Promise<ActionResult> {
+  const { user, db } = await requireRole(["analyst", "admin"]);
+  const pursuitId = String(form.get("pursuitId") ?? "");
+  const outcome = String(form.get("outcome") ?? "");
+  return attempt(() => closePursuit(db, pursuitId, outcome, user.id),
+                 `Closed as “${outcome}”.`, ["/pursuits", `/pursuits/${pursuitId}`]);
+}
+
+/** Open one again. Its own act, not an edit of the closing. */
+export async function reopen(form: FormData): Promise<ActionResult> {
+  const { user, db } = await requireRole(["analyst", "admin"]);
+  const pursuitId = String(form.get("pursuitId") ?? "");
+  return attempt(() => reopenPursuit(db, pursuitId, user.id),
+                 "Reopened.", ["/pursuits", `/pursuits/${pursuitId}`]);
 }
 
 /** Put a date on one action, or take it off. */

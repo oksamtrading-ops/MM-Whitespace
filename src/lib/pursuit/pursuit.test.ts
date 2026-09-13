@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { memorySql } from "../db/open.ts";
 import type { Sql } from "../db/sql.ts";
 import {
-  addAction, addNote, closedStatuses, getPursuit, listPursuits, parseStatuses,
+  addAction, addNote, closedStatuses, closePursuit, getPursuit, listPursuits, parseStatuses,
+  reopenPursuit,
   parseDueDate, PursuitRefused, setActionDueDate, setActionOwner, setActionStatus, setOwner,
   setPriority, startPursuit, statusNames,
   strandedTerms, sweepTerm, vocabulary,
@@ -256,7 +257,7 @@ test("a status list that closes nothing, or everything, is refused", async () =>
                 /first status is where a new action starts/);
   assert.equal(validate("pursuit_action_statuses", " Open , Done* "), "Open, Done*");
   // A star closes an action. A priority closes nothing.
-  assert.throws(() => validate("pursuit_priorities", "High*, Low"), /does not close anything/);
+  assert.throws(() => validate("pursuit_priorities", "High*, Low"), /Nothing else in these lists closes anything/);
 });
 
 test("a value written before the star existed still closes on its last term", async () => {
@@ -492,4 +493,105 @@ test("dating an action names who did it", async () => {
   assert.equal(row.actor_id, actor);
   assert.deepEqual(JSON.parse(row.detail), { actionId: action.id, dueDate: "2026-10-31" });
   await assert.rejects(() => setActionDueDate(db, "nope", "2026-10-31", actor), /no such action/);
+});
+
+
+/* ------------------------------------------------ a pursuit that has ended */
+
+test("closing records WHAT HAPPENED, not just that it is over", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await closePursuit(db, id, "Won", actor);
+
+  const [row] = await listPursuits(db);
+  assert.equal(row.outcome, "Won");
+  assert.ok(row.closedAt, "and when");
+  assert.equal(row.closedByEmail, "analyst@example.invalid", "and by whom");
+});
+
+test("an outcome off the list is refused, and closing twice is refused", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await assert.rejects(() => closePursuit(db, id, "Abandoned", actor),
+                       /not one of the outcomes in use/);
+  await closePursuit(db, id, "Lost", actor);
+  await assert.rejects(() => closePursuit(db, id, "Won", actor), /already closed/);
+  await assert.rejects(() => closePursuit(db, "nope", "Won", actor), /no such pursuit/);
+});
+
+test("open actions do not stop a pursuit being closed", async () => {
+  // A pursuit is often lost with work outstanding. Making somebody tidy up
+  // before recording the loss is how the loss goes unrecorded.
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "never happened" }, actor);
+  await closePursuit(db, id, "Lost", actor);
+  const [row] = await listPursuits(db);
+  assert.equal(row.outcome, "Lost");
+  assert.equal(row.openActions, 1, "and the action is still open, and still says so");
+});
+
+test("a closed pursuit keeps everything, and reopening is its own event", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await setPriority(db, id, "High", actor);
+  await addNote(db, id, "Met the CFO.", actor);
+  await closePursuit(db, id, "Lost", actor);
+  await reopenPursuit(db, id, actor);
+
+  const found = await getPursuit(db, id);
+  assert.equal(found!.pursuit.outcome, null, "it is open again");
+  assert.equal(found!.pursuit.closedAt, null);
+  assert.equal(found!.pursuit.priority, "High", "and kept what it had");
+  assert.equal(found!.notes.length, 1);
+
+  await assert.rejects(() => reopenPursuit(db, id, actor), /already open/);
+  // The outcome it was closed under survives on the record, not on the row.
+  const [reopened] = await db.all(
+    "select detail from audit_log where event = 'pursuit_reopened'") as Array<{ detail: string }>;
+  assert.deepEqual(JSON.parse(reopened.detail), { pursuitId: id, wasClosedAs: "Lost" });
+});
+
+test("a retired OUTCOME is shown as retired and can be swept, like the other two", async () => {
+  const { db, northco, southco, actor } = await seeded();
+  for (const co of [northco, southco]) {
+    const id = await startPursuit(db, co, actor);
+    await closePursuit(db, id, "Dormant", actor);
+  }
+  await putSettings(db, { pursuit_outcomes: "Won, Lost, Parked" }, actor);
+
+  assert.deepEqual(await strandedTerms(db), [{ kind: "outcome", value: "Dormant", count: 2 }]);
+  assert.ok((await listPursuits(db)).every((p) => p.outcomeRetired));
+  assert.equal(await sweepTerm(db, "outcome", "Dormant", "Parked", actor), 2);
+  assert.deepEqual(await strandedTerms(db), []);
+  assert.ok((await listPursuits(db)).every((p) => p.outcome === "Parked" && !p.outcomeRetired));
+});
+
+test("a sweep will not put an outcome into a priority", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await closePursuit(db, id, "Won", actor);
+  await putSettings(db, { pursuit_outcomes: "Secured, Lost" }, actor);
+  await assert.rejects(() => sweepTerm(db, "outcome", "Won", "High", actor),
+                       /not one of the outcomes in use/);
+});
+
+
+test("closing, reopening and closing again is a HISTORY, not a latest value", async () => {
+  // The reason closure is a table and not three columns on the pursuit.
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await closePursuit(db, id, "Lost", actor);
+  await reopenPursuit(db, id, actor);
+  await closePursuit(db, id, "Won", actor);
+
+  const rows = await db.all(
+    `select outcome, reopened_at from pursuit_closures where pursuit_id = ? order by closed_at`,
+    id) as Array<{ outcome: string; reopened_at: string | null }>;
+  assert.equal(rows.length, 2, "both closings are on the record");
+  assert.equal(rows[0].outcome, "Lost");
+  assert.ok(rows[0].reopened_at, "and the first one says when it was undone");
+  assert.equal(rows[1].outcome, "Won");
+  assert.equal(rows[1].reopened_at, null);
+  assert.equal((await listPursuits(db))[0].outcome, "Won", "the pursuit reads as won now");
 });

@@ -137,6 +137,17 @@ const MOVES: Array<{ table: string; column: string; unique?: string[] }> = [
   { table: "enrichment_jobs", column: "company_id", unique: ["run_id", "field_group"] },
   { table: "enrichment_findings", column: "company_id" },
   { table: "review_decisions", column: "company_id" },
+  // Pursuits move whole, and BOTH survive when both companies had one. No
+  // `unique` here on purpose: a pursuit carries notes and actions, and
+  // discarding one to keep the merge tidy would delete somebody's judgement --
+  // which nothing else in this module does either. Two pursuits against one
+  // company after a merge is a fact about what happened: two people pursued
+  // what turned out to be one company. startPursuit goes on returning the
+  // earliest rather than making a third.
+  //
+  // pursuit_notes and pursuit_actions hang off pursuit_id, so they follow
+  // without being named here.
+  { table: "pursuits", column: "company_id" },
 ];
 
 export type MergePreview = {

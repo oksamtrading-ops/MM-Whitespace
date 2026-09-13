@@ -31,6 +31,7 @@ import { getList } from "../settings/index.ts";
 /** Used only where the settings table has no answer. See migration 0020. */
 export const FALLBACK_PRIORITIES = ["High", "Medium", "Low"] as const;
 export const FALLBACK_STATUSES = ["Open", "Done*"] as const;
+export const FALLBACK_OUTCOMES = ["Won", "Lost", "Dormant"] as const;
 
 /**
  * A status, and whether reaching it CLOSES the action.
@@ -46,7 +47,7 @@ export const FALLBACK_STATUSES = ["Open", "Done*"] as const;
  * nothing to say which is right.
  */
 export type Status = { name: string; closed: boolean };
-export type Vocabulary = { priorities: string[]; statuses: Status[] };
+export type Vocabulary = { priorities: string[]; statuses: Status[]; outcomes: string[] };
 
 export function parseStatuses(terms: readonly string[]): Status[] {
   const parsed = terms.map((t) => ({
@@ -66,6 +67,7 @@ export async function vocabulary(db: Sql): Promise<Vocabulary> {
   return {
     priorities: await getList(db, "pursuit_priorities", FALLBACK_PRIORITIES),
     statuses: parseStatuses(await getList(db, "pursuit_action_statuses", FALLBACK_STATUSES)),
+    outcomes: await getList(db, "pursuit_outcomes", FALLBACK_OUTCOMES),
   };
 }
 
@@ -89,6 +91,12 @@ export type PursuitRow = {
   ownerId: string | null;
   ownerEmail: string | null;
   createdAt: string;
+  /** Null while the pursuit is open. A closed one keeps everything it had. */
+  outcome: string | null;
+  /** True when the outcome is no longer in the vocabulary. Shown, never rewritten. */
+  outcomeRetired: boolean;
+  closedAt: string | null;
+  closedByEmail: string | null;
   notes: number;
   openActions: number;
   totalActions: number;
@@ -121,6 +129,7 @@ export async function listPursuits(db: Sql): Promise<PursuitRow[]> {
   const rows = await db.all(
     `select p.id, p.company_id, c.canonical_name as company_name, p.priority,
             p.owner_id, u.email as owner_email, p.created_at,
+            k.outcome, k.closed_at, cb.email as closed_by_email,
             (select count(*) from pursuit_notes n where n.pursuit_id = p.id) as notes,
             (select count(*) from pursuit_actions a where a.pursuit_id = p.id) as total_actions,
             (select count(*) from pursuit_actions a
@@ -132,7 +141,10 @@ export async function listPursuits(db: Sql): Promise<PursuitRow[]> {
              ) x) as last_activity_at
        from pursuits p
        join companies c on c.id = p.company_id
-       left join app_users u on u.id = p.owner_id`
+       left join app_users u on u.id = p.owner_id
+       left join pursuit_closures k
+              on k.pursuit_id = p.id and k.reopened_at is null
+       left join app_users cb on cb.id = k.closed_by`
       .replace("SLOTS", closed.map(() => "?").join(", ")),
     ...closed) as Array<Record<string, unknown>>;
 
@@ -147,6 +159,11 @@ export async function listPursuits(db: Sql): Promise<PursuitRow[]> {
     ownerId: r.owner_id ? String(r.owner_id) : null,
     ownerEmail: r.owner_email ? String(r.owner_email) : null,
     createdAt: String(r.created_at),
+    outcome: r.outcome === null || r.outcome === undefined ? null : String(r.outcome),
+    outcomeRetired: r.outcome !== null && r.outcome !== undefined &&
+                    !new Set(v.outcomes).has(String(r.outcome)),
+    closedAt: r.closed_at ? String(r.closed_at) : null,
+    closedByEmail: r.closed_by_email ? String(r.closed_by_email) : null,
     notes: Number(r.notes),
     openActions: Number(r.open_actions),
     totalActions: Number(r.total_actions),
@@ -357,6 +374,18 @@ export async function setActionDueDate(
                     { dueDate: value }, actorId);
 }
 
+/** The closure that is still standing, if the pursuit is closed right now. */
+async function openClosure(
+  db: Sql, pursuitId: string,
+): Promise<{ id: string; outcome: string } | null> {
+  const row = await db.get(
+    `select id, outcome from pursuit_closures
+      where pursuit_id = ? and reopened_at is null
+      order by closed_at desc limit 1`, pursuitId) as
+    { id: string; outcome: string } | undefined;
+  return row ? { id: String(row.id), outcome: String(row.outcome) } : null;
+}
+
 async function assertPursuit(db: Sql, pursuitId: string): Promise<void> {
   const row = await db.get("select id from pursuits where id = ?", pursuitId) as
     { id: string } | undefined;
@@ -377,7 +406,7 @@ async function assertPursuit(db: Sql, pursuitId: string): Promise<void> {
  * The two are one mechanism because they are one problem. Only the table, the
  * column and the noun differ.
  */
-export type StrandedKind = "status" | "priority";
+export type StrandedKind = "status" | "priority" | "outcome";
 
 export type Stranded = {
   kind: StrandedKind;
@@ -389,6 +418,7 @@ export type Stranded = {
 const TERMS = {
   status: { table: "pursuit_actions", column: "status", noun: "action" },
   priority: { table: "pursuits", column: "priority", noun: "pursuit" },
+  outcome: { table: "pursuit_closures", column: "outcome", noun: "closed pursuit" },
 } as const satisfies Record<StrandedKind, { table: string; column: string; noun: string }>;
 
 /** The noun to count in, for a screen that has to say what is stranded. */
@@ -399,9 +429,10 @@ export async function strandedTerms(db: Sql): Promise<Stranded[]> {
   const known: Record<StrandedKind, Set<string>> = {
     status: new Set(statusNames(v)),
     priority: new Set(v.priorities),
+    outcome: new Set(v.outcomes),
   };
   const out: Stranded[] = [];
-  for (const kind of ["status", "priority"] as const) {
+  for (const kind of ["status", "priority", "outcome"] as const) {
     const t = TERMS[kind];
     // Table and column are literals from TERMS, never a caller's string.
     const rows = await db.all(
@@ -431,11 +462,11 @@ export async function sweepTerm(
   if (!from.trim()) throw new PursuitRefused(`Name the ${kind} to move out of.`);
   if (from === to) throw new PursuitRefused(`That is the ${kind} they already carry.`);
   const v = await vocabulary(db);
-  const allowed = kind === "status" ? statusNames(v) : v.priorities;
+  const allowed = kind === "status" ? statusNames(v)
+    : kind === "priority" ? v.priorities : v.outcomes;
+  const plural = kind === "status" ? "statuses" : kind === "priority" ? "priorities" : "outcomes";
   if (!allowed.includes(to)) {
-    throw new PursuitRefused(
-      `"${to}" is not one of the ${kind === "status" ? "statuses" : "priorities"} ` +
-      `in use (${allowed.join(", ")}).`);
+    throw new PursuitRefused(`"${to}" is not one of the ${plural} in use (${allowed.join(", ")}).`);
   }
   const t = TERMS[kind];
   const r = await db.run(
@@ -446,4 +477,54 @@ export async function sweepTerm(
   await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_terms_swept', ?, ?)`,
                actorId, JSON.stringify({ kind, from, to, count: r.changes }));
   return r.changes;
+}
+
+/**
+ * End a pursuit, with what happened.
+ *
+ * The outcome is the point. "This is over" is not worth writing down; "we won
+ * it" and "they renewed with their incumbent" are different facts, and a list
+ * of closed pursuits that does not say which is a list nobody reads twice.
+ *
+ * Open actions are NOT a reason to refuse. A pursuit is often lost with work
+ * outstanding, and making somebody tidy up before recording the loss is how
+ * the loss goes unrecorded.
+ */
+export async function closePursuit(
+  db: Sql, pursuitId: string, outcome: string, actorId: string | null,
+): Promise<void> {
+  const v = await vocabulary(db);
+  if (!v.outcomes.includes(outcome)) {
+    throw new PursuitRefused(
+      `"${outcome}" is not one of the outcomes in use (${v.outcomes.join(", ")}).`);
+  }
+  await assertPursuit(db, pursuitId);
+  if (await openClosure(db, pursuitId)) {
+    throw new PursuitRefused("That pursuit is already closed. Reopen it first.");
+  }
+  await db.run(`insert into pursuit_closures (pursuit_id, outcome, closed_at, closed_by)
+                values (?, ?, ?, ?)`, pursuitId, outcome, decisionStamp(), actorId);
+  await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_closed', ?, ?)`,
+               actorId, JSON.stringify({ pursuitId, outcome }));
+}
+
+/**
+ * Reopen one, keeping the outcome it was closed under on the record.
+ *
+ * Its own event rather than a silent edit: a pursuit that was called lost and
+ * then came back is a thing worth being able to find afterwards.
+ */
+export async function reopenPursuit(
+  db: Sql, pursuitId: string, actorId: string | null,
+): Promise<void> {
+  await assertPursuit(db, pursuitId);
+  const open = await openClosure(db, pursuitId);
+  if (!open) throw new PursuitRefused("That pursuit is already open.");
+
+  // The closure row stays and is stamped, rather than being deleted: closing,
+  // reopening and closing again is a history, and only a row can hold it.
+  await db.run(`update pursuit_closures set reopened_at = ?, reopened_by = ? where id = ?`,
+               decisionStamp(), actorId, open.id);
+  await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_reopened', ?, ?)`,
+               actorId, JSON.stringify({ pursuitId, wasClosedAs: open.outcome }));
 }

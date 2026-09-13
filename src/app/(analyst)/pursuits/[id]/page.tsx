@@ -56,7 +56,20 @@ export default async function Pursuit({ params }: { params: Promise<{ id: string
         { label: "Owner", value: pursuit.ownerEmail ?? "unassigned" },
         { label: "Open actions", value: pursuit.openActions, figure: true },
         { label: "Opened", value: fmtDate(pursuit.createdAt) },
+        ...(pursuit.closedAt
+          ? [{ label: "Closed", value: `${pursuit.outcome} · ${fmtDate(pursuit.closedAt)}` }]
+          : []),
       ]} />
+
+      {pursuit.closedAt && (
+        <p className="notice" role="status">
+          <b>Closed as “{pursuit.outcome}”{pursuit.outcomeRetired && " — an outcome no longer in use"}.</b>
+          <span>
+            {pursuit.closedByEmail ? `${pursuit.closedByEmail} closed it. ` : ""}
+            Everything below stands as it was.
+          </span>
+        </p>
+      )}
 
       {pursuit.priorityRetired && (
         <p className="notice alert">
@@ -68,10 +81,11 @@ export default async function Pursuit({ params }: { params: Promise<{ id: string
         </p>
       )}
 
-      <Section id="desk" title="Record what happened"
+      <Section id="desk" title={pursuit.closedAt ? "This pursuit is closed" : "Record what happened"}
                caption="Notes and actions are never edited or deleted: a note is somebody's judgement at a moment, and an action that was abandoned is a fact about the pursuit.">
         <PursuitDesk pursuitId={pursuit.id} vocabulary={v} people={people}
-                     priority={pursuit.priority} ownerId={pursuit.ownerId} />
+                     priority={pursuit.priority} ownerId={pursuit.ownerId}
+                     outcome={pursuit.outcome} closed={pursuit.closedAt !== null} />
       </Section>
 
       <Section id="actions" title="Actions" index={1}

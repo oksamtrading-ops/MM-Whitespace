@@ -12,7 +12,7 @@ export type SettingKey =
   | "default_threshold_amount" | "default_threshold_currency"
   | "default_threshold_operator" | "default_proximity_band_pct"
   | "default_run_budget_usd"
-  | "pursuit_priorities" | "pursuit_action_statuses";
+  | "pursuit_priorities" | "pursuit_action_statuses" | "pursuit_outcomes";
 
 export type Setting = {
   key: SettingKey;
@@ -48,6 +48,10 @@ const DEFINITIONS: Array<Pick<Setting, "key" | "label" | "help" | "kind">> = [
     help: "In order, most urgent first. A pursuit already carrying a priority you " +
           "remove keeps it and shows it as retired, because rewriting somebody's " +
           "judgement to fit a new list is not a settings change." },
+  { key: "pursuit_outcomes", label: "Pursuit outcomes", kind: "list",
+    help: "How a pursuit ends. “This is over” is not worth recording; what " +
+          "happened is. A pursuit already closed under a word you remove keeps " +
+          "it and shows it as retired, and /pursuits offers to move them." },
   { key: "pursuit_action_statuses", label: "Pursuit action statuses", kind: "list",
     help: "The first is what a new action starts as. Put a star on any status that " +
           "CLOSES an action — “Open, Done*, Superseded*” — so that finished and " +
@@ -118,6 +122,7 @@ export function validate(key: SettingKey, raw: string): string {
       return String(n);
     }
     case "pursuit_priorities":
+    case "pursuit_outcomes":
     case "pursuit_action_statuses": {
       const terms = splitList(value);
       if (terms.length < 2) throw new InvalidSetting("A vocabulary of fewer than two terms is not a choice.");
@@ -128,9 +133,10 @@ export function validate(key: SettingKey, raw: string): string {
       if (bare.some((t) => t.includes("*"))) throw new InvalidSetting("A star marks the END of a status that closes an action.");
       const seen = new Set(bare.map((t) => t.toLowerCase()));
       if (seen.size !== bare.length) throw new InvalidSetting("Two terms differing only in case are the same term.");
-      if (key === "pursuit_priorities") {
+      if (key !== "pursuit_action_statuses") {
         if (terms.some((t) => t.endsWith("*"))) {
-          throw new InvalidSetting("A star closes an ACTION. A priority does not close anything.");
+          throw new InvalidSetting(
+            "A star closes an ACTION. Nothing else in these lists closes anything.");
         }
         return bare.join(", ");
       }

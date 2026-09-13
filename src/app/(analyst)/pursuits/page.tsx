@@ -26,7 +26,9 @@ export default async function Pursuits() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
-  const pursuits = await listPursuits(ctx.db);
+  const all = await listPursuits(ctx.db);
+  const pursuits = all.filter((p) => p.closedAt === null);
+  const closed = all.filter((p) => p.closedAt !== null);
   const v = await vocabulary(ctx.db);
   const stranded = await strandedTerms(ctx.db);
   const open = pursuits.reduce((n, p) => n + p.openActions, 0);
@@ -44,6 +46,7 @@ export default async function Pursuits() {
         { label: "Pursuits", value: pursuits.length, figure: true },
         { label: "Open actions", value: open, figure: true },
         { label: "Unprioritised", value: pursuits.filter((p) => !p.priority).length, figure: true },
+        { label: "Closed", value: closed.length, figure: true },
       ]} />
 
       {stranded.length > 0 && (
@@ -103,6 +106,38 @@ export default async function Pursuits() {
           </table>
         )}
       </Section>
+
+      {closed.length > 0 && (
+        <Section id="closed" title="Closed" index={2}
+                 caption="Kept, with what happened. Nothing here is deleted, and any of them can be reopened.">
+          <table className="grid">
+            <thead>
+              <tr>
+                <th scope="col">Company</th>
+                <th scope="col">Outcome</th>
+                <th scope="col">Closed by</th>
+                <th scope="col">Closed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {closed.map((p) => (
+                <tr key={p.id}>
+                  <th scope="row">
+                    <Link href={`/pursuits/${p.id}` as Route} prefetch={false}>{p.companyName}</Link>
+                  </th>
+                  <td>
+                    <span className={`tag${p.outcomeRetired ? " retired" : ""}`}>
+                      {p.outcome}{p.outcomeRetired && " — retired"}
+                    </span>
+                  </td>
+                  <td>{p.closedByEmail ?? <span className="meta">unknown</span>}</td>
+                  <td>{fmtDate(p.closedAt!)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Section>
+      )}
     </>
   );
 }
