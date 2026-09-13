@@ -6,6 +6,7 @@ import { applySchema } from "../db/schema.ts";
 import { commitPeriod, type ParsedCompany } from "../db/commit.ts";
 import { computeCoverage, evaluateGate, unresolvedConflicts } from "./gate.ts";
 import { publishPeriod, PublishBlocked, readPublished } from "./snapshot.ts";
+import { recordDecision, undoLast } from "../review/decide.ts";
 
 function company(over: Partial<ParsedCompany> = {}): ParsedCompany {
   return {
@@ -144,6 +145,19 @@ test("two disagreeing proposals with no adjudication close the gate", async () =
   }
   assert.equal(await unresolvedConflicts(db, pid), 1);
   assert.ok((await evaluateGate(db, pid)).blockers.some((b) => b.kind === "unresolved_conflicts"));
+
+  // AND ADJUDICATING IT OPENS THE GATE AGAIN. This half was missing, and its
+  // absence cost a real publish: on Q3-2026 the blocker counted 13 fields that
+  // had all been decided by hand, so no amount of review could clear it.
+  await recordDecision(db, { periodId: pid, companyId: co, fieldKey: "auditor",
+                             decision: "accept", actorId: null });
+  assert.equal(await unresolvedConflicts(db, pid), 0,
+               "a decided field is adjudicated, whatever the findings still say");
+  assert.ok(!(await evaluateGate(db, pid)).blockers.some((b) => b.kind === "unresolved_conflicts"));
+
+  // An undo puts it back: the disagreement is live again.
+  await undoLast(db, pid, "auditor", null);
+  assert.equal(await unresolvedConflicts(db, pid), 1, "undone means unadjudicated again");
 });
 
 // ---------------------------------------------------------------- publish

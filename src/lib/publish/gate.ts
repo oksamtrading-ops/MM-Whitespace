@@ -100,12 +100,36 @@ export async function computeCoverage(db: Sql, periodId: string): Promise<Covera
  * A conflict is a field where two sources disagree and nobody has adjudicated:
  * more than one non-superseded proposal for the same company and field.
  */
+/**
+ * Fields where the research disagrees with ITSELF and nobody has chosen.
+ *
+ * Two passes and any re-run each propose a value; where they differ, somebody
+ * has to say which is right. That is an adjudication, and it is exactly what a
+ * review decision is -- so a field that has one is resolved, whatever the
+ * findings still say. UNRESOLVED is the whole of this blocker's meaning.
+ *
+ * It did not check. The count was every company-field with two distinct
+ * proposals, decided or not, under a message that read "and no adjudication".
+ * On Q3-2026 that was all 13 of the EDGAR-versus-filing disagreements from
+ * Run 2 -- every one of them adjudicated by hand on 13 September, 10 accepted
+ * and 3 overridden -- and the gate went on reporting them for ever. No amount
+ * of review could have cleared it. The test that should have caught this is
+ * named "with no adjudication" and never recorded one, so it only ever
+ * exercised the blocking half.
+ */
 export async function unresolvedConflicts(db: Sql, periodId: string): Promise<number> {
   const row = await db.get(`select count(*) n from (
        select f.company_id, f.field_key
          from enrichment_findings f
          join enrichment_runs r on r.id = f.run_id
         where r.period_id = ? and f.state = 'proposed' and f.abstained = false
+          and not exists (
+            select 1 from review_decisions d
+             where d.period_id = r.period_id
+               and d.company_id = f.company_id
+               and d.field_key = f.field_key
+               and d.decision != 'undo'
+               and not exists (select 1 from review_decisions u where u.undoes_id = d.id))
         group by f.company_id, f.field_key
        having count(distinct f.proposed_value) > 1
      )`, periodId) as { n: number } | undefined;
