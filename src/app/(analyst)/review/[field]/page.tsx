@@ -5,6 +5,7 @@ import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import { isStageField } from "../../../../lib/review/decide.ts";
 import { cellLabel, fieldRows, formatValue, tierConsequence } from "../../../../lib/review/queue.ts";
+import { chosenThreshold, DEFAULT_THRESHOLD, THRESHOLDS } from "../../../../lib/review/threshold.ts";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Facts from "../../../_ui/Facts.tsx";
 import { periodName } from "../../../_ui/format.ts";
@@ -12,8 +13,6 @@ import Grid, { type GridRow } from "./Grid.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Review" };
-
-const THRESHOLD = 0.8;
 
 const BUCKETS: Array<[string, string]> = [
   ["all", "All"], ["conflict", "Conflict"], ["need_review", "Need review"],
@@ -26,7 +25,7 @@ const BUCKETS: Array<[string, string]> = [
 export default async function FieldReview(
   { params, searchParams }: {
     params: Promise<{ field: string }>;
-    searchParams: Promise<{ bucket?: string; q?: string }>;
+    searchParams: Promise<{ bucket?: string; q?: string; threshold?: string }>;
   },
 ) {
   let ctx;
@@ -41,7 +40,17 @@ export default async function FieldReview(
   }
 
   const { field } = await params;
-  const { bucket = "all", q = "" } = await searchParams;
+  const { bucket = "all", q = "", threshold: askedThreshold } = await searchParams;
+  const threshold = chosenThreshold(askedThreshold);
+  // Every link on this screen carries the bucket, the search and the floor,
+  // so none of them silently resets another.
+  const query = (over: { bucket?: string; threshold?: number }) => {
+    const parts = [`bucket=${over.bucket ?? bucket}`];
+    if (q) parts.push(`q=${encodeURIComponent(q)}`);
+    const t = over.threshold ?? threshold;
+    if (t !== DEFAULT_THRESHOLD) parts.push(`threshold=${t}`);
+    return `/review/${field}?${parts.join("&")}` as Route;
+  };
 
   const period = await ctx.db.get("select id, label from periods order by market_cap_as_of desc limit 1") as { id: string; label: string } | undefined;
   if (!period) notFound();
@@ -50,7 +59,7 @@ export default async function FieldReview(
     { key: string; label: string } | undefined;
   if (!catalogue) notFound();
 
-  const raw = await fieldRows(ctx.db, period.id, field, bucket, THRESHOLD);
+  const raw = await fieldRows(ctx.db, period.id, field, bucket, threshold);
   const rows: GridRow[] = await Promise.all(raw.map(async (r) => ({
     companyId: r.companyId,
     companyName: r.companyName,
@@ -77,7 +86,7 @@ export default async function FieldReview(
   const counts = Object.fromEntries(await Promise.all(BUCKETS.map(async ([key]) =>
     [key, key === bucket
       ? raw.length
-      : (await fieldRows(ctx.db, period.id, field, key, THRESHOLD)).length])));
+      : (await fieldRows(ctx.db, period.id, field, key, threshold)).length])));
 
   return (
     <>
@@ -92,9 +101,24 @@ export default async function FieldReview(
 
       <nav className="filters rise" aria-label="Filter" style={{ "--i": 1 } as React.CSSProperties}>
         {BUCKETS.map(([key, label]) => (
-          <Link key={key} href={`/review/${field}?bucket=${key}${q ? `&q=${encodeURIComponent(q)}` : ""}` as Route}
+          <Link key={key} href={query({ bucket: key })}
                 prefetch={false} aria-current={key === bucket ? "page" : undefined}>
             {label} <span className="fig-sm">{counts[key]}</span>
+          </Link>
+        ))}
+      </nav>
+
+      {/* The floor for bulk accept. A number the reviewer sets, not one the
+          application decides for them -- and it moves the bulk-acceptable
+          count above, so the consequence is visible before anything is
+          accepted. */}
+      <nav className="filters rise" aria-label="Bulk accept floor"
+           style={{ "--i": 1 } as React.CSSProperties}>
+        <span className="meta">Bulk accept at evidence</span>
+        {THRESHOLDS.map((t) => (
+          <Link key={t} href={query({ threshold: t })} prefetch={false}
+                aria-current={t === threshold ? "page" : undefined}>
+            {t.toFixed(2)}
           </Link>
         ))}
       </nav>
@@ -104,7 +128,7 @@ export default async function FieldReview(
         fieldKey={field}
         fieldLabel={catalogue.label}
         bucket={bucket}
-        threshold={THRESHOLD}
+        threshold={threshold}
         isStageField={isStageField(field)}
         rows={rows}
         initialQuery={q}

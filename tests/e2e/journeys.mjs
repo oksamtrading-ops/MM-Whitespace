@@ -257,6 +257,24 @@ async function journeys(dbPath) {
         !plain.html.includes("Keep extract"),
         "the three-way control leaked onto a non-conflict row, or the bucket opened empty");
 
+  // Run 2: 25 companies of anchored, quoted values sat at 0.71-0.79, under a
+  // bulk floor fixed at 0.80, so every one had to be taken by hand.
+  const atDefault = await get("/review/auditor?bucket=all", analyst.cookie);
+  check("the bulk floor is offered as a choice, not fixed",
+        atDefault.html.includes("Bulk accept at evidence") &&
+        atDefault.html.includes("threshold=0.7"));
+  // React separates adjacent text with <!-- -->; read the text, not the markup.
+  const said = (page) => page.html.replace(/<!-- -->/g, "");
+  check("and the button says the floor it would apply",
+        said(atDefault).includes("Accept ≥ 0.80 in bulk"));
+  const lowered = await get("/review/auditor?bucket=all&threshold=0.7", analyst.cookie);
+  check("choosing a lower floor changes what bulk accept would take",
+        said(lowered).includes("Accept ≥ 0.70 in bulk"));
+  // A floor nobody offered is not honoured: a URL is not a place to invent one.
+  const invented = await get("/review/auditor?bucket=all&threshold=0.01", analyst.cookie);
+  check("an invented floor falls back to the default",
+        said(invented).includes("Accept ≥ 0.80 in bulk"));
+
   // 4. The access review is Admin only, and records last sign-in.
   console.log("\n4. the access review");
   const analystOnAccess = await get("/access", analyst.cookie);

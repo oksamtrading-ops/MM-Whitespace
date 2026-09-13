@@ -7,6 +7,7 @@ import {
   partitionForBulkAccept, recordDecision, undoLast, type Candidate,
 } from "./decide.ts";
 import { cellLabel, companyRows, fieldRows, formatValue, IN_BUCKET, queueBuckets } from "./queue.ts";
+import { chosenThreshold, DEFAULT_THRESHOLD, THRESHOLDS } from "./threshold.ts";
 
 function candidate(over: Partial<Candidate> = {}): Candidate {
   return {
@@ -532,4 +533,43 @@ test("a re-run that proposes the same value again says nothing", async () => {
 
   assert.deepEqual(await fieldRows(db, periodId, "auditor", "superseded"), [],
                    "the stored value already says PwC");
+});
+
+// --- the bulk accept floor ---------------------------------------------------
+
+test("the floor is the reviewer's to set, within limits", async () => {
+  assert.equal(chosenThreshold("0.7"), 0.7);
+  assert.equal(chosenThreshold(0.6), 0.6);
+  assert.equal(chosenThreshold("0.9"), 0.9);
+  // Anything not offered falls back to the default rather than being honoured:
+  // a URL is not a place to invent a floor of 0.01.
+  for (const bad of ["0", "0.01", "0.55", "-1", "2", "abc", "", undefined, null]) {
+    assert.equal(chosenThreshold(bad), DEFAULT_THRESHOLD, String(bad));
+  }
+  assert.equal(Math.min(...THRESHOLDS), 0.6, "never below 0.60");
+  assert.ok(THRESHOLDS.includes(DEFAULT_THRESHOLD), "the default is one of the offered floors");
+});
+
+test("a lower floor widens bulk accept and nothing else", async () => {
+  // The floor is one condition of seven. Lowering it must not let a fee, a
+  // conflict, an unanchored value or a stage flag through.
+  const at = (threshold: number, over: Partial<Candidate> = {}) =>
+    partitionForBulkAccept(over.fieldKey ?? "auditor", [candidate(over)], { threshold });
+
+  assert.equal((await at(0.8, { evidenceStrength: 0.71 })).accept.length, 0);
+  assert.equal((await at(0.7, { evidenceStrength: 0.71 })).accept.length, 1,
+               "an anchored value a reviewer would take by hand");
+
+  const refusedAtAnyFloor: Array<[string, Partial<Candidate>]> = [
+    ["a fee", { fieldKey: "audit_fee", bulkAcceptableField: false, evidenceStrength: 0.99 }],
+    ["a conflict", { extractValue: "KPMG", proposedValue: "Deloitte", evidenceStrength: 0.99 }],
+    ["an override", { alreadyOverridden: true, evidenceStrength: 0.99 }],
+    ["an unanchored value", { anchorMode: "label_only", findingState: "anchor_mismatch", evidenceStrength: 0.99 }],
+    ["a sourceless value", { sourceCount: 0, evidenceStrength: 0.99 }],
+    ["a stage", { fieldKey: "stage_evidence_state", evidenceStrength: 0.99 }],
+  ];
+  for (const [what, over] of refusedAtAnyFloor) {
+    const { accept } = await at(0.6, over);
+    assert.equal(accept.length, 0, `${what} was accepted at the lowest floor`);
+  }
 });
