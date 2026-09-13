@@ -394,7 +394,10 @@ test("company-major and field-major show the same proposals", async () => {
  * appeared in no queue, because "decided" is what every bucket filters out.
  * Both times the new research sat unseen until someone went looking in "All".
  */
-async function acceptedThenResearchedAgain() {
+type FindingOpts = { state?: string; fieldKey?: string; strength?: number; tier?: number; url?: string };
+
+/** A period with runs and findings a test can lay out proposal by proposal. */
+async function researchFixture() {
   const { db, periodId, companyId } = await seeded();
   const run = async (at: string) => {
     await db.run(`insert into enrichment_runs
@@ -405,18 +408,26 @@ async function acceptedThenResearchedAgain() {
        values (?, ?, 'general', 'completed')`, r.id, companyId);
     return r.id;
   };
-  const finding = async (runId: string, value: string, at: string, state = "proposed") => {
+  const finding = async (runId: string, value: string, at: string, opts: FindingOpts = {}) => {
     const job = await db.get("select id from enrichment_jobs where run_id = ?", runId) as { id: string };
-    await db.run(`insert into enrichment_findings
+    // returning id, not "the newest row": a test lays proposals out in whatever
+    // order it needs, and the newest is not always the one just written.
+    const row = await db.get(`insert into enrichment_findings
        (run_id, job_id, attempt, company_id, field_key, proposed_value, evidence_strength, anchor_mode,
         state, evidence_excerpt, model, prompt_version, created_at)
-       values (?, ?, 1, ?, 'audit_fee', ?, 0.73, 'proximity', ?, 'Audit fees 8,052',
-               'claude-sonnet-5', '1', ?)`,
-      runId, job.id, companyId, value, state, at);
-    const row = await db.get("select id from enrichment_findings order by created_at desc, id desc limit 1") as { id: string };
-    await db.run(`insert into finding_sources (finding_id, url, source_tier) values (?, 'https://x.invalid', 1)`, row.id);
+       values (?, ?, 1, ?, ?, ?, ?, 'proximity', ?, 'Audit fees 8,052',
+               'claude-sonnet-5', '1', ?) returning id`,
+      runId, job.id, companyId, opts.fieldKey ?? "audit_fee", value, opts.strength ?? 0.73,
+      opts.state ?? "proposed", at) as { id: string };
+    await db.run(`insert into finding_sources (finding_id, url, source_tier) values (?, ?, ?)`,
+                 row.id, opts.url ?? "https://x.invalid", opts.tier ?? 1);
     return row.id;
   };
+  return { db, periodId, companyId, run, finding };
+}
+
+async function acceptedThenResearchedAgain() {
+  const { db, periodId, companyId, run, finding } = await researchFixture();
   const first = await finding(await run("2026-09-11 11:00:00"), "8052000", "2026-09-11 11:30:00");
   await recordDecision(db, { periodId, companyId, fieldKey: "audit_fee", decision: "accept",
                              findingId: first, actorId: null });
@@ -450,6 +461,54 @@ test("a value accepted before better research arrived is surfaced, not hidden", 
   assert.deepEqual(JSON.parse(after.value), { amount: 8052000, currency: "CAD", fiscal_year: 2025 });
   assert.deepEqual(await fieldRows(db, periodId, "audit_fee", "superseded"), [],
                    "once re-accepted it stops asking");
+});
+
+test("where a decision stands, the row offers the NEWEST proposal, not the strongest", async () => {
+  // 13 September: two of four corrections never reached the superseded bucket.
+  // An older EDGAR proposal outscored the newer one read off the filing, so
+  // the older one was picked as "best" -- and it was the finding already
+  // decided, which made the row look settled. They had to be overridden by hand.
+  const { db, periodId, companyId, run, finding } = await researchFixture();
+  const strong = await finding(await run("2026-09-11 11:00:00"), '"Vancouver"',
+    "2026-09-11 11:30:00", { fieldKey: "head_office_location", strength: 0.88 });
+  await recordDecision(db, { periodId, companyId, fieldKey: "head_office_location",
+                             decision: "accept", findingId: strong, actorId: null });
+  await db.run("update review_decisions set decided_at = '2026-09-11 12:00:00' where finding_id = ?", strong);
+  const newerAndWeaker = await finding(await run("2026-09-13 00:57:00"), '"Toronto"',
+    "2026-09-13 00:58:00", { fieldKey: "head_office_location", strength: 0.71 });
+
+  const [row] = await fieldRows(db, periodId, "head_office_location", "all");
+  assert.equal(row.findingId, newerAndWeaker, "the weaker, newer correction is the one shown");
+  assert.equal(row.newerThanDecision, true);
+  assert.deepEqual(
+    (await fieldRows(db, periodId, "head_office_location", "superseded")).map((r) => r.findingId),
+    [newerAndWeaker], "and it is in the bucket that exists to surface it");
+});
+
+test("for a field EDGAR answers from its profile, the issuer's filing wins on source, not on score", async () => {
+  // EDGAR's stored address and fiscal year-end go stale while the filings stay
+  // current, and EDGAR is fetched fresh every time, so it can outscore the
+  // document that is actually right. For these fields the better source wins
+  // outright. Elsewhere the arithmetic still decides.
+  // One finding per company, field and run, so the two passes are two runs --
+  // which is how they are started.
+  const { db, periodId, run, finding } = await researchFixture();
+  const pass1 = await run("2026-09-13 00:57:00");
+  const pass2 = await run("2026-09-13 00:59:00");
+  const profile = async (fieldKey: string, strength: number) => finding(pass1, '"Vancouver"',
+    "2026-09-13 00:58:00", { fieldKey, strength, tier: 3, url: "https://data.sec.gov/submissions/CIK1.json" });
+  const filing = async (fieldKey: string, strength: number) => finding(pass2, '"Toronto"',
+    "2026-09-13 01:00:00", { fieldKey, strength, tier: 2, url: "https://firstquantum.invalid/aif.pdf" });
+
+  await profile("head_office_location", 0.88);
+  const aif = await filing("head_office_location", 0.71);
+  const [office] = await fieldRows(db, periodId, "head_office_location", "all");
+  assert.equal(office.findingId, aif, "the AIF outranks the registrant profile");
+
+  await profile("auditor", 0.88);
+  const weaker = await filing("auditor", 0.71);
+  const [auditor] = await fieldRows(db, periodId, "auditor", "all");
+  assert.notEqual(auditor.findingId, weaker, "every other field is still decided by evidence");
 });
 
 test("nothing else is called superseded: not an override, not the decided finding itself", async () => {

@@ -14,6 +14,7 @@
 import { formatFieldValue } from "../format/fields.ts";
 import type { Sql } from "../db/sql.ts";
 import { evidenceBand, isConflict, isStageField, type Candidate } from "./decide.ts";
+import { EDGAR_PROFILE_FIELDS } from "../enrich/sources.ts";
 
 export type QueueBucket = {
   key: string;
@@ -194,6 +195,7 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
             f.bulk_acceptable as "bulkAcceptableField",
             (select count(*) from finding_sources s where s.finding_id = e.id) as "sourceCount",
             (select s.url from finding_sources s where s.finding_id = e.id limit 1) as "sourceUrl",
+            (select s.source_tier from finding_sources s where s.finding_id = e.id limit 1) as "sourceTier",
             e.anchor_document_hash as "documentHash",
             -- From the facts table, not the resolved values: a decision
             -- rewrites the resolved row's source away from 'extract', and the
@@ -226,22 +228,7 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
        join enrichment_runs r on r.id = e.run_id and r.period_id = ?
        join companies c on c.id = e.company_id
        join field_catalog f on f.key = e.field_key
-      where e.state != 'superseded'
-        -- One proposal per company and field. Two passes (EDGAR in pass 1, the
-        -- filings in pass 2) and any re-run each propose a value, and a grid
-        -- keyed by company showed them all. The one shown is the best: an
-        -- anchored proposal, then one held for a human, then the rest, with an
-        -- abstention last; within that, the strongest evidence, then the newest.
-        -- The others stay on record, append-only.
-        and e.id = (select e2.id from enrichment_findings e2
-                      join enrichment_runs r2 on r2.id = e2.run_id and r2.period_id = r.period_id
-                     where e2.company_id = e.company_id and e2.field_key = e.field_key
-                       and e2.state != 'superseded'
-                     order by case e2.state when 'proposed' then 0 when 'anchor_mismatch' then 1
-                                            when 'abstained' then 3 else 2 end,
-                              e2.evidence_strength desc nulls last, e2.created_at desc, e2.id desc
-                     limit 1)
-      order by e.evidence_strength asc nulls first, c.canonical_name asc`,
+      where e.state != 'superseded'`,
     periodId, periodId, periodId, periodId, periodId, periodId) as Array<Record<string, unknown>>;
 
   // The stage is stored as an evidence state plus its own rows, and proposed
@@ -253,7 +240,7 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
     stagesOf.set(row.company_id, [...(stagesOf.get(row.company_id) ?? []), row.stage]);
   }
 
-  return rows.map((r) => {
+  const candidates = rows.map((r) => {
     const proposedValue = r.proposedValue ? safeParse(String(r.proposedValue)) : null;
     const extractValue = r.extractValue ? safeParse(String(r.extractValue)) : null;
     const decision = r.decision ? String(r.decision) : null;
@@ -288,8 +275,75 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
       conflict: false,
     };
     candidate.conflict = isConflict(candidate);
-    return candidate;
+    return {
+      ...candidate,
+      createdAt: r.findingCreatedAt ?? null,
+      sourceTier: r.sourceTier === null || r.sourceTier === undefined ? null : Number(r.sourceTier),
+    };
   });
+
+  // One row per company and field, picked here rather than in the statement:
+  // which proposal to show depends on the standing decision, and a correlated
+  // subquery cannot see it.
+  const groups = new Map<string, Proposal[]>();
+  for (const c of candidates) {
+    const key = `${c.companyId}\u0000${c.fieldKey}`;
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  return [...groups.values()].map(pickFinding)
+    .sort((a, b) => byStrengthAsc(a.evidenceStrength, b.evidenceStrength) ||
+                    a.companyName.localeCompare(b.companyName));
+}
+
+/** A Row plus what only the pick needs: when it was written, and from where. */
+type Proposal = Row & { createdAt: unknown; sourceTier: number | null };
+
+/** An anchored proposal, then one held for a human, then the rest, abstention last. */
+const STATE_RANK: Record<string, number> = { proposed: 0, anchor_mismatch: 1, abstained: 3 };
+const stateRank = (state: string): number => STATE_RANK[state] ?? 2;
+
+/** Ascending, with an unscored proposal first: the worst work comes first. */
+function byStrengthAsc(a: number | null, b: number | null): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return -1;
+  if (b === null) return 1;
+  return a - b;
+}
+
+/** Newest first, by creation and then by id, which ties-break in insert order. */
+function byNewest(a: Proposal, b: Proposal): number {
+  if (isAfter(a.createdAt, b.createdAt)) return -1;
+  if (isAfter(b.createdAt, a.createdAt)) return 1;
+  return String(b.findingId ?? "").localeCompare(String(a.findingId ?? ""));
+}
+
+/**
+ * Which of a company's proposals for one field the Analyst sees.
+ *
+ * Two passes (EDGAR in pass 1, the filings in pass 2) and every re-run propose
+ * a value. The others stay on record, append-only.
+ *
+ * Where a decision already stands, the one to show is the NEWEST proposal the
+ * decision never saw -- not the strongest. Those are the same row most of the
+ * time, and when they differ the strongest is the one already decided, so the
+ * row drops out of the superseded bucket and the correction is lost: two of
+ * the four corrections on 13 September never surfaced and had to be overridden
+ * by hand, because an older EDGAR proposal outscored the newer filing.
+ *
+ * Otherwise it is the best proposal: state, then -- for the fields EDGAR
+ * answers from a registrant profile -- the better source outright, so the
+ * issuer's own filing wins whatever the arithmetic says, then evidence.
+ */
+export function pickFinding(group: Proposal[]): Proposal {
+  const newer = group.filter((c) => c.newerThanDecision);
+  if (newer.length > 0) return [...newer].sort(byNewest)[0];
+
+  const preferSource = EDGAR_PROFILE_FIELDS.has(group[0].fieldKey);
+  return [...group].sort((a, b) =>
+    stateRank(a.findingState) - stateRank(b.findingState) ||
+    (preferSource ? (a.sourceTier ?? 9) - (b.sourceTier ?? 9) : 0) ||
+    byStrengthAsc(b.evidenceStrength, a.evidenceStrength) ||
+    byNewest(a, b))[0];
 }
 
 /** Field-major, sorted by evidence ASCENDING so the worst work comes first. */

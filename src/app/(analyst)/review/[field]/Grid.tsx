@@ -51,6 +51,20 @@ export type GridRow = {
   tierNote: string | null;
 };
 
+/**
+ * Whether this row can still be decided -- one answer for the buttons and for
+ * the keys.
+ *
+ * The two disagreed: a decided row drew no controls but still answered A, O
+ * and F, so O opened the override editor where no Override button existed.
+ * That is how two of the corrections on 13 September were made -- the shortcut
+ * doing work the screen said was not available. A row research has overtaken
+ * is the exception, and it draws its controls.
+ */
+function canAct(row: GridRow | undefined): row is GridRow {
+  return row !== undefined && (!row.decided || row.newerThanDecision);
+}
+
 type Props = {
   periodId: string;
   fieldKey: string;
@@ -203,14 +217,17 @@ export default function Grid(props: Props) {
       case " ":
         event.preventDefault(); setExpanded((v) => !v); break;
       case "a": case "A":
-        event.preventDefault(); submit("accept"); break;
+        if (canAct(row)) { event.preventDefault(); submit("accept"); }
+        break;
       case "o": case "O":
-        event.preventDefault(); setEditing(true); break;
+        if (canAct(row)) { event.preventDefault(); setEditing(true); }
+        break;
       case "f": case "F":
-        event.preventDefault(); setFlagging(true); break;
+        if (canAct(row)) { event.preventDefault(); setFlagging(true); }
+        break;
       case "k": case "K":
         // Only meaningful where there are two values to choose between.
-        if (row?.conflict && !row.decided) { event.preventDefault(); keepExtract(); }
+        if (row?.conflict && canAct(row)) { event.preventDefault(); keepExtract(); }
         break;
       case "e": case "E":
         if (row?.sourceUrl) window.open(row.sourceUrl, "_blank", "noopener,noreferrer");
@@ -384,7 +401,7 @@ export default function Grid(props: Props) {
                   walks it back. The exception is a row research has overtaken:
                   the whole point of surfacing it is that it can be taken, and
                   with the controls hidden there was no way to (Run 1, twice). */}
-              {(!row.decided || row.newerThanDecision) && (
+              {canAct(row) && (
                 /* On a conflict the choice is between two named values, so the
                    controls name them. No default is pre-selected and nothing
                    resolves it by timing out. */

@@ -281,7 +281,7 @@ test("a linked file's kind comes from its address, and forms that are not filing
     "nothing is followed twice");
 });
 
-test("EDGAR's registered address is shown, scored below bulk accept, with a US state written out", async () => {
+test("EDGAR's profile attributes are shown, scored below bulk accept, with a US state written out", async () => {
   assert.equal(regionFrom("CO", "CO"), "Colorado, United States");
   assert.equal(regionFrom("A6", "ONTARIO, CANADA"), "Ontario, Canada");
   assert.equal(regionFrom(null, null), null);
@@ -293,8 +293,16 @@ test("EDGAR's registered address is shown, scored below bulk accept, with a US s
       where run_id = ? and field_key in ('head_office_location', 'head_office_region', 'fiscal_year_end')`, runId) as
     Array<{ field_key: string; evidence_strength: number }>;
   const s = Object.fromEntries(rows.map((r) => [r.field_key, Number(r.evidence_strength)]));
+  // The address and the fiscal year-end are both profile attributes the filer
+  // maintains, and both go stale while the filings stay current (Run 2: First
+  // Quantum's 30 November against its own circular's 31 December). So neither
+  // is bulk-acceptable on EDGAR's word alone.
   assert.ok(s.head_office_location < 0.8 && s.head_office_region < 0.8, JSON.stringify(s));
-  assert.ok(s.fiscal_year_end >= 0.8, "EDGAR's own fiscal year-end stays strong evidence");
+  assert.ok(s.fiscal_year_end < 0.8, `EDGAR's profile is not strong evidence: ${JSON.stringify(s)}`);
+  // Registrant status IS a fact about the record itself, and stays tier 1.
+  const registrant = await db.get(`select evidence_strength from enrichment_findings
+      where run_id = ? and field_key = 'sec_registrant'`, runId) as { evidence_strength: number };
+  assert.ok(Number(registrant.evidence_strength) >= 0.8, "registrant status is current by construction");
 });
 
 test("pass 2 reads the documents pass 1 found instead of searching again", async () => {

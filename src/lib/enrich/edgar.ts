@@ -21,6 +21,7 @@
 import type { StoredDocument } from "./anchor.ts";
 import { fetchDocument, type FetchDeps, type FetchedDocument } from "./fetch.ts";
 import type { ProposedFinding } from "./worker.ts";
+import { EDGAR_PROFILE_FIELDS } from "./sources.ts";
 
 export const SEC_HOST = "sec.gov";
 const TICKERS_URL = "https://www.sec.gov/files/company_tickers.json";
@@ -157,38 +158,41 @@ function quote(text: string, re: RegExp): string | null {
 
 /**
  * Findings from a verified EDGAR record. Each quotes the record verbatim and
- * names it as the document, at source tier 1.
+ * names it as the document.
+ *
+ * A field in EDGAR_PROFILE_FIELDS is an attribute the filer maintains rather
+ * than something a filing states, so it is scored as a secondary source of
+ * unknown age -- EDGAR says when it was fetched, never when the profile was
+ * last touched. That one list also decides which fields the review queue lets
+ * a filing win outright, so the score and the precedence cannot drift apart.
  */
 export function edgarFindings(record: EdgarRecord, doc: FetchedDocument): ProposedFinding[] {
   const base = {
     document_hash: doc.contentHash, source_url: doc.finalUrl, source_tier: 1 as const,
     document_age_days: 0, corroborating_sources: 1, model_self_confidence: null,
   };
+  const profile = { ...base, source_tier: 3 as const, document_age_days: null,
+                    corroborating_sources: 0 };
   const out: ProposedFinding[] = [];
-  out.push({
-    ...base, field_key: "sec_registrant",
-    value: { registrant: true, form: record.latestAnnual?.form ?? null, cik: record.cik },
-    evidence_excerpt: quote(doc.text, /"cik"\s*:\s*"?0*\d+"?/),
-  });
+  const push = (field_key: string, value: unknown, evidence_excerpt: string | null) =>
+    out.push({ ...(EDGAR_PROFILE_FIELDS.has(field_key) ? profile : base),
+               field_key, value, evidence_excerpt });
+
+  push("sec_registrant",
+       { registrant: true, form: record.latestAnnual?.form ?? null, cik: record.cik },
+       quote(doc.text, /"cik"\s*:\s*"?0*\d+"?/));
   if (record.fiscalYearEnd) {
-    out.push({ ...base, field_key: "fiscal_year_end", value: record.fiscalYearEnd,
-               evidence_excerpt: quote(doc.text, /"fiscalYearEnd"\s*:\s*"\d{4}"/) });
+    push("fiscal_year_end", record.fiscalYearEnd,
+         quote(doc.text, /"fiscalYearEnd"\s*:\s*"\d{4}"/));
   }
-  // EDGAR's "business address" is whatever the filer registered, and it is
-  // not always the head office: in Run 1 a royalty company formed by merger
-  // registered its US partner's Colorado office. So it is quoted exactly, but
-  // scored as a secondary source -- high enough to show, below the line for
-  // bulk accept -- and a head office stated in the company's own AIF outranks it.
-  const address = { ...base, source_tier: 3 as const, corroborating_sources: 0 };
   const business = quote(doc.text, /"business"\s*:\s*\{[^}]*\}/);
   if (record.businessCity && business) {
-    out.push({ ...address, field_key: "head_office_location", value: record.businessCity,
-               evidence_excerpt: quote(business, /"city"\s*:\s*"[^"]*"/) });
+    push("head_office_location", record.businessCity, quote(business, /"city"\s*:\s*"[^"]*"/));
   }
   if (record.businessRegion && business) {
-    out.push({ ...address, field_key: "head_office_region", value: record.businessRegion,
-               evidence_excerpt: quote(business, /"stateOrCountryDescription"\s*:\s*"[^"]+"/)
-                              ?? quote(business, /"stateOrCountry"\s*:\s*"[^"]+"/) });
+    push("head_office_region", record.businessRegion,
+         quote(business, /"stateOrCountryDescription"\s*:\s*"[^"]+"/)
+           ?? quote(business, /"stateOrCountry"\s*:\s*"[^"]+"/));
   }
   return out;
 }
