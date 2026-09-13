@@ -210,5 +210,38 @@ test("the dialect refuses what it cannot faithfully translate", async () => {
   assert.ok(isPostgresOnly("create policy p on t for select using (true);"));
   assert.ok(!isPostgresOnly("create table t (id uuid primary key);"));
   assert.match(toSqlite("id uuid primary key default gen_random_uuid()"), /randomblob/);
+  // A date column becomes text WHATEVER follows it. A nullable one written
+  // `due_date date,` has no space before the comma and used to keep SQLite's
+  // `date` type, which has NUMERIC affinity where every other timestamp in
+  // this schema is TEXT.
+  assert.match(toSqlite("due_date date,"), /due_date text,/);
+  assert.match(toSqlite("due_date date)"), /due_date text\)/);
+  assert.match(toSqlite("as_of date not null"), /as_of text not null/);
+  // But never a column NAMED date, nor the word inside a longer identifier.
+  assert.match(toSqlite("date_added text,"), /date_added text,/);
+  assert.match(toSqlite("update_date text,"), /update_date text,/);
   assert.equal(statements("select 1; -- a ; comment\nselect 2;").length, 2);
+});
+
+test("EVERY table a migration creates is closed to the data API", async () => {
+  // 0008's lesson, and the reason the pursuit tables ship in Phase 1 at all:
+  // Supabase serves every table in `public` over PostgREST as `anon`, the key
+  // that ships in a browser. A table created without row-level security is
+  // readable by anyone until somebody notices. This is the check that notices.
+  const text = (f: string) => readFileSync(join(MIGRATIONS_DIR, f), "utf8");
+  const created: string[] = [];
+  const secured = new Set<string>();
+  for (const file of migrationFiles()) {
+    const sql = text(file);
+    for (const m of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?([a-z_][a-z0-9_]*)/gi)) {
+      created.push(m[1].toLowerCase());
+    }
+    for (const m of sql.matchAll(/alter\s+table\s+([a-z_][a-z0-9_]*)\s+enable\s+row\s+level\s+security/gi)) {
+      secured.add(m[1].toLowerCase());
+    }
+  }
+  assert.ok(created.length > 20, `expected the whole schema, saw ${created.length}`);
+  const unsecured = created.filter((t) => !secured.has(t));
+  assert.deepEqual(unsecured, [],
+    `these tables are created but never have row-level security enabled: ${unsecured.join(", ")}`);
 });

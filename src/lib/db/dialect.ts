@@ -36,7 +36,12 @@ const TYPE_RULES: Array<[RegExp, string]> = [
   [/\bnumeric\s*\(\s*\d+\s*,\s*\d+\s*\)/gi, "numeric"],
   [/\bsmallint\b/gi, "integer"],
   [/\bint\b(?!\w)/gi, "integer"],
-  [/\bdate\b(?=\s+(not\s+null|references|,|\)))/gi, "text"],
+  // A column type, never the word in `default now()::date` or a column NAMED
+  // date. The separator may be whitespace or may be nothing at all: a nullable
+  // `due_date date,` has no space before its comma, and used to slip through
+  // as SQLite's `date` type -- NUMERIC affinity, where every other timestamp
+  // in this schema is TEXT.
+  [/\bdate\b(?=\s*(,|\))|\s+(not\s+null|references))/gi, "text"],
 ];
 
 /** Anything left that we know we cannot faithfully translate. */
