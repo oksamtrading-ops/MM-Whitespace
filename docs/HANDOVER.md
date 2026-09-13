@@ -128,7 +128,8 @@ override and flag, bulk accept, the publish gate and override, the dashboard,
 company profiles and finder, identity merge, admin settings, the access review,
 and magic-link sign-in. Routes: `/upload`, `/upload/[id]`, `/runs`, `/review`,
 `/review/[field]`, `/review/by-company`, `/publish`, `/dashboard`,
-`/companies`, `/companies/[id]`, `/companies/merge`, `/access`, `/settings`,
+`/companies`, `/companies/[id]`, `/companies/merge`, `/pursuits`,
+`/pursuits/[id]`, `/access`, `/settings`,
 `/signin`, `/auth/verify`, `/api/cron/tick`, `/api/export` (the workbook
 download), and two Python functions, `/api/parse` and `/api/workbook`.
 
@@ -195,8 +196,8 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 364 Node tests, 72 Python tests, the authorisation check, the
-colour-contrast check, the build, and 128 end-to-end checks.
+**Checks:** 382 Node tests, 72 Python tests, the authorisation check, the
+colour-contrast check, the build, and 140 end-to-end checks.
 
 ```bash
 npm test && npm run check:auth && npm run check:contrast && npm run build && npm run e2e:isolated
@@ -487,14 +488,25 @@ it. Never run `git add -A` outside this project's folder.
 6. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
    and S4 (open the generated export in Excel).
 
-7. **~~The pursuit data model~~ — done.** `pursuits`, `pursuit_notes` and
-   `pursuit_actions` ship empty and policied (migrations `0018`/`0019`, applied
-   to Supabase). Doc 02 scopes Phase 1 to "data model and access policy only";
-   the workflow and its interface are Phase 2. **Doc 05 specifies `lcsp` and
-   `fy_tax_nsr` and they are deliberately not built** — an LCSP is a person's
-   name and a tax NSR is Deloitte's revenue from a client, the class this build
-   refuses. Samuel's decision, 13 September 2026; doc 05 and migration `0018`
-   both say so, so do not "restore" them to match the document.
+7. **~~The pursuit data model~~ and ~~the Phase 2 workflow~~ — done.**
+   `pursuits`, `pursuit_notes` and `pursuit_actions` (migrations `0018`/`0019`),
+   and the workflow over them: `/pursuits`, `/pursuits/[id]`, and "Start a
+   pursuit" on a company profile, which is where the evidence is. Analyst and
+   Admin only — a partner is a Viewer, and doc 11 keeps the Viewer out in
+   policy, not in interface logic.
+
+   **Doc 05 specifies `lcsp` and `fy_tax_nsr` and they are deliberately not
+   built** — an LCSP is a person's name and a tax NSR is Deloitte's revenue
+   from a client, the class this build refuses. Samuel's decision, 13 September
+   2026; doc 05 and migration `0018` both say so, so do not "restore" them to
+   match the document.
+
+   The priority and status vocabularies live in `app_settings` (`0020`, seeded
+   High/Medium/Low and Open/Done), so an Admin changes them on `/settings`
+   without a deployment; a term retired from a list is shown as retired and
+   never rewritten. Nothing is ever deleted. **A pursuit's own words must never
+   reach a prompt** (doc 06) — a canary test pushes one through `publicRow` and
+   `buildPrompt`, and it was watched failing against a planted leak.
 
 8. **Hardening:** a monotonic column on `review_decisions` (today
     `decisionStamp()` carries the order); the domain allowlist as a database
