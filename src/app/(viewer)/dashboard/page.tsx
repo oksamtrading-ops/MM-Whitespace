@@ -11,10 +11,12 @@ import {
 } from "../../../lib/publish/views.ts";
 import Bars from "../../_ui/Bars.tsx";
 import Composition, { type Part } from "../../_ui/Composition.tsx";
+import Donut, { type Slice } from "../../_ui/Donut.tsx";
+import DotPlot from "../../_ui/DotPlot.tsx";
+import Treemap from "../../_ui/Treemap.tsx";
 import Heatmap from "../../_ui/Heatmap.tsx";
-import Penetration from "../../_ui/Penetration.tsx";
 import TierLadder, { type Rung } from "../../_ui/TierLadder.tsx";
-import { marketPenetration, whitespaceMatrix } from "../../../lib/publish/crosstabs.ts";
+import { companyMarks, marketPenetration, UNKNOWN as UNKNOWN_FIRM, whitespaceMatrix } from "../../../lib/publish/crosstabs.ts";
 import FootprintMap from "../../_ui/FootprintMap.tsx";
 import { foldProvinces, provinceName } from "../../../lib/publish/jurisdictions.ts";
 import Contents from "../../_ui/Contents.tsx";
@@ -47,6 +49,7 @@ const FOOTPRINT_LABEL: Record<string, string> = {
 };
 
 const SECTIONS = [
+  { id: "market-map", label: "The market" },
   { id: "map", label: "Footprint map" },
   { id: "coverage", label: "Coverage" },
   { id: "tiers", label: "Tier ladder" },
@@ -133,7 +136,25 @@ export default async function Dashboard() {
   const matrix = await whitespaceMatrix(ctx.db, snap.publication.id,
                                         Number(period.threshold_amount), period.threshold_currency);
   const markets = await marketPenetration(ctx.db, snap.publication.id, "Foreign HQ — no Deloitte market");
+  const tm = await companyMarks(ctx.db, snap.publication.id);
   const tierGate = gateFor("tier_distribution");
+  const auditorGate = gateFor("auditor_crosstab");
+  const money = (n: number) => formatMoney(n, period.threshold_currency, { compact: true });
+  const pctText = (part: number, whole: number) =>
+    `${whole === 0 ? 0 : Math.round((1000 * part) / whole) / 10}%`;
+  const oursCap = tm.marks.filter((m) => m.firm === "Deloitte").reduce((a, b) => a + b.cap, 0);
+  const gapCap = tm.marks.filter((m) => m.firm === UNKNOWN_FIRM).reduce((a, b) => a + b.cap, 0);
+  const gapN = (agg.auditor_share ?? []).find((a) => a.bucket === UNKNOWN_AUDITOR)?.n ?? 0;
+  const valueSlices: Slice[] = [
+    { label: "Deloitte", n: oursCap, kind: "ours" },
+    { label: "Another firm", n: tm.total - oursCap - gapCap, kind: "other" },
+    { label: UNKNOWN_FIRM, n: gapCap, kind: "gap" },
+  ];
+  const countSlices: Slice[] = [
+    { label: "Deloitte", n: deloitte, kind: "ours" },
+    { label: "Another firm", n: population - deloitte - gapN, kind: "other" },
+    { label: UNKNOWN_FIRM, n: gapN, kind: "gap" },
+  ];
   const footprintCount = (bucket: string) =>
     (agg.footprint ?? []).find((f) => f.bucket === bucket)?.n ?? 0;
   const market = marketBars(agg);
@@ -202,7 +223,24 @@ export default async function Dashboard() {
             under it the footprint proof. Province counts count a company once
             per province and do not sum to the population, which is why the
             footing is the footprint's and the caption says so. */}
-        <div id="map" className="rise" style={{ "--i": 3 } as React.CSSProperties}>
+        {/* The one chart where the answer arrives before anything is read: a
+            wall of grey with a few green tiles in it. The map keeps the space
+            directly beneath, unchanged. */}
+        {tm.marks.length > 0 && (
+          <div id="market-map" className="rise" style={{ "--i": 3 } as React.CSSProperties}>
+            <Treemap marks={tm.marks} total={tm.total} unsized={tm.unsized}
+                     currency={period.threshold_currency} />
+            <p className="note">
+              Every company in the population, sized by market capitalisation. The four largest
+              are <b>{tm.marks.slice(0, 4).map((m) => m.ticker || m.name).join(", ")}</b>, and{" "}
+              {tm.marks[0]?.firm === "Deloitte" ? "the largest is ours" : `the largest is audited by ${tm.marks[0]?.firm}`}.
+              Area is read badly, so every figure is also in the table on{" "}
+              <Link href="/companies" prefetch={false}>Companies</Link>.
+            </p>
+          </div>
+        )}
+
+        <div id="map" className="rise" style={{ "--i": 4 } as React.CSSProperties}>
           <FootprintMap rows={provinceRows} hero twinHref="#province" />
           <Composition parts={footprintParts(footprint)} proof={proofLine(footprint, population)} />
           <p className="note">
@@ -213,7 +251,7 @@ export default async function Dashboard() {
           </p>
         </div>
 
-        <div className="rise" style={{ "--i": 4 } as React.CSSProperties}>
+        <div className="rise" style={{ "--i": 5 } as React.CSSProperties}>
           <Panel icon="database" title="The population" bare
                  right={<>as of {fmtDate(period.market_cap_as_of)}</>}>
             <StatRow items={[
@@ -276,8 +314,8 @@ export default async function Dashboard() {
         </Section>
 
         <Section id="market" title="Corporate office by Deloitte market" queryKey="market" index={7} icon="landmark"
-                 caption="The full bar is the market; the green inside it is what Deloitte audits. Foreign head offices sit last because they belong to no Deloitte market.">
-          <Penetration rows={markets.rows} />
+                 caption="One dot for the market, one for Deloitte's book, and the rule between them is the whitespace. Foreign head offices sit last because they belong to no Deloitte market.">
+          <DotPlot rows={markets.rows} />
           <Composition parts={marketParts(market.bars)} proof={market.proof} variant="mono" />
           <p className="note">
             <b>Two markets carry no Deloitte audit client at all.</b> They are the cleanest
@@ -285,12 +323,38 @@ export default async function Dashboard() {
           </p>
         </Section>
 
-        <Gated id="auditor" title="Auditor share" queryKey="auditor_share" index={8}
-               gate={gateFor("auditor_crosstab")} canReview={canReview}
-               caption="Who audits the population. Deloitte is the accented bar; the rest of the market is grey.">
+        {/* Two donuts, because the count and the value tell different stories
+            and the difference between them is the most flattering true thing
+            on this page. Three slices, not two: the research gap is drawn as a
+            gap, hatched and named, which is what makes the pair honest while
+            the cross-tab below is still short of its floor. */}
+        <Section id="auditor" title="Auditor share" queryKey="auditor_share" index={8} icon="landmark" lead
+                 caption="Who audits the population, by company and by market capitalisation. Deloitte's share of the money is more than twice its share of the companies.">
+          <div className="donuts">
+            <Donut title="Audit share by market capitalisation"
+                   slices={valueSlices} headline={pctText(oursCap, tm.total)}
+                   caption={`${money(oursCap)} of ${money(tm.total)}`} />
+            <Donut title="Audit share by company"
+                   slices={countSlices} headline={pctText(deloitte, population)}
+                   caption={`${deloitte} of ${population} companies`} />
+          </div>
           <Bars bars={auditor.bars} />
           <Composition parts={auditorParts(auditor.bars)} proof={auditor.proof} variant="emphasis" />
-        </Gated>
+          {auditorGate.kind === "meter" && (
+            <div className="meter" style={{ minHeight: 0, marginTop: 24 }}>
+              <Gauge label="Auditor researched" resolved={auditorGate.resolved}
+                     population={auditorGate.population} floorPct={auditorGate.floorPct} compact />
+              <p className="why">
+                The cross-tab of auditor against tier stays shut until {auditorGate.floorPct}%. These
+                shares are drawn because the unresearched part is drawn with them: it is the hatched
+                slice, and it will move.
+                {canReview && (
+                  <>{" "}<Link href={auditorGate.reviewLink as Route}>Research the gap →</Link></>
+                )}
+              </p>
+            </div>
+          )}
+        </Section>
 
         <Section id="matrix" title="Whitespace matrix" queryKey="whitespace_matrix" index={9} icon="layers" lead
                  caption="Market-cap band against incumbent auditor. Read down a column for one firm's book; read across a row to see who holds a size of company. It needs no research: both inputs come from the extract, so it is populated on day one.">

@@ -6,10 +6,12 @@ import { proofLine, type Bar } from "../../../lib/publish/views.ts";
 import Bars, { Footing } from "../../_ui/Bars.tsx";
 import Callout from "../../_ui/Callout.tsx";
 import Composition, { type Part } from "../../_ui/Composition.tsx";
+import Donut, { type Slice } from "../../_ui/Donut.tsx";
+import DotPlot from "../../_ui/DotPlot.tsx";
+import Treemap from "../../_ui/Treemap.tsx";
 import Heatmap from "../../_ui/Heatmap.tsx";
-import Penetration from "../../_ui/Penetration.tsx";
 import TierLadder, { type Rung } from "../../_ui/TierLadder.tsx";
-import type { Matrix } from "../../../lib/publish/crosstabs.ts";
+import type { CompanyMark, Matrix } from "../../../lib/publish/crosstabs.ts";
 import Icon, { type IconName } from "../../_ui/Icon.tsx";
 import Page from "../../_ui/Page.tsx";
 import Panel, { StatRow } from "../../_ui/Panel.tsx";
@@ -51,6 +53,21 @@ const FOOTPRINT_PARTS: Part[] = [
   { label: "Abroad only", n: 24, slot: 3 },
   { label: "None — no properties", n: 53, slot: "quiet" },
 ];
+
+/* Twenty invented issuers, so the treemap specimen shows the shape without
+   putting a real book on the styleguide. */
+const SAMPLE_MARKS: CompanyMark[] = ([
+  ["NRTH", 126.9, "Ernst & Young"], ["SOUT", 98.7, "PwC"], ["WEST", 84.2, "Deloitte"],
+  ["EAST", 67.5, "PwC"], ["ROYL", 61.6, "PwC"], ["CARY", 50.0, "KPMG"], ["DEVC", 45.3, "KPMG"],
+  ["EXPC", 44.8, "PwC"], ["BLNK", 35.4, "PwC"], ["GOLD", 35.2, "Not yet known"],
+  ["SILV", 33.2, "Deloitte"], ["COPR", 23.8, "KPMG"], ["ZINC", 22.3, "PwC"],
+  ["NICK", 20.9, "Other firms"], ["IRON", 17.4, "PwC"], ["LITH", 17.1, "Not yet known"],
+  ["URAN", 16.0, "Deloitte"], ["POTA", 14.8, "KPMG"], ["COAL", 12.2, "Not yet known"],
+  ["TUNG", 11.5, "Other firms"],
+] as Array<[string, number, CompanyMark["firm"]]>).map(([ticker, b, firm]) => ({
+  ticker, name: ticker, cap: b * 1e9, firm,
+}));
+const SAMPLE_TOTAL = SAMPLE_MARKS.reduce((a, m) => a + m.cap, 0);
 
 const SAMPLE_MATRIX: Matrix = {
   bands: [
@@ -408,6 +425,43 @@ export default async function Styleguide() {
               <tr><td>Tier 4 → Tier 4</td><td className="n">17</td><td className="diag"><Icon name="minus" size={13} /> unchanged</td></tr>
             </tbody>
           </table>
+          <h3 style={{ marginTop: 32 }}>Treemap — area is market capitalisation</h3>
+          <p className="note" style={{ marginTop: 0 }}>
+            The only chart in the product whose encoding is area rather than length, and the only
+            one where the answer arrives before anything is read. Area is judged badly, so the
+            largest tiles are labelled and every figure is also in the roster. Green is Deloitte;
+            every competitor is a step of one grey; the research gap is hatched and takes no hue.
+          </p>
+          <Treemap marks={SAMPLE_MARKS} total={SAMPLE_TOTAL} unsized={0} currency="CAD" />
+
+          <h3 style={{ marginTop: 32 }}>Donut — where a donut is honest</h3>
+          <p className="note" style={{ marginTop: 0 }}>
+            Two or three parts, a large difference between them, and a hole big enough to carry
+            the headline. Doc 09&rsquo;s ban on pies was written for the six-tier distribution and
+            still holds there. The third slice is what makes this pair legal below the auditor
+            floor: the gap is drawn as a gap, hatched and named.
+          </p>
+          <div className="donuts">
+            <Donut title="Sample share by value" slices={[
+              { label: "Deloitte", n: 184.4, kind: "ours" },
+              { label: "Another firm", n: 991.1, kind: "other" },
+              { label: "Not yet known", n: 88.9, kind: "gap" },
+            ]} headline="14.6%" caption="C$184.4B of C$1,264.4B" />
+            <Donut title="Sample share by count" slices={[
+              { label: "Deloitte", n: 17, kind: "ours" },
+              { label: "Another firm", n: 125, kind: "other" },
+              { label: "Not yet known", n: 117, kind: "gap" },
+            ]} headline="6.6%" caption="17 of 259 companies" />
+          </div>
+
+          <h3 style={{ marginTop: 32 }}>Dot plot — the gap between two dots is the quantity</h3>
+          <DotPlot rows={[
+            { market: "British Columbia", companies: 121, deloitte: 6, terminal: false },
+            { market: "Ontario", companies: 61, deloitte: 3, terminal: false },
+            { market: "Quebec & NCR", companies: 12, deloitte: 0, terminal: false },
+            { market: "Foreign HQ — no Deloitte market", companies: 53, deloitte: 7, terminal: true },
+          ]} />
+
           <h3 style={{ marginTop: 32 }}>Composition — the proof, drawn</h3>
           <p className="note" style={{ marginTop: 0 }}>
             Three jobs. <b>Identity</b> when the bar is the chart and the parts fit the
@@ -422,14 +476,6 @@ export default async function Styleguide() {
           <h4>Mono</h4>
           <Composition parts={TIERS.map((b): Part => ({ label: b.label, n: b.n, slot: b.muted ? "quiet" : 1 }))}
                        proof={proofLine(TIERS, POP)} variant="mono" />
-
-          <h3 style={{ marginTop: 32 }}>Penetration — the market, and the part of it that is ours</h3>
-          <Penetration rows={[
-            { market: "British Columbia", companies: 121, deloitte: 6, terminal: false },
-            { market: "Ontario", companies: 61, deloitte: 3, terminal: false },
-            { market: "Quebec & NCR", companies: 12, deloitte: 0, terminal: false },
-            { market: "Foreign HQ — no Deloitte market", companies: 53, deloitte: 7, terminal: true },
-          ]} />
 
           <h3 style={{ marginTop: 32 }}>Heat map — the whitespace matrix</h3>
           <p className="note" style={{ marginTop: 0 }}>

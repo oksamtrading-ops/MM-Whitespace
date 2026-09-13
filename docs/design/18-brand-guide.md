@@ -203,13 +203,14 @@ Marks: bars 14px thick with 2px rounded data-ends and a 2px surface gap between 
 | View | Form | Colour job | Label rule | Twin and gate |
 |---|---|---|---|---|
 | Population | the hero sentence and the stat row | none | figure-lg in a panel | — |
+| **The market** | **treemap** — every company a rectangle, area is market capitalisation | brand + one grey in four steps; the gap hatched | the largest tiles carry their ticker and value | the roster is the twin, and the caption says so |
 | Footprint | **composition bar** — four parts of one population, drawn as one bar | categorical, the only place the slots are spent | a key naming every part with its count and share | the bar is its own proof |
 | Tier distribution | bars above the floor; **tier ladder** below it | ordinal badge ramp | value at the tip, or the basis and "awaiting stage" | the ladder states the refusal and the real basis |
-| Office by market | **penetration bars** — the full length is the market, the inner length is Deloitte's book | brand + grey | count at the tip; "n ours · x%", or "no client here" | mono composition proof |
+| Office by market | **dot plot** — one dot for the market, one for Deloitte's book | brand + grey | count at the tip; "n ours · x%", or "no client here" | mono composition proof |
 | **Whitespace matrix** | **heat map**, market-cap band × incumbent auditor | sequential in named percentage steps | count and share in every cell, in the step's ink | a real table with row and column headers; the research gap is hatched and outside the ramp |
 | Province footprint | the map, and bars sorted | sequential on the map, one hue on the bars | code and count on the map; value at the tip | the bars are the twin; caption says counts do not sum |
 | Key jurisdictions | horizontal bars, top 12 and a grey remainder | one hue | value at the tip | — |
-| Auditor share | emphasis bars: Deloitte accented, others grey, unknown last | brand + grey | value at the tip | emphasis composition proof; meter at 90% |
+| Auditor share | **a donut pair** — by value and by count — over the emphasis bars | brand + grey; the gap hatched | the share in the hole, the figures under it | emphasis composition proof; the coverage meter sits under it |
 | Auditor × tier | heat map | sequential | count and share in every cell | table; gated on two floors |
 | Tier migration | a table of moves with polarity | diverging (status pair) | icon and word in every row | first-period empty state |
 | Enrichment coverage | gauges with the floor as a tick | ordinal: green above the floor, grey below | percentage and "n of N" | — |
@@ -218,6 +219,12 @@ Marks: bars 14px thick with 2px rounded data-ends and a 2px surface gap between 
 **The proof is drawn, not written.** `121 + 61 + 12 + 7 + 5 + 53 = 259 ✓` is the right guarantee and the wrong object: an arithmetic string under every chart reads as a footnote nobody checks, and the dashboard carried four of them. The same assertion is now a **composition bar** whose segments *are* the addends — they sum to the width by construction, so the eye verifies the total the way the arithmetic did. The total still carries its tick as one text node, the arithmetic is one press away under "show the arithmetic", and the whole sum is the bar's accessible name. Nothing about the guarantee is weaker: a failing proof still reads `✗ expected N` in the same place, in the alert colour.
 
 **Two cross-tabs read the snapshot directly** rather than the precomputed aggregates. The whitespace matrix and market penetration are one pass over a single publication's rows, which costs nothing and means an already-published revision grows these views without being republished. They read `published_period_values` and nothing else, so they are as frozen as the rest of the page.
+
+**Where a donut is legal.** Two or three parts, a large difference between them, and a hole big enough to carry the headline. Doc 09 banned pies for the *tier distribution* — five or six near-equal segments where the whole point was that two tables disagreed — and that ban holds for that chart, for the six Deloitte markets, and for anything else with near-equal parts. The auditor pair is the other shape: ours, everyone else's, and the part nobody has looked at yet. **The third slice is what makes it honest below the auditor floor**: the research gap is drawn as a gap, hatched and named, so no reader can mistake unresearched for held by somebody else. The coverage meter still sits underneath, and the cross-tab of auditor against tier is still shut.
+
+**Green means Deloitte and nothing else.** In the treemap every competitor is a step of one grey rather than a hue of its own. A four-firm colour set was tested against the palette and cannot be had: no single fixed set of four Deloitte values clears 3:1 on both a white and a black ground, and once green is reserved the palette has only two hue families left — blue and teal — for three competitors. Per-theme steps would solve the contrast half and not the arithmetic half. *[decision: leave the competitors grey, or accept two steps of one hue for two firms]*
+
+**Area is read badly, so it never carries a number alone.** The treemap labels its largest tiles, names every tile in its title, and says in its caption that the roster holds all 259 figures.
 
 **A heat map's steps are named, never stretched.** A linear five-way split of 0–100% puts almost every cell in the first two steps while 117 auditors are unresearched, and silently stretching the scale to fill the ramp would make a 12% cell look like a 40% one. The steps are fixed percentages and the legend prints them.
 
@@ -349,7 +356,8 @@ Ordered so the demonstration path is finished first. Effort is in engineer-days 
 | 23 | The key-jurisdictions inset, once the foreign vocabulary separates countries from states | 1 | — |
 | 24 | Fold the export's cover and sheets onto the brand (section 14) | 1 | — |
 | 25 | Drill-down links from every bar into the filtered roster, and one "since last period" empty state | 1 | — |
-| 26 | The composition bar, the penetration bars, the whitespace matrix and the tier ladder | 1.5 | ✓ |
+| 26 | The composition bar, the whitespace matrix and the tier ladder | 1.5 | ✓ |
+| 27 | The treemap hero, the auditor donut pair and the market dot plot | 1 | ✓ |
 
 **Acceptance.** Steps 1–18 are in the tree; `npm run check:contrast`, `npm test` and `npm run e2e:isolated` pass on it.
 

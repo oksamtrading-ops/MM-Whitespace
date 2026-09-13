@@ -121,6 +121,48 @@ export async function whitespaceMatrix(
   };
 }
 
+export type CompanyMark = { ticker: string; name: string; cap: number; firm: FirmBucket };
+
+/**
+ * Every company in the publication with its market cap and its auditor, for
+ * the treemap. 259 rows; the caller sorts and lays them out.
+ *
+ * A company with no market cap cannot be sized, so it is left out of the
+ * picture and counted in the caption instead — a zero-area rectangle is not
+ * an honest way to say "we do not know how big this is".
+ */
+export async function companyMarks(
+  db: Sql, publicationId: string,
+): Promise<{ marks: CompanyMark[]; total: number; unsized: number }> {
+  const rows = await db.all(
+    `select v.company_id, v.field_key, cast(v.value as text) as value, c.canonical_name as name
+       from published_period_values v
+       join companies c on c.id = v.company_id
+      where v.publication_id = ?
+        and v.field_key in ('market_cap_cad', 'auditor', 'root_ticker')`,
+    publicationId) as Array<Row & { name: string }>;
+
+  const by = new Map<string, { name: string; cap: number | null; auditor: unknown; ticker: string | null }>();
+  for (const r of rows) {
+    const e = by.get(r.company_id) ?? { name: String(parse(r.name) ?? r.name), cap: null, auditor: null, ticker: null };
+    const v = parse(r.value);
+    if (r.field_key === "market_cap_cad" && typeof v === "number" && Number.isFinite(v)) e.cap = v;
+    else if (r.field_key === "auditor") e.auditor = v;
+    else if (r.field_key === "root_ticker" && typeof v === "string") e.ticker = v;
+    by.set(r.company_id, e);
+  }
+
+  const marks: CompanyMark[] = [];
+  let total = 0, unsized = 0;
+  for (const e of by.values()) {
+    if (e.cap === null || e.cap <= 0) { unsized++; continue; }
+    total += e.cap;
+    marks.push({ ticker: e.ticker ?? "", name: e.name, cap: e.cap, firm: firmOf(e.auditor) });
+  }
+  marks.sort((a, b) => b.cap - a.cap);
+  return { marks, total, unsized };
+}
+
 export type MarketRow = {
   market: string;
   companies: number;
