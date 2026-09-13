@@ -294,6 +294,7 @@ def build_workbook(data: Dict[str, Any]) -> Workbook:
     wb = Workbook()
     wb.remove(wb.active)
     _cover(wb, data)
+    _summary(wb, data)
     # No divider tabs. The source has two, empty, because ITS table of contents
     # links to them; this file has a Contents sheet that says what each tab
     # holds, and a tab with nothing in it is a defect rather than a section.
@@ -303,6 +304,138 @@ def build_workbook(data: Dict[str, Any]) -> Workbook:
     _auditor(wb, data)
     _provenance(wb, data)
     return wb
+
+
+def _summary(wb, data):
+    """One page a partner will actually read.
+
+    Nobody reads 259 rows. This says how big the population is, how much of it
+    Deloitte does not audit -- which IS the whitespace -- where the tiers sit,
+    and which large companies are unaudited by the firm, largest first.
+
+    The count tables are LIVE formulas over the matrix, like the proof block:
+    someone who corrects a tier on that sheet sees this page move with it. The
+    table of largest companies is values, because it is a ranking at a moment.
+    """
+    ws = wb.create_sheet("Summary")
+    companies = data["companies"]
+    n = len(companies)
+    first, last = MATRIX_FIRST_DATA_ROW, MATRIX_FIRST_DATA_ROW + max(n, 1) - 1
+    M = "'A.02 Matrix'!"
+    tier_col = "$%s$%d:$%s$%d" % (get_column_letter(2), first, get_column_letter(2), last)
+    big4_col = "$%s$%d:$%s$%d" % (get_column_letter(37), first, get_column_letter(37), last)
+    other_col = "$%s$%d:$%s$%d" % (get_column_letter(38), first, get_column_letter(38), last)
+    cap_col = "$%s$%d:$%s$%d" % (get_column_letter(6), first, get_column_letter(6), last)
+    foot_col = "$%s$%d:$%s$%d" % (get_column_letter(21), first, get_column_letter(21), last)
+    name_col = "$%s$%d:$%s$%d" % (get_column_letter(4), first, get_column_letter(4), last)
+
+    ws.column_dimensions["B"].width = 34
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 12
+    ws.column_dimensions["E"].width = 20
+    ws.column_dimensions["F"].width = 22
+    ws.column_dimensions["G"].width = 18
+    ws.sheet_properties.tabColor = "86BC25"
+    ws.page_setup.orientation = "portrait"
+    ws.print_options.horizontalCentered = True
+
+    title = put(ws, 2, 2, "Where the whitespace is")
+    title.font = Font(bold=True, size=16)
+    for col in (2, 3, 4, 5, 6, 7):
+        ws.cell(row=2, column=col).border = HEADER_BORDER
+    put(ws, 3, 2, "%s - %d companies at or above the threshold. Deloitte's audit relationships "
+                  "are not stored in this build, so \"not audited by Deloitte\" is read from the "
+                  "auditor named in each company's own filings." % (data["period"]["label"], n))
+
+    row = 5
+    _header(ws, row, 2, "The population"); _header(ws, row, 3, "Companies")
+    _header(ws, row, 4, "Share"); _header(ws, row, 5, "Market cap (CAD)")
+    row += 1
+    # Every share on this page is a share OF THE POPULATION, so they all
+    # divide by the one cell that holds it -- the first row written below.
+    total_row = row
+
+    def count_row(label, formula, cap_formula=None, indent=False):
+        nonlocal row
+        put(ws, row, 2, ("    " + label) if indent else label)
+        put(ws, row, 3, formula, formula=True)
+        put(ws, row, 4, '=IF($C$%d=0,"",C%d/$C$%d)' % (total_row, row, total_row),
+            formula=True).number_format = "0.0%"
+        if cap_formula:
+            put(ws, row, 5, cap_formula, formula=True).number_format = CURRENCY_FORMATS["CAD"]
+        for col in range(2, 6):
+            ws.cell(row=row, column=col).border = CELL_BORDER
+        row += 1
+
+    count_row("Every company in the period",
+              '=COUNTA(%s%s)' % (M, name_col), '=SUM(%s%s)' % (M, cap_col))
+    count_row("Audited by Deloitte",
+              '=COUNTIF(%s%s,"Deloitte")' % (M, big4_col),
+              '=SUMIF(%s%s,"Deloitte",%s%s)' % (M, big4_col, M, cap_col))
+    count_row("NOT audited by Deloitte - the whitespace",
+              '=COUNTA(%s%s)-COUNTIF(%s%s,"Deloitte")' % (M, name_col, M, big4_col),
+              '=SUM(%s%s)-SUMIF(%s%s,"Deloitte",%s%s)' % (M, cap_col, M, big4_col, M, cap_col))
+    count_row("of which another Big 4 firm audits",
+              '=COUNTA(%s%s)-COUNTIF(%s%s,"Deloitte")' % (M, big4_col, M, big4_col), indent=True)
+    count_row("of which a firm outside the Big 4 audits",
+              '=COUNTA(%s%s)' % (M, other_col), indent=True)
+    count_row("of which the auditor is not yet known",
+              '=COUNTA(%s%s)-COUNTA(%s%s)-COUNTA(%s%s)' % (M, name_col, M, big4_col, M, other_col),
+              indent=True)
+
+    row += 1
+    _header(ws, row, 2, "Tier"); _header(ws, row, 3, "Companies")
+    _header(ws, row, 4, "Share"); _header(ws, row, 5, "Market cap (CAD)")
+    row += 1
+    for label in ("Tier 1", "Tier 2", "Tier 3", "Tier 4", "Tier 5", "Tier 6", "Unclassified"):
+        count_row(label, '=COUNTIF(%s%s,"%s")' % (M, tier_col, label),
+                  '=SUMIF(%s%s,"%s",%s%s)' % (M, tier_col, label, M, cap_col))
+
+    row += 1
+    _header(ws, row, 2, "Footprint"); _header(ws, row, 3, "Companies"); _header(ws, row, 4, "Share")
+    row += 1
+    for label in ("Canada only", "Canada & Abroad", "Abroad", "None"):
+        count_row(label, '=COUNTIF(%s%s,"%s")' % (M, foot_col, label))
+
+    # The ranking a partner opens this for: the biggest companies the firm
+    # does not audit. A value list, because it is this period's order.
+    row += 1
+    _header(ws, row, 2, "Largest companies Deloitte does not audit")
+    _header(ws, row, 3, "Tier"); _header(ws, row, 4, "Exchange")
+    _header(ws, row, 5, "Market cap (CAD)"); _header(ws, row, 6, "Auditor")
+    _header(ws, row, 7, "Audit fee")
+    row += 1
+    ranked = sorted(
+        (c for c in companies if c["values"].get("auditor") != "Deloitte"),
+        key=lambda c: c["values"].get("market_cap_cad") or 0, reverse=True)[:10]
+    for c in ranked:
+        v = c["values"]
+        put(ws, row, 2, c["name"])
+        put(ws, row, 3, TIER_LABELS.get(c["tier"]) or STATUS_LABELS.get(c["status"], "Unclassified"))
+        put(ws, row, 4, v.get("exchange"))
+        put(ws, row, 5, v.get("market_cap_cad"), number_format=CURRENCY_FORMATS["CAD"])
+        put(ws, row, 6, v.get("auditor") or "not yet known")
+        put(ws, row, 7, money(v.get("audit_fee")),
+            number_format=money_format(currency_of(v.get("audit_fee"))))
+        for col in range(2, 8):
+            ws.cell(row=row, column=col).border = CELL_BORDER
+        row += 1
+    if not ranked:
+        put(ws, row, 2, "Every company in this period is audited by Deloitte.")
+        row += 1
+
+    row += 1
+    put(ws, row, 2, "What is still missing").font = BOLD
+    row += 1
+    unresearched = sum(1 for c in companies if not c["stages"])
+    no_auditor = sum(1 for c in companies if not c["values"].get("auditor"))
+    no_fee = sum(1 for c in companies if money(c["values"].get("audit_fee")) is None)
+    put(ws, row, 2,
+        "%d companies have no stage researched, so they carry no tier; %d have no auditor on "
+        "record; %d have no audit fee. Those are the gaps the research fills, and the charts "
+        "on the dashboard stay off until each clears its floor."
+        % (unresearched, no_auditor, no_fee)).alignment = WRAP
+    ws.freeze_panes = ws.cell(row=5, column=2)
 
 
 def _contents(wb, data):
@@ -316,6 +449,9 @@ def _contents(wb, data):
     rows = [
         ("Cover", "The period, the threshold that defined the population, the publication "
                   "it was taken from, and both licence notices."),
+        ("Summary", "One page: how much of the population Deloitte does not audit, the tier "
+                    "and footprint split, the largest companies the firm does not audit, and "
+                    "what research is still missing."),
         ("A.02 Matrix", "Every company in the period, one row each: tier, market cap, head "
                         "office, stage, properties, auditor and fees. %d rows." % n),
         ("B.01 Consol TSX - TSXV", "The same population in exchange-then-name order, as the "

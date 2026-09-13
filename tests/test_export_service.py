@@ -187,3 +187,53 @@ class Presentation(unittest.TestCase):
         text = "\n".join(str(c.value) for row in self.wb["Provenance"].iter_rows() for c in row)
         self.assertIn("CAD, USD", text)
         self.assertIn("unconverted", text)
+
+
+class SummaryPage(unittest.TestCase):
+    """The page a partner opens. Its numbers have to be the matrix's numbers."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.wb = load_workbook(io.BytesIO(workbook_bytes(_payload_with_fees())))
+        cls.ws = cls.wb["Summary"]
+        cls.cells = {c.coordinate: c.value for row in cls.ws.iter_rows() for c in row
+                     if c.value is not None}
+
+    def _formulas(self):
+        return [v for v in self.cells.values() if isinstance(v, str) and v.startswith("=")]
+
+    def test_every_range_covers_the_data_rows_and_no_others(self):
+        # The defect this file exists to correct was a count that began one row
+        # below the data. Two companies here: rows 6 and 7, nothing else.
+        import re
+        ranges = set()
+        for formula in self._formulas():
+            ranges.update(re.findall(r"\$[A-Z]{1,2}\$(\d+):\$[A-Z]{1,2}\$(\d+)", formula))
+        self.assertTrue(ranges, "the summary has no ranges at all")
+        for first, last in ranges:
+            self.assertEqual((int(first), int(last)), (6, 7),
+                             "a range does not cover exactly the two data rows")
+
+    def test_every_share_is_a_share_of_the_population(self):
+        shares = [v for k, v in self.cells.items()
+                  if k.startswith("D") and isinstance(v, str) and v.startswith("=IF($C$")]
+        self.assertGreaterEqual(len(shares), 10)
+        for formula in shares:
+            self.assertIn("$C$6", formula, "a share divides by something other than the total")
+
+    def test_the_ranking_is_the_companies_deloitte_does_not_audit(self):
+        names, caps = [], []
+        for row in self.ws.iter_rows(min_col=2, max_col=5):
+            if row[0].row > 28 and isinstance(row[0].value, str) and isinstance(row[3].value, (int, float)):
+                names.append(row[0].value)
+                caps.append(row[3].value)
+        self.assertEqual(names, ["Agnico Eagle Mines Limited", "Elemental Royalty Corporation"])
+        self.assertEqual(caps, sorted(caps, reverse=True), "largest first, or it is not a ranking")
+
+    def test_it_says_what_research_is_still_missing(self):
+        text = "\n".join(str(v) for v in self.cells.values())
+        self.assertIn("no stage researched", text)
+        self.assertIn("no audit fee", text)
+        # And it says where "not audited by Deloitte" comes from, since the
+        # firm's own client list is out of scope for this build.
+        self.assertIn("not stored in this build", text)

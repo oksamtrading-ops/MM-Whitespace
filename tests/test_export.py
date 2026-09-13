@@ -119,6 +119,24 @@ class ExportEndToEnd(unittest.TestCase):
         for divider in ["A - Analysis >>", "B - Supporting Schedules >>"]:
             self.assertNotIn(divider, names)
 
+    def test_the_summary_counts_the_same_population_the_matrix_holds(self):
+        # A summary that counts a different range from the sheet it summarises
+        # is the original workbook's defect in a new place.
+        import re
+        n = len(self.wb["A.02 Matrix"]["D"]) and sum(
+            1 for r in range(6, self.wb["A.02 Matrix"].max_row + 1)
+            if self.wb["A.02 Matrix"].cell(row=r, column=4).value)
+        ranges = set()
+        for row in self.wb["Summary"].iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    ranges.update(re.findall(r"\$[A-Z]{1,2}\$(\d+):\$[A-Z]{1,2}\$(\d+)", cell.value))
+        self.assertTrue(ranges)
+        for first, last in ranges:
+            self.assertEqual(int(first), 6, "a summary range starts off the data")
+            self.assertEqual(int(last) - int(first) + 1, n,
+                             "a summary range does not cover the %d companies" % n)
+
     def test_no_sheet_is_empty(self):
         for ws in self.wb.worksheets:
             filled = sum(1 for row in ws.iter_rows() for c in row if c.value not in (None, ""))
