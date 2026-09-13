@@ -266,7 +266,8 @@ are committed; none is deployed until someone pushes.
 - **The Batch API is built and off.** See item 2 below and
   `docs/decisions/BATCH-API.md`. Migrations `0016` and `0017` ARE applied to
   Supabase; only `MM_ENRICH_BATCH` is still unset.
-- **The pursuit tables ship**, empty and policied. See item 7 below.
+- **The pursuit tables ship**, empty and policied, and without doc 05's two
+  Deloitte-internal columns. See item 7 below.
 - **Every table a migration creates must now have row-level security**, checked
   in `commit.test.ts`. That is 0008's lesson as an invariant: Supabase serves
   `public` over PostgREST as `anon`, so a table without it is readable by
@@ -489,10 +490,11 @@ it. Never run `git add -A` outside this project's folder.
 7. **~~The pursuit data model~~ — done.** `pursuits`, `pursuit_notes` and
    `pursuit_actions` ship empty and policied (migrations `0018`/`0019`, applied
    to Supabase). Doc 02 scopes Phase 1 to "data model and access policy only";
-   the workflow and its interface are Phase 2. **`lcsp` holds a person's name
-   and `fy_tax_nsr` holds Deloitte's revenue from a client** — the class of data
-   the POC excludes. Both are empty, and filling either needs the firm's own
-   due diligence, like the tax-client flag.
+   the workflow and its interface are Phase 2. **Doc 05 specifies `lcsp` and
+   `fy_tax_nsr` and they are deliberately not built** — an LCSP is a person's
+   name and a tax NSR is Deloitte's revenue from a client, the class this build
+   refuses. Samuel's decision, 13 September 2026; doc 05 and migration `0018`
+   both say so, so do not "restore" them to match the document.
 
 8. **Hardening:** a monotonic column on `review_decisions` (today
     `decisionStamp()` carries the order); the domain allowlist as a database

@@ -446,7 +446,7 @@ They ship in Phase 1 **empty but policied**, because a table with no interface i
 create table pursuits (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references companies(id),
-  priority text, lcsp text, fy_tax_nsr numeric(20,2),
+  priority text,
   owner_id uuid references app_users(id),
   created_at timestamptz not null default now()
 );
@@ -456,5 +456,7 @@ create table pursuit_actions (id uuid primary key, pursuit_id uuid not null, des
                               due_date date, owner_id uuid, status text);
 revoke all on pursuits, pursuit_notes, pursuit_actions from app_viewer;
 ```
+
+**`lcsp` and `fy_tax_nsr` were specified here and are not built** (Samuel's decision, 13 September 2026). An LCSP is a person's name and a tax NSR is Deloitte's own revenue from a client — the class of data this build already refuses, the `Deloitte Tax Client` column having been removed at parse time for the same reason. An empty column is an invitation. Phase 2 may add either, on the firm's own due diligence, which is the condition the tax-client flag carries. Migration `0018` states the same, so the schema and this document do not disagree by accident.
 
 The source tracker is an empty template, so there is nothing to migrate. Do **not** seed the tier vocabulary from it — it lists five tiers and omits exploration entirely, which would silently delete a tier from the model.
