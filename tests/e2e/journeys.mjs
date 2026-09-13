@@ -167,6 +167,14 @@ function strandAction(dbPath, status) {
   `], { cwd: ROOT, stdio: "ignore" });
 }
 
+function datePastDue(dbPath) {
+  execFileSync("node", ["--input-type=module", "-e", `
+    import { DatabaseSync } from "node:sqlite";
+    const db = new DatabaseSync(${JSON.stringify(dbPath)});
+    db.prepare("update pursuit_actions set due_date = '2000-01-01', status = 'Open'").run();
+  `], { cwd: ROOT, stdio: "ignore" });
+}
+
 const get = (path, cookie) =>
   fetch(`${BASE}${path}`, { headers: cookie ? { cookie } : {} })
     .then(async (r) => ({ status: r.status, html: await r.text() }));
@@ -748,6 +756,14 @@ async function journeys(dbPath) {
         "the sweep section did not appear");
   check("and it counts as open until it is moved",
         /1 open/.test(stranded.html));
+
+  // A due date nothing ever mentions is not a date. The seeded action is due
+  // 2026-10-01, which is past by the time this suite runs on any later clock,
+  // so the assertion is on the mechanism rather than on a particular word.
+  datePastDue(dbPath);
+  const overdue = await get("/pursuits", analyst.cookie);
+  check("an action past its date is said, on the list, not only on the action",
+        /overdue/i.test(overdue.html), "nothing on /pursuits mentions it");
 
   const signedOut = await get("/pursuits", null);
   check("signed out, the pursuit list asks for a sign-in rather than rendering",

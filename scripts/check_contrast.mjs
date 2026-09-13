@@ -68,6 +68,9 @@ const CHECKS = [
   { label: "body ink on the soft green (marks)", fg: t("ink"), bg: t("green-soft"), floor: TEXT_FLOOR },
 
   { label: "alert text on its soft ground", fg: t("alert"), bg: t("alert-soft"), floor: TEXT_FLOOR },
+  // A bare .tag -- a priority, an action's status -- had no background until
+  // the pursuit screens needed one, so this pair was never checked.
+  { label: "tag text on the raised surface", fg: t("ink-2"), bg: t("surface-2"), floor: TEXT_FLOOR },
   { label: "warning text on its soft ground", fg: t("warn"), bg: t("warn-soft"), floor: TEXT_FLOOR },
 
   // Polarity for tier migration, on the surface it actually renders against.

@@ -498,10 +498,17 @@ table caption { caption-side: bottom; text-align: left; font-size: 13px; color: 
   display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em;
   padding: 2px 7px; border-radius: 999px; white-space: nowrap;
 }
+/* A bare .tag had no background at all, so a variant was not decoration but
+   the whole of it. The pursuit tags are plain words -- a priority, a status --
+   and needed a default rather than a colour that means something. */
+.tag { background: var(--surface-2); color: var(--ink-2); }
 .tag.ok { background: var(--green-soft); color: var(--green-deep); }
 .tag.warn { background: var(--warn-soft); color: var(--warn); }
-.tag.conflict { background: var(--alert-soft); color: var(--alert); }
+.tag.conflict, .tag.alert { background: var(--alert-soft); color: var(--alert); }
 .tag.done { background: var(--surface-2); color: var(--ink-2); }
+/* A term the vocabulary has dropped. Quieter than the live ones, and the word
+   "retired" is in the text beside it -- the colour is never the only carrier. */
+.tag.retired { background: var(--surface-2); color: var(--ink-3); }
 
 .evidence { position: sticky; top: calc(var(--header-h) + 24px); padding-left: 28px; border-left: 1px solid var(--rule); min-height: 240px; min-width: 0; overflow-wrap: anywhere; }
 /* Stacked, the evidence sits under the grid, so the grid gives up height to

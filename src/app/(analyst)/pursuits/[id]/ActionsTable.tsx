@@ -58,6 +58,10 @@ export default function ActionsTable({ pursuitId, actions, vocabulary, people }:
                   <input type="date" name="dueDate" defaultValue={a.dueDate ?? ""}
                          disabled={dating} aria-label={`Due date of “${a.description}”`} />
                   <button type="submit" className="btn" disabled={dating}>Set</button>
+                  {/* Said in words, not by colour alone: the tag carries the
+                      state for anyone who cannot see the red. */}
+                  {a.due === "overdue" && <span className="tag alert">overdue</span>}
+                  {a.due === "soon" && <span className="tag">due soon</span>}
                 </form>
               </td>
               <td>

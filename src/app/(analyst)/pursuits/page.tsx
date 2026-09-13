@@ -32,6 +32,8 @@ export default async function Pursuits() {
   const v = await vocabulary(ctx.db);
   const stranded = await strandedTerms(ctx.db);
   const open = pursuits.reduce((n, p) => n + p.openActions, 0);
+  const overdue = pursuits.reduce((n, p) => n + p.overdueActions, 0);
+  const soon = pursuits.reduce((n, p) => n + p.dueSoonActions, 0);
 
   return (
     <>
@@ -42,9 +44,25 @@ export default async function Pursuits() {
         so nothing on this page is proposed, scored or published.
       </p>
 
+      {(overdue > 0 || soon > 0) && (
+        <p className={`notice${overdue > 0 ? " alert" : ""}`} role="status">
+          <b>
+            {overdue > 0
+              ? `${overdue} action${overdue === 1 ? " is" : "s are"} past its due date.`
+              : `${soon} action${soon === 1 ? " is" : "s are"} due within a week.`}
+          </b>
+          <span>
+            {overdue > 0 && soon > 0 && `${soon} more ${soon === 1 ? "is" : "are"} due within a week. `}
+            A date nothing ever mentions is not a date, which is why this is here
+            rather than only on the action.
+          </span>
+        </p>
+      )}
+
       <Facts items={[
         { label: "Pursuits", value: pursuits.length, figure: true },
         { label: "Open actions", value: open, figure: true },
+        { label: "Overdue", value: overdue, figure: true },
         { label: "Unprioritised", value: pursuits.filter((p) => !p.priority).length, figure: true },
         { label: "Closed", value: closed.length, figure: true },
       ]} />
@@ -72,6 +90,7 @@ export default async function Pursuits() {
                 <th scope="col">Priority</th>
                 <th scope="col">Owner</th>
                 <th scope="col">Actions</th>
+                <th scope="col">Due</th>
                 <th scope="col">Notes</th>
                 <th scope="col">Last activity</th>
               </tr>
@@ -97,6 +116,13 @@ export default async function Pursuits() {
                     {p.totalActions > p.openActions
                       ? `${p.openActions} open of ${p.totalActions}`
                       : `${p.openActions} open`}
+                  </td>
+                  <td>
+                    {p.overdueActions > 0
+                      ? <span className="tag alert">{p.overdueActions} overdue</span>
+                      : p.dueSoonActions > 0
+                        ? <span className="tag">{p.dueSoonActions} due soon</span>
+                        : <span className="meta">—</span>}
                   </td>
                   <td className="fig-sm">{p.notes}</td>
                   <td>{fmtDate(p.lastActivityAt)}</td>

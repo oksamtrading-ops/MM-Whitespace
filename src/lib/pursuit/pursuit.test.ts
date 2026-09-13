@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { memorySql } from "../db/open.ts";
 import type { Sql } from "../db/sql.ts";
 import {
-  addAction, addNote, closedStatuses, closePursuit, getPursuit, listPursuits, parseStatuses,
-  reopenPursuit,
+  addAction, addNote, closedStatuses, closePursuit, dueState, getPursuit, listPursuits,
+  parseStatuses, reopenPursuit,
   parseDueDate, PursuitRefused, setActionDueDate, setActionOwner, setActionStatus, setOwner,
   setPriority, startPursuit, statusNames,
   strandedTerms, sweepTerm, vocabulary,
@@ -594,4 +594,62 @@ test("closing, reopening and closing again is a HISTORY, not a latest value", as
   assert.equal(rows[1].outcome, "Won");
   assert.equal(rows[1].reopened_at, null);
   assert.equal((await listPursuits(db))[0].outcome, "Won", "the pursuit reads as won now");
+});
+
+
+/* ------------------------------------------------- a date that says something */
+
+const AT = (iso: string) => new Date(`${iso}T09:00:00Z`);
+
+test("a due date is a calendar DAY: it is not late on the day it is due", async () => {
+  // Which is exactly when somebody is most likely looking at it.
+  assert.equal(dueState("2026-09-30", AT("2026-09-30")), "soon");
+  assert.equal(dueState("2026-09-30", AT("2026-10-01")), "overdue");
+  assert.equal(dueState("2026-09-30", AT("2026-09-23")), "soon", "a week out is soon");
+  assert.equal(dueState("2026-09-30", AT("2026-09-22")), "later", "eight days out is not");
+  assert.equal(dueState(null, AT("2026-09-30")), null);
+  assert.equal(dueState("not a date", AT("2026-09-30")), null);
+});
+
+test("overdue and due-soon are counted on the pursuit", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "late", dueDate: "2026-09-01" }, actor);
+  await addAction(db, id, { description: "soon", dueDate: "2026-09-30" }, actor);
+  await addAction(db, id, { description: "later", dueDate: "2026-12-01" }, actor);
+  await addAction(db, id, { description: "undated" }, actor);
+
+  const [row] = await listPursuits(db, AT("2026-09-28"));
+  assert.equal(row.overdueActions, 1);
+  assert.equal(row.dueSoonActions, 1);
+  assert.equal(row.openActions, 4, "and all four are still open");
+});
+
+test("a CLOSED action's date is history, not a deadline", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "late", dueDate: "2026-09-01" }, actor);
+  const action = (await getPursuit(db, id, AT("2026-09-28")))!.actions[0];
+  assert.equal(action.due, "overdue");
+
+  await setActionStatus(db, action.id, "Done", actor);
+  const after = (await getPursuit(db, id, AT("2026-09-28")))!.actions[0];
+  assert.equal(after.due, null, "it was done; the date has nothing left to say");
+  assert.equal(after.dueDate, "2026-09-01", "but the date itself is kept");
+  assert.equal((await listPursuits(db, AT("2026-09-28")))[0].overdueActions, 0);
+});
+
+test("a CLOSED pursuit reports nothing overdue, however old its open actions", async () => {
+  // Closing with work outstanding is allowed on purpose. Those actions would
+  // otherwise be reported as overdue for ever, chasing nobody.
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "never happened", dueDate: "2026-01-01" }, actor);
+  assert.equal((await listPursuits(db, AT("2026-09-28")))[0].overdueActions, 1);
+
+  await closePursuit(db, id, "Lost", actor);
+  const [row] = await listPursuits(db, AT("2026-09-28"));
+  assert.equal(row.overdueActions, 0);
+  assert.equal(row.openActions, 1, "the action is still open, and still says so");
+  assert.equal((await getPursuit(db, id, AT("2026-09-28")))!.actions[0].due, null);
 });

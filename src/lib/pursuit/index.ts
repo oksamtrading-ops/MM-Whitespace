@@ -77,6 +77,37 @@ export const statusNames = (v: Vocabulary): string[] => v.statuses.map((s) => s.
 export const closedStatuses = (v: Vocabulary): string[] =>
   v.statuses.filter((s) => s.closed).map((s) => s.name);
 
+/**
+ * How near a due date has to be to be worth saying anything about.
+ *
+ * A week, and a constant rather than a setting. Every knob added here is one
+ * more thing to configure and one more thing nobody ever changes; the number
+ * that matters is whether something is PAST due, and this is only the warning
+ * before it.
+ */
+export const DUE_SOON_DAYS = 7;
+
+export type DueState = "overdue" | "soon" | "later";
+
+/**
+ * A due date is a calendar DAY, not an instant.
+ *
+ * Compared in UTC, as every other stamp in this application is. A date is
+ * overdue the day AFTER it: something due on the 30th is not late at nine in
+ * the morning on the 30th, which is when somebody is most likely looking at it.
+ */
+export function dueState(
+  dueDate: string | null, now: Date = new Date(), soonDays = DUE_SOON_DAYS,
+): DueState | null {
+  if (!dueDate) return null;
+  const due = Date.parse(`${dueDate}T00:00:00Z`);
+  if (Number.isNaN(due)) return null;
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const days = Math.round((due - today) / 86_400_000);
+  if (days < 0) return "overdue";
+  return days <= soonDays ? "soon" : "later";
+}
+
 export class PursuitRefused extends Error {
   constructor(message: string) { super(message); this.name = "PursuitRefused"; }
 }
@@ -91,6 +122,10 @@ export type PursuitRow = {
   ownerId: string | null;
   ownerEmail: string | null;
   createdAt: string;
+  /** Open actions past their date. Zero once the pursuit itself is closed. */
+  overdueActions: number;
+  /** Open actions due within DUE_SOON_DAYS, not yet past. */
+  dueSoonActions: number;
   /** Null while the pursuit is open. A closed one keeps everything it had. */
   outcome: string | null;
   /** True when the outcome is no longer in the vocabulary. Shown, never rewritten. */
@@ -110,7 +145,9 @@ export type Note = {
 
 export type Action = {
   id: string; description: string; dueDate: string | null;
-  status: string; statusRetired: boolean;
+  status: string; statusRetired: boolean; closed: boolean;
+  /** Null when there is no date, or when the action is already closed. */
+  due: DueState | null;
   ownerEmail: string | null; ownerId: string | null; createdAt: string;
 };
 
@@ -120,7 +157,7 @@ export type Action = {
  * Ordered by the vocabulary's own order and then by what happened most
  * recently -- not alphabetically, which would put "High" below "Low".
  */
-export async function listPursuits(db: Sql): Promise<PursuitRow[]> {
+export async function listPursuits(db: Sql, now: Date = new Date()): Promise<PursuitRow[]> {
   const v = await vocabulary(db);
   // A status the vocabulary no longer knows counts as OPEN. It is not known to
   // close anything, and the safe direction is that work stays visible rather
@@ -148,6 +185,19 @@ export async function listPursuits(db: Sql): Promise<PursuitRow[]> {
       .replace("SLOTS", closed.map(() => "?").join(", ")),
     ...closed) as Array<Record<string, unknown>>;
 
+  // The open actions' dates, in their own statement. An aggregate would have
+  // been one query fewer and `group_concat` is SQLite's alone -- Postgres
+  // spells it `string_agg`, and SQL here has to run on both engines as written.
+  const datesByPursuit = new Map<string, string[]>();
+  for (const row of await db.all(
+    `select a.pursuit_id, a.due_date from pursuit_actions a
+      where a.due_date is not null and a.status not in (SLOTS)`
+      .replace("SLOTS", closed.map(() => "?").join(", ")),
+    ...closed) as Array<{ pursuit_id: string; due_date: string }>) {
+    const key = String(row.pursuit_id);
+    datesByPursuit.set(key, [...(datesByPursuit.get(key) ?? []), String(row.due_date).slice(0, 10)]);
+  }
+
   const rank = new Map(v.priorities.map((p, i) => [p, i]));
   return rows.map((r) => ({
     id: String(r.id),
@@ -159,6 +209,7 @@ export async function listPursuits(db: Sql): Promise<PursuitRow[]> {
     ownerId: r.owner_id ? String(r.owner_id) : null,
     ownerEmail: r.owner_email ? String(r.owner_email) : null,
     createdAt: String(r.created_at),
+    ...dueCounts(datesByPursuit.get(String(r.id)) ?? [], r.closed_at, now),
     outcome: r.outcome === null || r.outcome === undefined ? null : String(r.outcome),
     outcomeRetired: r.outcome !== null && r.outcome !== undefined &&
                     !new Set(v.outcomes).has(String(r.outcome)),
@@ -176,14 +227,36 @@ export async function listPursuits(db: Sql): Promise<PursuitRow[]> {
     b.lastActivityAt.localeCompare(a.lastActivityAt));
 }
 
+/**
+ * Overdue and due-soon, from the open actions' dates.
+ *
+ * A CLOSED pursuit has neither. Closing with work outstanding is allowed on
+ * purpose -- a pursuit is often lost with actions still open -- and those
+ * actions would otherwise be reported as overdue for ever, chasing nobody.
+ */
+function dueCounts(
+  dates: readonly string[], closedAt: unknown, now: Date,
+): { overdueActions: number; dueSoonActions: number } {
+  if (closedAt) return { overdueActions: 0, dueSoonActions: 0 };
+  let overdueActions = 0;
+  let dueSoonActions = 0;
+  for (const d of dates) {
+    const state = dueState(d, now);
+    if (state === "overdue") overdueActions++;
+    else if (state === "soon") dueSoonActions++;
+  }
+  return { overdueActions, dueSoonActions };
+}
+
 export async function getPursuit(
-  db: Sql, id: string,
+  db: Sql, id: string, now: Date = new Date(),
 ): Promise<{ pursuit: PursuitRow; notes: Note[]; actions: Action[] } | null> {
-  const all = await listPursuits(db);
+  const all = await listPursuits(db, now);
   const pursuit = all.find((p) => p.id === id);
   if (!pursuit) return null;
   const v = await vocabulary(db);
   const known = new Set(statusNames(v));
+  const closedNames = new Set(closedStatuses(v));
 
   const notes = (await db.all(
     `select n.id, n.body, n.created_at, u.email as author_email
@@ -200,15 +273,22 @@ export async function getPursuit(
             u.email as owner_email
        from pursuit_actions a left join app_users u on u.id = a.owner_id
       where a.pursuit_id = ? order by a.created_at asc, a.id asc`, id) as Array<Record<string, unknown>>)
-    .map((r) => ({
-      id: String(r.id), description: String(r.description ?? ""),
-      dueDate: r.due_date ? String(r.due_date).slice(0, 10) : null,
-      status: String(r.status ?? ""),
-      statusRetired: Boolean(r.status) && !known.has(String(r.status)),
-      ownerId: r.owner_id ? String(r.owner_id) : null,
-      ownerEmail: r.owner_email ? String(r.owner_email) : null,
-      createdAt: String(r.created_at),
-    }));
+    .map((r) => {
+      const dueDate = r.due_date ? String(r.due_date).slice(0, 10) : null;
+      const closed = closedNames.has(String(r.status ?? ""));
+      return {
+        id: String(r.id), description: String(r.description ?? ""),
+        dueDate,
+        status: String(r.status ?? ""),
+        statusRetired: Boolean(r.status) && !known.has(String(r.status)),
+        closed,
+        // A closed action's date is history, not a deadline.
+        due: closed || pursuit.closedAt !== null ? null : dueState(dueDate, now),
+        ownerId: r.owner_id ? String(r.owner_id) : null,
+        ownerEmail: r.owner_email ? String(r.owner_email) : null,
+        createdAt: String(r.created_at),
+      };
+    });
 
   return { pursuit, notes, actions };
 }
