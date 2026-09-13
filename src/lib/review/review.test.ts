@@ -6,7 +6,7 @@ import {
   bulkConfirmation, effectiveDecision, evidenceBand, extractedFact, isConflict,
   partitionForBulkAccept, recordDecision, undoLast, type Candidate,
 } from "./decide.ts";
-import { cellLabel, companyRows, fieldRows, formatValue, IN_BUCKET } from "./queue.ts";
+import { cellLabel, companyRows, fieldRows, formatValue, IN_BUCKET, queueBuckets } from "./queue.ts";
 
 function candidate(over: Partial<Candidate> = {}): Candidate {
   return {
@@ -206,6 +206,7 @@ test("evidence has four ordinal bands, so it is never colour alone", async () =>
 test("a cell's accessible name carries value, evidence band and review state", async () => {
   const row = {
     ...candidate(), decided: false, decision: null, abstained: false,
+    newerThanDecision: false,
     band: "high" as const, excerpt: null, sourceUrl: null, documentHash: null,
     conflict: false,
   };
@@ -216,6 +217,11 @@ test("a cell's accessible name carries value, evidence band and review state", a
   assert.equal(
     cellLabel({ ...row, abstained: true }, "Audit fees"),
     "Audit fees, abstained, evidence high, unreviewed");
+  // A value accepted before better research arrived says so out loud, for a
+  // reader who has no colour and no badge.
+  assert.equal(
+    cellLabel({ ...row, decided: true, decision: "accept", newerThanDecision: true }, "Audit fees"),
+    "Audit fees, Deloitte, evidence high, accept, newer research since");
 });
 
 test("a multi-valued stage renders as its set, not as JSON", async () => {
@@ -379,4 +385,151 @@ test("company-major and field-major show the same proposals", async () => {
       `${field.fieldKey} differs between the two axes`);
     assert.equal(across?.band ?? null, down?.band ?? null);
   }
+});
+
+/*
+ * Run 1, twice: a fee was accepted, a later run researched it again and
+ * proposed a better value -- with its currency and fiscal year -- and the row
+ * appeared in no queue, because "decided" is what every bucket filters out.
+ * Both times the new research sat unseen until someone went looking in "All".
+ */
+async function acceptedThenResearchedAgain() {
+  const { db, periodId, companyId } = await seeded();
+  const run = async (at: string) => {
+    await db.run(`insert into enrichment_runs
+       (period_id, scope, status, budget_usd, mode, model, prompt_version, created_at)
+       values (?, 'all', 'completed', 5, 'live', 'claude-sonnet-5', '1', ?)`, periodId, at);
+    const r = await db.get("select id from enrichment_runs order by created_at desc, id desc limit 1") as { id: string };
+    await db.run(`insert into enrichment_jobs (run_id, company_id, field_group, state)
+       values (?, ?, 'general', 'completed')`, r.id, companyId);
+    return r.id;
+  };
+  const finding = async (runId: string, value: string, at: string, state = "proposed") => {
+    const job = await db.get("select id from enrichment_jobs where run_id = ?", runId) as { id: string };
+    await db.run(`insert into enrichment_findings
+       (run_id, job_id, attempt, company_id, field_key, proposed_value, evidence_strength, anchor_mode,
+        state, evidence_excerpt, model, prompt_version, created_at)
+       values (?, ?, 1, ?, 'audit_fee', ?, 0.73, 'proximity', ?, 'Audit fees 8,052',
+               'claude-sonnet-5', '1', ?)`,
+      runId, job.id, companyId, value, state, at);
+    const row = await db.get("select id from enrichment_findings order by created_at desc, id desc limit 1") as { id: string };
+    await db.run(`insert into finding_sources (finding_id, url, source_tier) values (?, 'https://x.invalid', 1)`, row.id);
+    return row.id;
+  };
+  const first = await finding(await run("2026-09-11 11:00:00"), "8052000", "2026-09-11 11:30:00");
+  await recordDecision(db, { periodId, companyId, fieldKey: "audit_fee", decision: "accept",
+                             findingId: first, actorId: null });
+  // The accept happened when that finding was the only one; the clock matters,
+  // so it is set to then rather than to the moment this test runs.
+  await db.run("update review_decisions set decided_at = '2026-09-11 12:00:00' where finding_id = ?", first);
+  const second = await finding(await run("2026-09-13 00:57:00"),
+                               '{"amount": 8052000, "currency": "CAD", "fiscal_year": 2025}',
+                               "2026-09-13 00:58:00");
+  return { db, periodId, companyId, first, second };
+}
+
+test("a value accepted before better research arrived is surfaced, not hidden", async () => {
+  const { db, periodId, second } = await acceptedThenResearchedAgain();
+
+  const [row] = await fieldRows(db, periodId, "audit_fee", "all");
+  assert.equal(row.findingId, second, "the row offers the newest proposal, not the one accepted");
+  assert.equal(row.decided, true);
+  assert.equal(row.newerThanDecision, true);
+
+  const superseded = await fieldRows(db, periodId, "audit_fee", "superseded");
+  assert.deepEqual(superseded.map((r) => r.findingId), [second]);
+  // And it is counted where an Analyst will see it.
+  const buckets = await queueBuckets(db, periodId);
+  assert.equal(buckets.find((b) => b.key === "superseded")?.count, 1);
+  // Accepting again binds the newer finding, which is the whole point.
+  await recordDecision(db, { periodId, companyId: row.companyId, fieldKey: "audit_fee",
+                             decision: "accept", findingId: second, actorId: null });
+  const after = await db.get(`select value from company_period_field_values
+      where period_id = ? and field_key = 'audit_fee'`, periodId) as { value: string };
+  assert.deepEqual(JSON.parse(after.value), { amount: 8052000, currency: "CAD", fiscal_year: 2025 });
+  assert.deepEqual(await fieldRows(db, periodId, "audit_fee", "superseded"), [],
+                   "once re-accepted it stops asking");
+});
+
+test("nothing else is called superseded: not an override, not the decided finding itself", async () => {
+  const { db, periodId, companyId, second } = await acceptedThenResearchedAgain();
+  // An override is a person's own value. A model proposing again is not a
+  // reason to ask them twice.
+  await recordDecision(db, { periodId, companyId, fieldKey: "audit_fee", decision: "override",
+                             overrideValue: { amount: 610628, currency: "CAD", fiscal_year: 2025 },
+                             findingId: second, actorId: null });
+  assert.deepEqual(await fieldRows(db, periodId, "audit_fee", "superseded"), []);
+
+  // A field decided on its newest finding is settled, and says nothing.
+  const { db: db2, periodId: p2, companyId: c2, second: newest } = await acceptedThenResearchedAgain();
+  await recordDecision(db2, { periodId: p2, companyId: c2, fieldKey: "audit_fee",
+                              decision: "accept", findingId: newest, actorId: null });
+  assert.deepEqual(await fieldRows(db2, p2, "audit_fee", "superseded"), []);
+});
+
+test("a stage re-proposed unchanged says nothing, and a changed one speaks up", async () => {
+  // The stage is stored as "complete" plus its own rows while a proposal is
+  // flags, so a naive comparison calls every stage re-run a disagreement.
+  const { db, periodId, companyId } = await seeded();
+  await db.run(`insert into enrichment_runs
+     (period_id, scope, status, budget_usd, mode, model, prompt_version, created_at)
+     values (?, 'all', 'completed', 5, 'live', 'm', '1', '2026-09-11 11:00:00')`, periodId);
+  const run = await db.get("select id from enrichment_runs limit 1") as { id: string };
+  await db.run(`insert into enrichment_jobs (run_id, company_id, field_group, state)
+     values (?, ?, 'general', 'completed')`, run.id, companyId);
+  const job = await db.get("select id from enrichment_jobs limit 1") as { id: string };
+  const stage = async (value: string, at: string, attempt: number) => {
+    await db.run(`insert into enrichment_findings
+       (run_id, job_id, attempt, company_id, field_key, proposed_value, evidence_strength,
+        anchor_mode, state, evidence_excerpt, model, prompt_version, created_at)
+       values (?, ?, ?, ?, 'stage_evidence_state', ?, 0.9, 'exact_normalized', 'proposed',
+               'an exploration and development company', 'm', '1', ?)`,
+      run.id, job.id, attempt, companyId, value, at);
+    return (await db.get("select id from enrichment_findings order by created_at desc, id desc limit 1") as { id: string }).id;
+  };
+  const flags = '{"exploration": true, "development": true, "production": false, "royalty_streaming": false}';
+  const first = await stage(flags, "2026-09-11 11:30:00", 1);
+  await recordDecision(db, { periodId, companyId, fieldKey: "stage_evidence_state",
+                             decision: "accept", findingId: first, actorId: null });
+  await db.run("update review_decisions set decided_at = '2026-09-11 12:00:00' where finding_id = ?", first);
+
+  await stage(flags, "2026-09-13 00:58:00", 2);
+  assert.deepEqual(await fieldRows(db, periodId, "stage_evidence_state", "superseded"), [],
+                   "the same stages again is not a disagreement");
+
+  await stage('{"exploration": true, "development": true, "production": true, "royalty_streaming": false}',
+              "2026-09-13 01:00:00", 3);
+  const changed = await fieldRows(db, periodId, "stage_evidence_state", "superseded");
+  assert.equal(changed.length, 1, "a stage the research now reads differently is worth a second look");
+});
+
+test("a re-run that proposes the same value again says nothing", async () => {
+  // Run 1's data: re-running pass 2 re-proposed "PwC", "12-31" and "Toronto"
+  // for fields already accepted with exactly those values. Flagging identity
+  // would have put 29 rows in front of an Analyst, of which a handful
+  // actually disagreed with what was stored.
+  const { db, periodId, companyId } = await seeded();
+  await db.run(`insert into enrichment_runs
+     (period_id, scope, status, budget_usd, mode, model, prompt_version, created_at)
+     values (?, 'all', 'completed', 5, 'live', 'm', '1', '2026-09-11 11:00:00')`, periodId);
+  const run = await db.get("select id from enrichment_runs limit 1") as { id: string };
+  await db.run(`insert into enrichment_jobs (run_id, company_id, field_group, state)
+     values (?, ?, 'general', 'completed')`, run.id, companyId);
+  const job = await db.get("select id from enrichment_jobs limit 1") as { id: string };
+  const propose = async (at: string, attempt: number) => {
+    await db.run(`insert into enrichment_findings
+       (run_id, job_id, attempt, company_id, field_key, proposed_value, evidence_strength,
+        anchor_mode, state, evidence_excerpt, model, prompt_version, created_at)
+       values (?, ?, ?, ?, 'auditor', '"PwC"', 0.9, 'exact_normalized', 'proposed',
+               'the auditors are PwC', 'm', '1', ?)`, run.id, job.id, attempt, companyId, at);
+    return (await db.get("select id from enrichment_findings order by created_at desc, id desc limit 1") as { id: string }).id;
+  };
+  const first = await propose("2026-09-11 11:30:00", 1);
+  await recordDecision(db, { periodId, companyId, fieldKey: "auditor", decision: "accept",
+                             findingId: first, actorId: null });
+  await db.run("update review_decisions set decided_at = '2026-09-11 12:00:00' where finding_id = ?", first);
+  await propose("2026-09-13 00:58:00", 2);
+
+  assert.deepEqual(await fieldRows(db, periodId, "auditor", "superseded"), [],
+                   "the stored value already says PwC");
 });

@@ -18,6 +18,9 @@ const THRESHOLD = 0.8;
 const BUCKETS: Array<[string, string]> = [
   ["all", "All"], ["conflict", "Conflict"], ["need_review", "Need review"],
   ["bulkable", "Bulk-acceptable"], ["no_evidence", "No evidence"], ["quarantined", "Quarantined"],
+  // Decided, and researched again since. Every other tab asks what is left to
+  // do; this one asks what was settled before the answer improved.
+  ["superseded", "Newer research"],
 ];
 
 export default async function FieldReview(
@@ -57,6 +60,7 @@ export default async function FieldReview(
     state: r.findingState,
     decided: r.decided,
     decision: r.decision,
+    newerThanDecision: r.newerThanDecision,
     conflict: r.conflict,
     sourceCount: r.sourceCount,
     excerpt: r.excerpt,

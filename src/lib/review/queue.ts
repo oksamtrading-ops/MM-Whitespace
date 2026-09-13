@@ -69,8 +69,53 @@ export async function reviewableFields(db: Sql, periodId: string): Promise<Field
 type Bucketable = {
   conflict?: boolean; findingState: string; anchorMode: string; sourceCount: number;
   abstained?: boolean; bulkAcceptableField: boolean; evidenceStrength: number | null;
-  fieldKey: string;
+  fieldKey: string; newerThanDecision?: boolean;
 };
+
+/** The one bucket that holds DECIDED rows, and so is counted apart. */
+export const SUPERSEDED = "superseded";
+
+/**
+ * Does this proposal say something other than what the field holds?
+ *
+ * The stage is the one field whose stored form is not the proposal's form: a
+ * proposal is flags, and what is stored is an evidence state ("complete")
+ * beside rows in company_period_stages. Comparing those two directly answers
+ * "different" for every stage on every re-run.
+ */
+function differs(fieldKey: string, proposed: unknown, resolved: unknown, stages: string[]): boolean {
+  if (isStageField(fieldKey)) {
+    const flags = proposed && typeof proposed === "object" ? proposed as Record<string, unknown> : null;
+    if (!flags) return false;
+    const proposedStages = Object.entries(flags).filter(([, v]) => v === true).map(([k]) => k);
+    return canonical([...proposedStages].sort()) !== canonical([...stages].sort());
+  }
+  return canonical(proposed) !== canonical(resolved);
+}
+
+/** A value as comparable text, key order and all, for "is this the same value". */
+function canonical(value: unknown): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(sort)
+      : v && typeof v === "object"
+        ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])]))
+        : v;
+  return JSON.stringify(sort(value) ?? null);
+}
+
+/**
+ * Which stamp is later, whatever shape the engine returns them in: SQLite
+ * writes "2026-09-13 00:57:19", Postgres "2026-09-13 00:57:19.54+00". Both
+ * sides of a comparison come from the same engine, so one reading of both is
+ * enough; an unparseable pair falls back to text order rather than claiming
+ * "not newer", which would hide the row this exists to surface.
+ */
+function isAfter(later: unknown, earlier: unknown): boolean {
+  if (later === null || later === undefined || earlier === null || earlier === undefined) return false;
+  const at = (v: unknown) => Date.parse(String(v).replace(" ", "T"));
+  const a = at(later); const b = at(earlier);
+  return Number.isNaN(a) || Number.isNaN(b) ? String(later) > String(earlier) : a > b;
+}
 
 export const IN_BUCKET: Record<string, (c: Bucketable, threshold: number) => boolean> = {
   quarantined: (c) => c.findingState !== "proposed" ||
@@ -83,19 +128,22 @@ export const IN_BUCKET: Record<string, (c: Bucketable, threshold: number) => boo
                       !isStageField(c.fieldKey),
   need_review: (c, t) => !IN_BUCKET.quarantined(c, t) && !IN_BUCKET.no_evidence(c, t) &&
                          !IN_BUCKET.conflict(c, t) && !IN_BUCKET.bulkable(c, t),
+  // Decided, and overtaken since. Every other bucket is about undecided rows.
+  [SUPERSEDED]: (c) => Boolean(c.newerThanDecision),
 };
 
 export async function queueBuckets(
   db: Sql, periodId: string, threshold = 0.8,
 ): Promise<QueueBucket[]> {
-  const undecided = (await allCandidates(db, periodId))
-    .filter((c) => !c.decided)
+  const candidates = (await allCandidates(db, periodId))
     .map((c) => ({ ...c, conflict: isConflict(c) }));
+  const undecided = candidates.filter((c) => !c.decided);
   // A count is across fields and the grid shows one field, so each bucket also
   // carries the field to open. Otherwise "need review 7" can land on a field
   // holding none of them.
   const bucket = (key: string, label: string, startHere?: boolean): QueueBucket => {
-    const inIt = undecided.filter((c) => IN_BUCKET[key](c, threshold));
+    const from = key === SUPERSEDED ? candidates : undecided;
+    const inIt = from.filter((c) => IN_BUCKET[key](c, threshold));
     return {
       key, label, count: inIt.length, firstField: inIt[0]?.fieldKey ?? null,
       ...(startHere ? { startHere } : {}),
@@ -108,12 +156,27 @@ export async function queueBuckets(
     bucket("conflict", "extract disagrees with AI", true),
     bucket("no_evidence", "no evidence found"),
     bucket("quarantined", "quarantined: excerpt did not anchor"),
+    bucket(SUPERSEDED, "accepted, then researched again"),
   ];
 }
 
 export type Row = Candidate & {
   decided: boolean;
   decision: string | null;
+  /**
+   * An accepted value that later research DISAGREES with: a run after the
+   * decision proposed something different from what is stored. Run 1 hit it
+   * twice -- fees accepted without a currency, then re-researched with one,
+   * and the row stayed out of every queue because it counted as decided.
+   *
+   * Two narrowings, or this is noise rather than a signal. A re-run that
+   * proposes the same value again says nothing, so the comparison is against
+   * the RESOLVED value, not against the finding's identity: on Run 1's data
+   * the unfiltered version flagged 29 rows, of which most were "PwC" again.
+   * And an override is never flagged: a person chose that value deliberately,
+   * and a model proposing against it is not a reason to ask them twice.
+   */
+  newerThanDecision: boolean;
   abstained: boolean;
   band: ReturnType<typeof evidenceBand>;
   excerpt: string | null;
@@ -138,11 +201,27 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
             (select f.typed_value from company_period_facts f
               where f.period_id = ? and f.company_id = c.id and f.field_key = e.field_key
                 and f.assertion = 'asserted') as "extractValue",
+            e.created_at as "findingCreatedAt",
+            -- What the field actually holds now, to compare the proposal with.
+            (select v.value from company_period_field_values v
+              where v.period_id = ? and v.company_id = c.id and v.field_key = e.field_key) as "resolvedValue",
             (select d.decision from review_decisions d
               where d.period_id = ? and d.company_id = c.id and d.field_key = e.field_key
                 and d.decision != 'undo'
                 and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-              order by d.decided_at desc, d.id desc limit 1) as decision
+              order by d.decided_at desc, d.id desc limit 1) as decision,
+            -- Which finding the standing decision judged, and when: a newer
+            -- proposal than that is research the decision never saw.
+            (select d.finding_id from review_decisions d
+              where d.period_id = ? and d.company_id = c.id and d.field_key = e.field_key
+                and d.decision != 'undo'
+                and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
+              order by d.decided_at desc, d.id desc limit 1) as "decidedFindingId",
+            (select d.decided_at from review_decisions d
+              where d.period_id = ? and d.company_id = c.id and d.field_key = e.field_key
+                and d.decision != 'undo'
+                and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
+              order by d.decided_at desc, d.id desc limit 1) as "decidedAt"
        from enrichment_findings e
        join enrichment_runs r on r.id = e.run_id and r.period_id = ?
        join companies c on c.id = e.company_id
@@ -162,7 +241,17 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
                                             when 'abstained' then 3 else 2 end,
                               e2.evidence_strength desc nulls last, e2.created_at desc, e2.id desc
                      limit 1)
-      order by e.evidence_strength asc nulls first, c.canonical_name asc`, periodId, periodId, periodId) as Array<Record<string, unknown>>;
+      order by e.evidence_strength asc nulls first, c.canonical_name asc`,
+    periodId, periodId, periodId, periodId, periodId, periodId) as Array<Record<string, unknown>>;
+
+  // The stage is stored as an evidence state plus its own rows, and proposed
+  // as flags, so comparing the two shapes directly says "different" every
+  // time. The stages themselves are what to compare.
+  const stagesOf = new Map<string, string[]>();
+  for (const row of await db.all(`select company_id, stage from company_period_stages
+      where period_id = ?`, periodId) as Array<{ company_id: string; stage: string }>) {
+    stagesOf.set(row.company_id, [...(stagesOf.get(row.company_id) ?? []), row.stage]);
+  }
 
   return rows.map((r) => {
     const proposedValue = r.proposedValue ? safeParse(String(r.proposedValue)) : null;
@@ -184,6 +273,13 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
       bulkAcceptableField: Number(r.bulkAcceptableField) === 1,
       decided: decision !== null,
       decision,
+      newerThanDecision: decision === "accept" &&
+        String(r.findingId ?? "") !== String(r.decidedFindingId ?? "") &&
+        (String(r.findingState) === "proposed" || String(r.findingState) === "anchor_mismatch") &&
+        isAfter(r.findingCreatedAt, r.decidedAt) &&
+        differs(String(r.fieldKey), proposedValue,
+                r.resolvedValue ? safeParse(String(r.resolvedValue)) : null,
+                stagesOf.get(String(r.companyId)) ?? []),
       abstained: Number(r.abstained) === 1,
       band: evidenceBand(r.evidenceStrength === null ? null : Number(r.evidenceStrength)),
       excerpt: r.excerpt ? String(r.excerpt) : null,
@@ -202,6 +298,9 @@ export async function fieldRows(
 ): Promise<Row[]> {
   const all = (await allCandidates(db, periodId)).filter((r) => r.fieldKey === fieldKey);
   if (!bucket || bucket === "all") return all;
+  // The one bucket whose rows are decided: everything else asks what is left
+  // to do, and this asks what was done before the research improved.
+  if (bucket === SUPERSEDED) return all.filter((r) => r.newerThanDecision);
 
   const undecided = all.filter((r) => !r.decided);
   const predicate = IN_BUCKET[bucket];
@@ -261,7 +360,8 @@ export function cellLabel(row: Row, fieldLabel: string): string {
     ? "abstained"
     : formatValue(row.proposedValue, row.fieldKey);
   const state = row.decided ? row.decision! : "unreviewed";
-  return `${fieldLabel}, ${value}, evidence ${row.band}, ${state}`;
+  const newer = row.newerThanDecision ? ", newer research since" : "";
+  return `${fieldLabel}, ${value}, evidence ${row.band}, ${state}${newer}`;
 }
 
 /** A proposed or extracted value as the grid shows it -- and as its override box starts. */

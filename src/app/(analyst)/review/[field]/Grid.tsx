@@ -37,6 +37,8 @@ export type GridRow = {
   state: string;
   decided: boolean;
   decision: string | null;
+  /** Accepted before a later run proposed something better. */
+  newerThanDecision: boolean;
   conflict: boolean;
   sourceCount: number;
   excerpt: string | null;
@@ -324,7 +326,13 @@ export default function Grid(props: Props) {
               </span>
               <span role="gridcell" aria-colindex={4} className="st">
                 {r.decided
-                  ? <span className="tag done">{r.decision}</span>
+                  ? <>
+                      <span className="tag done">{r.decision}</span>
+                      {r.newerThanDecision &&
+                        <span className="tag warn" title="A later run proposed a better value than this decision saw">
+                          newer research
+                        </span>}
+                    </>
                   : r.sourceCount === 0
                     ? <span className="tag warn">no sources</span>
                     : r.anchorMode === "label_only" || r.anchorMode === "none"

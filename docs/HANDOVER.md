@@ -371,6 +371,12 @@ it. Never run `git add -A` outside this project's folder.
      as "exploration + development" (Tier 5). Re-research the fees first if
      they should carry currency and year: pass 2, every eligible company,
      tickers AEM, ELE, NOU, WDO, about US$0.60.
+   - **"Newer research" in review.** A value accepted before a later run
+     proposed something DIFFERENT now appears in its own bucket on `/review`
+     and as a tag on the row, rather than being hidden as "decided" (it cost
+     two review rounds on Run 1). Accepting again binds the newer finding. A
+     re-run proposing the same value says nothing, and an override is never
+     flagged.
    - **Re-run the fees**, if Samuel wants them: pass 2, "every eligible
      company", tickers AEM, ELE, NOU, WDO, about $0.60. Findings are not
      re-checked in place; a new run makes new ones.

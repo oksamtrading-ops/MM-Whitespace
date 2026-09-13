@@ -23,6 +23,8 @@ export type Cell = {
   strength: number | null;
   decided: boolean;
   decision: string | null;
+  /** Accepted before a later run proposed something better. */
+  newerThanDecision: boolean;
   conflict: boolean;
   sourceCount: number;
   excerpt: string | null;
@@ -260,6 +262,7 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                       </span>
                       {c.conflict && <span className="tag conflict">conflict</span>}
                       {c.decided && <span className="tag done">{c.decision}</span>}
+                      {c.newerThanDecision && <span className="tag warn">newer research</span>}
                     </>
                   ) : <span className="meta">—</span>}
                 </div>

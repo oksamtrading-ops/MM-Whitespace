@@ -45,6 +45,7 @@ export default async function ByCompany(
       strength: c.evidenceStrength,
       decided: c.decided,
       decision: c.decision,
+      newerThanDecision: c.newerThanDecision,
       conflict: c.conflict,
       sourceCount: c.sourceCount,
       excerpt: c.excerpt,
