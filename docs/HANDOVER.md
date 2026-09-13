@@ -4,10 +4,11 @@
 > exists to do. Q3-2026 is published at **revision 8**; **30 companies
 > researched** across Run 1 (5) and Run 2 (25) for **US$10.94 all in**;
 > **40 companies carry a tier**, 19 audit fees carry their currency and
-> fiscal year, and the period downloads as a clean workbook.
+> fiscal year, and the period downloads as a clean workbook. The pursuit
+> workflow is built and carries its first real pursuit.
 >
-> **Q3-2026 is published at revision 8**, and everything below is deployed.
-> To start a new session, paste everything below the line into it.
+> Everything in this note is deployed and every migration is applied. To start
+> a new session, paste everything below the line into it.
 
 ---
 
@@ -42,7 +43,9 @@ this whole note before changing anything.
   names Canadian dollars and never US dollars. It needs someone who knows
   Barrick's reporting currency.
 
-Both are on `/review` with the reason on the row.
+Both are on `/review` with the reason on the row. **Barrick's is also the open
+action on its pursuit** — High priority, owned by `samowusuking@gmail.com`, due
+30 September 2026 — which is the first real use of the pursuit workflow.
 
 **2. ~~Publish revision 7~~ — done.** Revisions 7 and 8 went out on 13
 September. All 178 decisions are on the dashboards: 40 companies carry a tier
@@ -72,7 +75,7 @@ already published). And the per-minute schedule ran a full day: **1,440 of
 | Start here | `README.md` — what is built, how to run it, and why |
 | Operating it | `docs/RUNBOOK.md` — loading a period, sign-in, publishing, incidents |
 | Design | `docs/DESIGN.md` and `docs/design/00`–`17`. **Section 00 first** |
-| Decisions | `docs/decisions/` — all ten closed; decision 1 approved by legal on 4 September 2026 |
+| Decisions | `docs/decisions/` — all ten closed; decision 1 approved by legal on 4 September 2026. `BATCH-API.md` records why both passes batch |
 | Settings | `.env.example` lists every variable; `.env.local` holds local secrets and is git-ignored |
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
@@ -238,8 +241,17 @@ npm test && npm run check:auth && npm run check:contrast && npm run build && npm
   then royalty/streaming, then development, then exploration), or the finding
   is held for a person.
 
-**Built on 13 September 2026**, after the handover above was written. All four
-are committed; none is deployed until someone pushes.
+**Built on 13 September 2026**, after the handover above was written.
+Everything below is committed, pushed and deployed, and every migration is
+applied to Supabase.
+
+**Q3-2026 moved to revision 8.** Revision 7 published the 178 decisions from
+that morning — 40 companies carry a tier, up from 21 — and revision 8 corrected
+its header, which had claimed 13 conflicts were unadjudicated when all 13 had
+been decided. Both went through the blocked gate with a reason, and both took
+seconds.
+
+*Research*
 
 - **EDGAR's profile is no longer the last word.** Its stored address and
   fiscal year-end are attributes the filer maintains, not statements a filing
@@ -251,34 +263,84 @@ are committed; none is deployed until someone pushes.
   floor on its own, so roughly 110 interlisted companies need a person there.
 - **A correction now reaches the reviewer.** Where a decision stands, the row
   offers the NEWEST proposal the decision never saw, not the strongest — two
-  of 13 September's four corrections never surfaced and had to be overridden
+  of that morning's four corrections never surfaced and had to be overridden
   by hand. The pick moved out of the SQL into `queue.pickFinding`, because it
   depends on the standing decision and a correlated subquery cannot see it.
 - **The field grid's shortcuts agree with its buttons.** A decided row drew no
   controls but still answered `A`, `O` and `F`. One predicate, `canAct`.
-- **Publishing is seconds, not minutes.** 3,918 round trips down to **39**,
-  measured: values and tiers go in chunks (`sql.insertMany`), and the prior
-  period's tiers are one read into a map. Nothing local would ever have caught
-  it — on SQLite both versions take 17 ms, because there is no round trip to
-  pay for.
-- **Retention runs on Postgres**, and calls the application's own sweeps
-  rather than re-writing their SQL. `pg_smoke` runs every rule as a dry run.
-  It still has to be called by something (item 6 below).
-- **The Batch API is built and off.** See item 2 below and
-  `docs/decisions/BATCH-API.md`. Migrations `0016` and `0017` ARE applied to
-  Supabase; only `MM_ENRICH_BATCH` is still unset.
-- **The pursuit tables ship**, empty and policied, and without doc 05's two
-  Deloitte-internal columns. See item 7 below.
-- **Every table a migration creates must now have row-level security**, checked
-  in `commit.test.ts`. That is 0008's lesson as an invariant: Supabase serves
-  `public` over PostgREST as `anon`, so a table without it is readable by
-  anyone until somebody notices.
-- **The publish gate stopped counting decided fields as conflicts.** Its
-  message said "no adjudication" and its query never looked at the decisions,
-  so all 13 of Run 2's EDGAR-versus-filing disagreements were reported for
-  ever — every one of them decided by hand on 13 September. Revision 7 went out
-  through a blocker that was not real; revision 8 corrects its header. The test
-  that should have caught it was named for the distinction it never made.
+- **The Batch API is built and OFF.** Both passes turn out to be one request
+  each — Run 2 measured it — so batching halves Run 3. Nothing in it has met
+  the real Batch API. See item 2 and `docs/decisions/BATCH-API.md`.
+
+*Publishing*
+
+- **Seconds, not minutes.** 3,918 round trips down to **39**, measured: values
+  and tiers go in chunks (`sql.insertMany`), and the prior period's tiers are
+  one read into a map. Nothing local would ever have caught it — on SQLite both
+  versions take 17 ms, because there is no round trip to pay for.
+- **The gate stopped counting decided fields as conflicts.** Its message said
+  "no adjudication" and its query never looked at the decisions, so all 13 of
+  Run 2's EDGAR-versus-filing disagreements were reported for ever. No amount
+  of review could have cleared it. The test that should have caught it was
+  named for the distinction it never made.
+
+*Retention*
+
+- **It runs on Postgres**, and calls the application's own sweeps rather than
+  re-writing their SQL. `pg_smoke` runs every rule as a dry run. It still has
+  to be called by something (item 5).
+
+*Pursuits — the Phase 1 data model AND the Phase 2 workflow*
+
+- **Three tables, empty and policied** (`0018`/`0019`), and **without doc 05's
+  `lcsp` and `fy_tax_nsr`** — a person's name and Deloitte's revenue from a
+  client. Doc 05 is annotated where it specifies them, so the schema and the
+  document disagree on the record rather than by accident.
+- **The workflow**: `/pursuits`, `/pursuits/[id]`, and "Start a pursuit" on a
+  company profile, which is the screen with the evidence on it. Analyst and
+  Admin only — a partner is a Viewer, and doc 11 keeps the Viewer out in policy
+  rather than in interface logic.
+- **A pursuit's own words must never reach a prompt** (doc 06). A canary test
+  pushes one through `publicRow` and `buildPrompt`; it was watched failing
+  against a planted leak. The egress scan is the second line.
+- **Priorities, action statuses and outcomes are settings**, so an Admin
+  changes them on `/settings` without a deployment. A star marks a status that
+  CLOSES an action, so finished and abandoned stop counting as open without
+  pretending to be the same thing. A term retired from a list is shown as
+  retired and never rewritten — and `/pursuits` then offers to sweep every row
+  carrying it, in one act with one audit line.
+- **A pursuit closes with an outcome** and can be reopened; closure is its own
+  table, so closing, reopening and closing again is a history. Open actions
+  never block a close: a pursuit is often lost with work outstanding.
+- **An action carries its own status, owner and due date**, all three
+  changeable after it is made — handing work over must not have to look like
+  abandoning it. `patchAction` is the one place that writes an action.
+- **Due dates are surfaced.** `/pursuits` counts overdue and due-this-week,
+  marks the row and tags the action. A due date is a calendar day (not late on
+  the day it is due); a closed action's date is history; a closed pursuit
+  reports nothing overdue.
+- **The list narrows** by company, owner, priority and what is due, and sorts
+  four ways. A plain GET form, so every narrowed view is a URL somebody can be
+  sent. The counts above it always describe every open pursuit, never the
+  narrowed set.
+- **A company merge takes its pursuits with it**, and both survive when both
+  companies had one.
+
+*Four guards added because something got past*
+
+- **Every table a migration creates must have row-level security**
+  (`commit.test.ts`). 0008's lesson as an invariant. It caught `pursuit_closures`
+  the same afternoon.
+- **The settings screen and its save action share one list of keys.** They kept
+  two, and two pursuit vocabularies rendered as fields that saved nothing —
+  "Nothing changed" — which is the decorative screen that module's own note
+  warns about.
+- **A nullable `date` column translates to TEXT.** The dialect rule wanted
+  whitespace before the comma, so `due_date date,` kept SQLite's NUMERIC
+  affinity while every other timestamp here is text.
+- **`.tag` has a background**, and the pair is under `check:contrast`. It had
+  none at all, so every pursuit tag rendered bare — the contrast check only
+  verifies pairs it is told about.
 
 ## Production settings
 
@@ -443,6 +505,15 @@ shares a name with a route again.
 stale while the issuer's own filing is current, and EDGAR outranks the filing
 in evidence scoring. Three wrong values reached review this way in Run 2.
 
+**A CSS class that already exists will silently restyle your component.** The
+pursuit filter form was written as `.filters`, which is the review screen's row
+of bucket chips and styles its links as chips. It inherited a layout meant for
+something else and NOTHING failed: the build has no opinion, and
+`check:contrast` only verifies the colour pairs it is told about, so a class
+with no background at all (`.tag`, until today) passes it too. Grep
+`globals.css` for a class name before using it, and add the pair when you add a
+colour.
+
 **`node --test` strips types, it does not compile them.** A TypeScript
 parameter property (`constructor(private readonly x = 1) {}`) passes both `tsc`
 and `tsx` and then fails the whole suite with
@@ -459,8 +530,14 @@ it. Never run `git add -A` outside this project's folder.
 ## What is left, in order
 
 1. ~~Confirm the live upload~~, ~~read a day of ticks~~ (1,440 of 1,440),
-   ~~Run 1~~, ~~the Excel export~~, ~~Run 2~~ — all done. What follows is the
-   work that has not been done.
+   ~~Run 1~~, ~~the Excel export~~, ~~Run 2~~, ~~publish revision 7~~,
+   ~~the pursuit data model~~, ~~the Phase 2 pursuit workflow~~ — all done.
+   What follows is the work that has not been done.
+
+   Two things from the pursuit work a later session should not undo: **doc 05's
+   `lcsp` and `fy_tax_nsr` are deliberately not built**, and both doc 05 and
+   migration `0018` say so; and **a pursuit's own words must never reach a
+   prompt**, which `pursuit.test.ts` holds.
 
 2. **Switch the Batch API on, in that order.** It is **built and off**
    (`MM_ENRICH_BATCH=1`; `docs/decisions/BATCH-API.md`). Migrations `0016` and
@@ -488,56 +565,14 @@ it. Never run `git add -A` outside this project's folder.
 6. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
    and S4 (open the generated export in Excel).
 
-7. **~~The pursuit data model~~ and ~~the Phase 2 workflow~~ — done.**
-   `pursuits`, `pursuit_notes` and `pursuit_actions` (migrations `0018`/`0019`),
-   and the workflow over them: `/pursuits`, `/pursuits/[id]`, and "Start a
-   pursuit" on a company profile, which is where the evidence is. Analyst and
-   Admin only — a partner is a Viewer, and doc 11 keeps the Viewer out in
-   policy, not in interface logic.
-
-   **Doc 05 specifies `lcsp` and `fy_tax_nsr` and they are deliberately not
-   built** — an LCSP is a person's name and a tax NSR is Deloitte's revenue
-   from a client, the class this build refuses. Samuel's decision, 13 September
-   2026; doc 05 and migration `0018` both say so, so do not "restore" them to
-   match the document.
-
-   The priority and status vocabularies live in `app_settings` (`0020`, `0021`),
-   so an Admin changes them on `/settings` without a deployment; a term retired
-   from a list is shown as retired and never rewritten. **A star marks a status
-   that CLOSES an action** — production reads `Open, Done*, Superseded*` — so
-   finished and abandoned both stop counting as open without pretending to be
-   the same thing. A status the vocabulary no longer knows counts as open, so
-   work stays visible when a term is renamed; a retired priority sorts last.
-   Either way `/pursuits` names the term, says how many rows carry it, and
-   moves them in one sweep with one audit line (`pursuit_terms_swept`). The
-   section is absent when nothing is stranded, and a priority cannot be swept
-   into a status. Nothing is ever deleted. An action carries its own status, owner and due
-   date, all three changeable after it is made — handing work over must not have
-   to look like abandoning it. `patchAction` is the one place that writes an
-   action, so a fourth costs a validation and a name. **A pursuit can be closed
-   with an outcome** (`Won, Lost, Dormant`, a setting) and reopened; closure is
-   its own table (`0022`/`0023`), so closing, reopening and closing again is a
-   history rather than a latest value. Open actions never block a close — a
-   pursuit is often lost with work outstanding. **A company merge moves its
-   pursuits**, and both survive when both companies had one. **A due date is
-   surfaced**: `/pursuits` counts overdue and due-within-a-week, marks the row
-   and tags the action. A due date is a calendar day (not late on the day it is
-   due); a closed action's date is history; and a closed pursuit reports nothing
-   overdue, since closing with work outstanding is allowed. **The list narrows
-   by company, owner, priority and what is due**, and sorts four ways — a plain
-   GET form, so every narrowed view is a URL somebody can be sent. The counts
-   above it always describe every open pursuit, never the narrowed set. **A pursuit's own words must never
-   reach a prompt** (doc 06) — a canary test pushes one through `publicRow` and
-   `buildPrompt`, and it was watched failing against a planted leak.
-
-8. **Hardening:** a monotonic column on `review_decisions` (today
-    `decisionStamp()` carries the order); the domain allowlist as a database
-    trigger (doc 11; enforced in code because the portable migrations forbid
-    triggers); Deloitte SSO and `MM_ALLOWED_DOMAINS=deloitte.ca` when the
+7. **Hardening:** a monotonic column on `review_decisions` (today
+   `decisionStamp()` carries the order); the domain allowlist as a database
+   trigger (doc 11; enforced in code because the portable migrations forbid
+   triggers); Deloitte SSO and `MM_ALLOWED_DOMAINS=deloitte.ca` when the
    pilot moves to Deloitte addresses. The live pipeline also records the
    replay pipeline's `PROMPT_VERSION` rather than its own.
 
-9. **Tidy-ups:** an empty tracked file named `--` at the repository root.
+8. **Tidy-ups:** an empty tracked file named `--` at the repository root.
 
 ## Working conventions
 
