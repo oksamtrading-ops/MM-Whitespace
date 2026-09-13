@@ -1,9 +1,11 @@
 # Handover — Mining Whitespace Intelligence Tool
 
-> **Status at 11 September 2026.** Built, deployed, published once, ingests a
-> workbook in production, and researches live: Run 1 (five companies, $2.26)
-> is done and its findings wait in review. To start a new session, paste
-> everything below the line into it.
+> **Status at 13 September 2026.** Built, deployed, and doing the work it
+> exists to do. Q3-2026 is published at **revision 6**; **30 companies
+> researched** across Run 1 (5) and Run 2 (25) for **US$10.94 all in**;
+> **40 companies carry a tier**, 19 audit fees carry their currency and
+> fiscal year, and the period downloads as a clean workbook. To start a new
+> session, paste everything below the line into it.
 
 ---
 
@@ -24,35 +26,39 @@ this whole note before changing anything.
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
 
-## Two things are waiting on Samuel
+## What is waiting on Samuel
 
-**1. The live upload is confirmed from the database side.** Samuel uploaded
-`M&M - Whitespace Analysis Q3-2026.xlsx` on 11 September 2026 at 02:08 UTC.
-The quarantine row's hash matched the local workbook byte for byte, and its
-parse matched a local parse on every one of 7,091 values (the only difference
-is Postgres printing 13 whole-number market caps without a `.0`). Nothing else
-changed: still 1 publication, 259 companies, 3,626 frozen values. The one
-thing unconfirmed is what the screen said at the end — the expected text is
-**"Cannot be committed"**, because Q3-2026 is already published.
+**1. Two findings are flagged, and they are judgements, not defects.**
 
-**2. Read a day of ticks.** The worker is deployed (commit `549475f`),
-migrations `0013`/`0014` are applied and recorded, and the S1 probe lived its
-full 240 s on production. What is left of S1 is a day of the per-minute
-schedule — the first twelve minutes were twelve of twelve. After 12 September
-2026 02:40 UTC:
+- **China Gold's auditor.** Its 2026 circular says Lixin & Ethos CPA LLP was
+  appointed on 26 February 2026 for Canadian reporting, and BDO continues for
+  Hong Kong. The workbook says Deloitte. Three sources, three answers; the
+  whitespace question is which one the practice counts.
+- **Barrick's audit fee.** The table reads "Audit fees(2) $10.3" under "In
+  millions of dollars" and nothing else. One pass proposed Australian
+  dollars, the re-run proposed US dollars and was held because the circular
+  names Canadian dollars and never US dollars. It needs someone who knows
+  Barrick's reporting currency.
 
-```sql
-select count(*) from cron_ticks where ticked_at > now() - interval '24 hours';  -- expect 1,440
-```
+Both are on `/review` with the reason on the row.
 
-`/runs` shows the same number in its rail. Record it in
-`docs/decisions/S1-WORKER-SHAPE.md`.
+**2. Publish revision 7 when ready.** 178 decisions were recorded on 13
+September and none of them are on the dashboards yet: a published revision is
+frozen, and the working values only reach a Viewer at the next publish. The
+gate will be blocked (coverage floors, and a fabrication rate inflated by
+label gaps since fixed), so it needs the Admin override with a reason.
 
-**Kay could not sign in.** `Kampofo@deloitte.ca` was refused at 00:38 UTC on
-11 September because only `gmail.com` is allowed, and Resend can only deliver
-to `oksamtrading@gmail.com` until a domain is verified (item 6). Kay can only
-get in through a Gmail address inserted into `app_users`. Tell Kay the refusal
-was expected and not a fault.
+**3. Kay still cannot sign in.** `Kampofo@deloitte.ca` was refused because
+only `gmail.com` is allowed, and Resend can only deliver to
+`oksamtrading@gmail.com` until a domain is verified (item 6 in what is left).
+Kay can only get in through a Gmail address inserted into `app_users`. The
+refusal is expected, not a fault.
+
+**Two things that were waiting are now done.** The live upload was confirmed
+from the database side on 11 September (hash and parse matched byte for byte;
+the screen should have said "Cannot be committed", because Q3-2026 was
+already published). And the per-minute schedule ran a full day: **1,440 of
+1,440 ticks**, recorded in `docs/decisions/S1-WORKER-SHAPE.md`.
 
 ## Where everything is
 
@@ -122,17 +128,23 @@ company profiles and finder, identity merge, admin settings, the access review,
 and magic-link sign-in. Routes: `/upload`, `/upload/[id]`, `/runs`, `/review`,
 `/review/[field]`, `/review/by-company`, `/publish`, `/dashboard`,
 `/companies`, `/companies/[id]`, `/companies/merge`, `/access`, `/settings`,
-`/signin`, `/auth/verify`, `/api/cron/tick`, and the Python function
-`/api/parse`.
+`/signin`, `/auth/verify`, `/api/cron/tick`, `/api/export` (the workbook
+download), and two Python functions, `/api/parse` and `/api/workbook`.
 
-**Production holds the real Q3-2026 period.** 259 companies, **published as
-revision 1 on 11 September 2026 at 00:56 UTC** by `oksamtrading@gmail.com`
-through a closed gate, reason *"I'm testing the solution."* All 259 tiers and
-3,626 values are frozen. The honest day-one spread is **242 unclassified and 17
-at Tier 4**, because research has not been run.
+**Production holds the real Q3-2026 period, published at revision 6.** 259
+companies, first published 11 September 2026 and amended five times since,
+each through the blocked gate with a reason — the gate is blocked because
+coverage floors need most of the period researched, and 30 companies are.
 
-**Production has no enrichment findings**, so its review board is empty. The
-findings in a local preview are **synthetic seed data**
+**Production holds real research.** 30 companies across Run 1 (AEM, WDO, ELE,
+NOU, RDS) and Run 2 (the 25 largest unresearched: ABX, WPM, CCO, FNV, K, NTR,
+TECK, FM, LUN, PAAS, AGI, LUG, EDV, IVN, CDE, HBM, EQX, IMG, AG, ELD, CS,
+CGG, NXE, GMIN, DPM). **US$10.94 spent in total.** 239 standing review
+decisions, **40 companies tiered**, 19 audit fees with currency and fiscal
+year. Of the 25 largest unresearched companies, **Deloitte audits four** —
+Wheaton, Pan American, HudBay, First Majestic — and the rest are whitespace.
+
+A local preview's findings are **synthetic seed data**
 (`prompt_version = 'synthetic-fixture'`) sitting next to real company names;
 never quote one as a finding.
 
@@ -188,6 +200,41 @@ colour-contrast check, the build, and 113 end-to-end checks.
 ```bash
 npm test && npm run check:auth && npm run check:contrast && npm run build && npm run e2e
 ```
+
+**Built on 12–13 September 2026**, all deployed:
+
+- **The export is a download in the app** — *Publish → Take it away as a
+  workbook*, `.xlsx` or flat `.csv`, Analyst and Admin only, every download in
+  the audit log. Built by `api/workbook.py` from a payload
+  `src/lib/export/period.ts` reads; locally by a `python3` subprocess. It
+  carries the WORKING period, not the frozen revision — the snapshot has no
+  stage rows and the matrix needs them, which is also why a Viewer may not
+  have it.
+- **The workbook is presentable.** Currency written into every amount
+  (C$8,052,000, US$517,116) with the fiscal year; fee columns populated; no
+  empty tabs (the source's two dividers are gone, replaced by Contents); one
+  treatment on every data sheet — header rule, banded rows, filters, frozen
+  panes, print setup; tier filled by tier with its rule as a cell comment.
+- **A Summary sheet**: how much of the population Deloitte does not audit,
+  the tier and footprint split, the largest companies the firm does not
+  audit, and what research is still missing. Counts are live formulas over
+  the matrix; the ranking is values.
+- **Review: "accepted, then researched again."** A decided value that later
+  research DISAGREES with gets its own bucket and a row tag, and can be taken
+  from there ("Take the newer research"). Comparison is against the resolved
+  value, and the stage compares by its stages.
+- **Review: the bulk floor is chosen, not fixed** — 0.60, 0.70, 0.75, 0.80,
+  0.90 on the field grid. The floor is one condition of seven; fees,
+  conflicts, overrides, unanchored values, sourceless values and stage flags
+  are still refused whatever it says.
+- **Fees carry currency and fiscal year** (`{amount, currency, fiscal_year}`),
+  and the gate checks the currency where the document states one, holds a
+  currency the document never names, reads the labels filings really use
+  ("Audit Services", "Tax-Related Fees"), matches comma-grouped numerals, and
+  reads "(C$ thousands)" as a scale.
+- **A stage quote must name the stage that decides the tier** (production,
+  then royalty/streaming, then development, then exploration), or the finding
+  is held for a person.
 
 ## Production settings
 
@@ -338,77 +385,85 @@ passes; grant the roles `with set true` for the run and revoke them after.
 makes a function async, look for calls whose result is dropped, assigned
 without `await`, passed to `assert`, or wrapped in `assert.throws`.
 
+**A Python function and a route handler of the same name are one URL, and the
+function wins.** The export builder shipped as `api/export.py` beside the
+application's own `/api/export` route, so every download answered
+`{"error": "unauthorized"}` from a function that never saw the request.
+Nothing local catches it — there is no function host here, so the route
+answers and the tests pass. It is now `api/workbook.py`, and
+`src/lib/python/endpoint.test.ts` fails the build if any `api/*.py` ever
+shares a name with a route again.
+
+**EDGAR is not the last word.** Its stored address and `fiscalYearEnd` go
+stale while the issuer's own filing is current, and EDGAR outranks the filing
+in evidence scoring. Three wrong values reached review this way in Run 2.
+
 **`/Users/oksam` is itself a git repository**, with the Archieva folder inside
 it. Never run `git add -A` outside this project's folder.
 
 ## What is left, in order
 
-1. ~~Confirm the live upload~~ — done from the database side (the section
-   near the top); ask Samuel what the screen said.
-2. **Research in production — plumbing done and deployed.** The worker, the
-   tick fix, the start-run screen and the S1 decision are built and measured
-   (see "What exists"). Left: read a day of `cron_ticks` (the section near
-   the top). Research itself waits on item 3.
-3. **Live enrichment — on, and Run 1 is done.** S3 is done (Scale tier,
-   `WORKER_SLOTS` stays 4; results in `docs/decisions/S3-ACCOUNT-LIMITS.md`).
-   The two-pass pipeline and Run 1's results are in
-   `docs/decisions/RESEARCH-PIPELINE.md`: AEM, WDO, ELE, NOU and RDS, $2.26
-   across three runs, pass 1 $0.25 a company and pass 2 $0.10–0.12. The start
-   form now estimates per pass from those figures. Run 1 found every fee held
-   by three defects in the anchoring check, since fixed. Left, in order:
-   - **Samuel reviews Run 1** on `/review`: websites and EDGAR values from
-     pass 1, fields from pass 2. Elemental's head office really is Littleton,
-     Colorado; there is no reject, so Override or Flag anything wrong.
-     Nouveau Monde's head office conflicts: EDGAR's L'Ange-Gardien (accepted)
-     against its own AIF's Saint-Michel-des-Saints (pending).
-   - **Then publish revision 2.** A company page reads the published revision,
-     for everyone, so nothing accepted shows until then; an Analyst or Admin
-     sees a "Not yet published" notice naming what changed. *Done, 11
-     September 2026.*
-   - **Correct Radisson and publish revision 3.** Revision 2 has Radisson at
-     Tier 4 as a royalty company on a quote that never mentions a royalty
-     (RESEARCH-PIPELINE.md, "After revision 2"). Override its stage in review
-     as "exploration + development" (Tier 5). Re-research the fees first if
-     they should carry currency and year: pass 2, every eligible company,
-     tickers AEM, ELE, NOU, WDO, about US$0.60.
-   - **"Newer research" in review.** A value accepted before a later run
-     proposed something DIFFERENT now appears in its own bucket on `/review`
-     and as a tag on the row, rather than being hidden as "decided" (it cost
-     two review rounds on Run 1). Accepting again binds the newer finding. A
-     re-run proposing the same value says nothing, and an override is never
-     flagged.
-   - **Re-run the fees**, if Samuel wants them: pass 2, "every eligible
-     company", tickers AEM, ELE, NOU, WDO, about $0.60. Findings are not
-     re-checked in place; a new run makes new ones.
-   - **Run 2: 25 companies**, then all 259 (about $95 synchronously), then the
-     **Batch API** at half price — not built: the ledger has an
-     `awaiting_batch` state and nothing submits or polls.
-   - A per-company cost on each job, so the estimate can use a p95.
-4. ~~**Excel export in the app.**~~ **Done, 12 September 2026.** *Publish ->
-   Take it away as a workbook* downloads the `.xlsx` or the flat `.csv`,
-   Analyst and Admin only, every download in the audit log. Built by
-   `api/workbook.py` from a payload `src/lib/export/period.ts` reads out of
-   whichever database is behind it; locally by a `python3` subprocess. It
-   exports the WORKING period, not the frozen revision -- the snapshot has no
-   stage rows and the matrix needs them -- which is the other reason a Viewer
-   may not have it. `MM_EXPORT_URL` overrides where the builder answers, as
-   `MM_PARSE_URL` does for the parser; both use `MM_PARSE_SECRET`.
-5. **Retention on Postgres.** `scripts/retention.mjs` works on SQLite only, so
+1. ~~Confirm the live upload~~, ~~read a day of ticks~~ (1,440 of 1,440),
+   ~~Run 1~~, ~~the Excel export~~, ~~Run 2~~ — all done. What follows is the
+   work that has not been done.
+
+2. **Publish revision 7.** 178 decisions from 13 September are not on the
+   dashboards until someone publishes. See "What is waiting on Samuel".
+
+3. **Run 3: the remaining 229 companies.** Pass 1 then pass 2, about **US$80**
+   at Run 2's measured rate (US$0.31 a company end to end: pass 1 US$0.22,
+   pass 2 US$0.10). Start it from `/runs`; the start form estimates per pass.
+   Do it **after** the Batch API below if cost matters, since that roughly
+   halves it.
+
+4. **The Batch API.** Not built: the ledger has an `awaiting_batch` state and
+   nothing submits or polls. It is the difference between US$80 and US$40 for
+   the rest of the period, and the design (docs/design/03) expects it before
+   the full run.
+
+5. **Three known weaknesses in research, each seen in Run 2.**
+   - **EDGAR is stale where filings are current, and outranks them.** Its
+     stored address put First Quantum in Vancouver (its AIF says Toronto) and
+     Lundin Mining in Toronto (its circular says Vancouver), and its
+     `fiscalYearEnd` said 30 November for First Quantum against its own
+     circular's 31 December. EDGAR is source tier 1 and scores 0.88 against a
+     filing's 0.71, so the wrong value wins the queue's "best finding" slot.
+     Consider lowering EDGAR's tier for head office and fiscal year-end, or
+     preferring the issuer's own filing for those two fields.
+   - **The superseded bucket picks the strongest finding, not the newest.**
+     Two of four corrections on 13 September never surfaced there and had to
+     be overridden by hand, because an older EDGAR proposal outscored the
+     newer one from the filing.
+   - **A decided row hides its buttons but not its shortcuts.** `o` still
+     opens the override editor where the Override button is not drawn. That
+     is how those overrides were made; the two should agree.
+
+6. **Retention on Postgres.** `scripts/retention.mjs` works on SQLite only, so
    nothing sweeps production: expired parses, sign-in links and sessions are
    hidden by their expiry but not deleted. (`cron_ticks` prunes itself to a
    week; `worker_runs` is a few rows a day and has no rule yet.)
-6. **Mail:** buy and verify a domain for this application (Samuel's decision
+
+7. **Mail:** buy and verify a domain for this application (Samuel's decision
    and money), then set `MM_MAIL_FROM`; **rotate the Resend key**, which was
-   pasted into a chat once.
-7. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
+   pasted into a chat once. This is what unblocks Kay.
+
+8. **Publishing is slow and should batch.** Revision 6 took about four
+   minutes because `publishPeriod` inserts roughly 3,600 values one at a
+   time. A multi-row insert would make it seconds.
+
+9. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
    and S4 (open the generated export in Excel).
-8. **The pursuit data model** — a Phase 1 commitment in doc 02, not built.
-9. **Hardening:** a monotonic column on `review_decisions` (today
-   `decisionStamp()` carries the order); the domain allowlist as a database
-   trigger (doc 11; enforced in code because the portable migrations forbid
-   triggers); Deloitte SSO and `MM_ALLOWED_DOMAINS=deloitte.ca` when the pilot
-   moves to Deloitte addresses.
-10. **Tidy-ups:** an empty tracked file named `--` at the repository root.
+
+10. **The pursuit data model** — a Phase 1 commitment in doc 02, not built.
+
+11. **Hardening:** a monotonic column on `review_decisions` (today
+    `decisionStamp()` carries the order); the domain allowlist as a database
+    trigger (doc 11; enforced in code because the portable migrations forbid
+    triggers); Deloitte SSO and `MM_ALLOWED_DOMAINS=deloitte.ca` when the
+    pilot moves to Deloitte addresses. The live pipeline also records the
+    replay pipeline's `PROMPT_VERSION` rather than its own.
+
+12. **Tidy-ups:** an empty tracked file named `--` at the repository root.
 
 ## Working conventions
 

@@ -77,9 +77,9 @@ enrichment exists, a container would be paying for a property nothing uses.
 1. ~~Run the probe on production~~ — done, 240 of 240 s. The deadline can be
    raised toward the 800 s ceiling when a live run needs it; probe again after
    any change to `maxDuration` or the plan.
-2. **Read `cron_ticks` after 24 hours** of the per-minute schedule. The
-   number to expect is 1,440; the run screen shows it. Twelve minutes is
-   twelve of twelve; a day is the measurement.
+2. ~~**Read `cron_ticks` after 24 hours**~~ — done, 13 September 2026:
+   **1,440 of 1,440**. A full day of the per-minute schedule with nothing
+   missed, which is what the GET fix was for.
 3. **Overlap under load** cannot be measured until a run has real work. In
    replay mode a job takes milliseconds. Revisit with S3.
 4. `WORKER_SLOTS` is the design's placeholder. S3 sets it from the account's
