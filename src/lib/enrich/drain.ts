@@ -23,7 +23,14 @@ import {
   claimJobs, claimSlot, ensureSlots, heartbeat, HEARTBEAT_SECONDS, nextClaimableRun,
   releaseSlot, settleRun, WORKER_SLOTS,
 } from "./ledger.ts";
-import { cassetteDir as defaultCassetteDir, JobFailed, processJob } from "./worker.ts";
+import {
+  cassetteDir as defaultCassetteDir, JobFailed, prepareJobForBatch, processJob, settleBatchResult,
+  type RunOptions,
+} from "./worker.ts";
+import {
+  BATCH_ENABLED, BATCH_SIZE, openBatches, pollBatch, sdkBatchVendor, settleBatch,
+  submitBatch, type BatchVendor, type Submission,
+} from "./batch.ts";
 
 export type EndReason =
   | "drained" | "deadline" | "no_slot" | "no_work" | "probe" | "error";
@@ -48,6 +55,15 @@ export type DrainOptions = {
    * spending anything: the last heartbeat that lands is how long it lived.
    */
   probe?: boolean;
+  /**
+   * Send each pass's model call to the Batch API instead of waiting on it.
+   * Half price. Defaults to MM_ENRICH_BATCH=1, and a test injects its own
+   * vendor to drive the whole cycle without one.
+   */
+  batch?: boolean;
+  batchVendor?: BatchVendor;
+  /** Injected live dependencies, as RunOptions takes them. Tests only. */
+  live?: RunOptions["live"];
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 };
@@ -60,6 +76,10 @@ export type DrainOutcome = {
   jobsFailed: number;
   /** Sent back to the queue with a delay: throttled or overloaded, not wrong. */
   jobsRetried: number;
+  /** Requests handed to the Batch API by this worker. */
+  jobsBatched: number;
+  /** Batch results read back and turned into findings by this worker. */
+  jobsSettled: number;
   /** Claimable work was still waiting when this worker stopped. */
   workRemains: boolean;
   seconds: number;
@@ -85,6 +105,8 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
   let completed = 0;
   let failed = 0;
   let retried = 0;
+  let batched = 0;
+  let settled = 0;
   let lastError: string | null = null;
   let slot: number | null = null;
 
@@ -118,6 +140,23 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
     beat.unref?.();
 
     const periodAsOf = new Map<string, string>();
+    const batching = opts.batch ?? BATCH_ENABLED;
+    const pending = new Map<string, Submission[]>();
+    const batchVendor = async () => opts.batchVendor ?? await sdkBatchVendor();
+
+    /** Send what has accumulated for one run, and forget it. */
+    const flush = async (runId: string): Promise<number> => {
+      const queue = pending.get(runId) ?? [];
+      pending.delete(runId);
+      if (queue.length === 0) return 0;
+      const { count } = await submitBatch(db, runId, queue, await batchVendor(), now);
+      return count;
+    };
+
+    // Answers first: a batch already paid for is worth more than a job not yet
+    // started, and its companies have been waiting longest.
+    if (batching) settled += await settleReady(db, await batchVendor(), opts, now);
+
     let emptyClaims = 0;
     try {
       for (;;) {
@@ -143,10 +182,25 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
         }
 
         try {
-          await processJob(db, runId, job, periodAsOf.get(runId)!, {
+          const jobOpts = {
             mode: opts.mode, cassetteDir: opts.cassetteDir ?? defaultCassetteDir(),
-          });
-          completed++;
+            ...(opts.live ? { live: opts.live } : {}),
+          };
+          if (batching) {
+            const r = await prepareJobForBatch(db, runId, job, periodAsOf.get(runId)!, jobOpts);
+            if ("submission" in r) {
+              (pending.get(runId) ?? pending.set(runId, []).get(runId)!).push(r.submission);
+              // A batch is also the unit of waiting: every company in it is
+              // held until the last is answered, so it goes as soon as it is
+              // full rather than at the end of the drain.
+              if (pending.get(runId)!.length >= BATCH_SIZE) batched += await flush(runId);
+            } else {
+              completed++;   // nothing to ask; the pass finished on its own
+            }
+          } else {
+            await processJob(db, runId, job, periodAsOf.get(runId)!, jobOpts);
+            completed++;
+          }
         } catch (err) {
           // processJob has already routed the job -- back to the queue, the
           // run halted, or abandoned. A retry is not a failure: the job comes
@@ -157,6 +211,12 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
         }
         await settleRun(db, runId);
         await touch();
+      }
+      // Whatever did not fill a batch still has to go, or those companies
+      // wait for a worker that may never claim them again.
+      for (const runId of [...pending.keys()]) {
+        try { batched += await flush(runId); }
+        catch (err) { lastError = (err as Error).message.slice(0, 500); }
       }
     } finally {
       clearInterval(beat);
@@ -180,7 +240,47 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
     const workRemains = opts.probe ? false : (await nextClaimableRun(db)) !== null;
     return {
       workerRunId: run.id, workerId, reason, jobsCompleted: completed, jobsFailed: failed,
-      jobsRetried: retried, workRemains, seconds: Math.round((ended - started) / 1000), lastError,
+      jobsRetried: retried, jobsBatched: batched, jobsSettled: settled,
+      workRemains, seconds: Math.round((ended - started) / 1000), lastError,
     };
   }
+}
+
+/**
+ * Poll every open batch and turn whatever has finished into findings.
+ *
+ * Run before any new job is claimed: a batch already paid for is worth more
+ * than one not yet started, and its companies have waited longest. Settling is
+ * re-entrant -- a request row moves off 'submitted' only once -- so a worker
+ * killed halfway through a download costs nothing but the download.
+ */
+export async function settleReady(
+  db: Sql, vendor: BatchVendor, opts: DrainOptions, now: () => number = Date.now,
+): Promise<number> {
+  let settled = 0;
+  for (const batch of await openBatches(db)) {
+    try {
+      if (batch.state !== "ended" && !await pollBatch(db, batch, vendor, now)) continue;
+      const tally = await settleBatch(db, { ...batch, state: "ended" }, vendor, async (row, result) => {
+        try {
+          await settleBatchResult(db, batch.run_id, row, result, {
+            mode: opts.mode, cassetteDir: opts.cassetteDir ?? defaultCassetteDir(),
+            ...(opts.live ? { live: opts.live } : {}),
+          });
+        } catch (err) {
+          // settleBatchResult has already routed the job. One company's bad
+          // answer must not abandon the rest of the batch's results, which are
+          // downloaded and would otherwise be read again next time.
+          if (!(err instanceof JobFailed)) throw err;
+        }
+      }, now);
+      settled += tally.succeeded;
+    } catch {
+      // A batch that cannot be polled or read is left open and tried again on
+      // the next worker; nothing about it has been consumed.
+      continue;
+    }
+    await settleRun(db, batch.run_id);
+  }
+  return settled;
 }

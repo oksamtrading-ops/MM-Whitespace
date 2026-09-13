@@ -23,7 +23,12 @@ import {
   type PublicCompanyRow, type Route,
 } from "./prompt.ts";
 import { buildAllowlist, type FetchedDocument } from "./fetch.ts";
-import { researchLive, sdkVendor, type CandidateDoc, type LiveBody, type LiveDeps, type Pass } from "./live.ts";
+import {
+  BATCH_DISCOUNT, Meter, preparePass, researchLive, resumePass, sdkVendor,
+  type CandidateDoc, type LiveBody, type LiveDeps, type LiveJob, type Pass,
+  type PassContext, type Prepared,
+} from "./live.ts";
+import type { BatchRequestRow, BatchResult, Submission } from "./batch.ts";
 import { extractPdf } from "./pdf.ts";
 import { nodeHttp, nodeResolve } from "./transport.ts";
 import { getNumber } from "../settings/index.ts";
@@ -224,6 +229,7 @@ export async function defaultLiveDeps(db: Sql): Promise<LiveDeps> {
     vendor: await sdkVendor(),
     fetch: { http: nodeHttp, resolve: nodeResolve, extractors: { pdf: extractPdf } },
     store: (doc) => storeDocument(db, doc),
+    load: (hashes) => loadDocuments(db, hashes),
     restrictions: restrictionsFromCatalog(catalog),
   };
 }
@@ -294,17 +300,152 @@ async function researchLiveJob(
       "and with a key present.");
   }
   const deps = opts.live ?? await defaultLiveDeps(db);
+  const job = await liveJobFor(db, row, fieldGroup);
+  const body = await researchLive(job, deps);
+  const attempt = await nextAttempt(db, jobId);
+  await storeRawResult(db, jobId, attempt, body, `live-${job.pass}`);
+  return { body, attempt };
+}
+
+/** The pass, the company and what pass 1 already found. One definition. */
+async function liveJobFor(db: Sql, row: PublicCompanyRow, fieldGroup: string): Promise<LiveJob> {
   const pass: Pass = fieldGroup === "identity" ? "identity" : "general";
-  const body = await researchLive({
+  return {
     pass, row, website: row.knownWebsite,
     priorCandidates: pass === "general" ? await priorCandidates(db, row.companyId) : null,
-  }, deps);
+  };
+}
 
-  const attempt = ((await db.get("select coalesce(max(attempt), 0) a from enrichment_job_results where job_id = ?", jobId) as { a: number }).a) + 1;
+async function nextAttempt(db: Sql, jobId: string): Promise<number> {
+  return ((await db.get(
+    "select coalesce(max(attempt), 0) a from enrichment_job_results where job_id = ?",
+    jobId) as { a: number }).a) + 1;
+}
+
+/** The response, stored raw before anything is derived from it. */
+async function storeRawResult(
+  db: Sql, jobId: string, attempt: number, body: CassetteBody, requestId: string,
+): Promise<void> {
   await db.run(`insert into enrichment_job_results (job_id, attempt, raw, request_id, usage, verbatim_turn)
-     values (?, ?, ?, ?, ?, ?)`, jobId, attempt, JSON.stringify(body), `live-${pass}`,
+     values (?, ?, ?, ?, ?, ?)`, jobId, attempt, JSON.stringify(body), requestId,
         JSON.stringify(body.usage ?? {}), null);
-  return { body, attempt };
+}
+
+/**
+ * The first half of a job: everything up to its model call, then hand the
+ * request to the batch instead of sending it.
+ *
+ * A pass that needs no model call at all -- pass 2 where nothing was
+ * fetchable -- finishes here rather than occupying a slot in the batch.
+ */
+export async function prepareJobForBatch(
+  db: Sql, runId: string, job: ClaimedJob, periodAsOf: string, opts: RunOptions,
+): Promise<{ submission: Submission } | { outcome: ResearchOutcome }> {
+  await transition(db, job.id, "researching", { chargeAttempt: true });
+  const row = await publicRow(db, job.company_id, periodAsOf);
+  const deps = opts.live ?? await defaultLiveDeps(db);
+  const meter = new Meter();
+
+  let prepared: Prepared;
+  try {
+    prepared = await preparePass(await liveJobFor(db, row, job.field_group), deps, meter);
+  } catch (err) {
+    throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
+  }
+
+  const attempt = await nextAttempt(db, job.id);
+  if (prepared.kind === "done") {
+    await storeRawResult(db, job.id, attempt, prepared.body, `live-${job.field_group}-nodocs`);
+    return { outcome: await finishJob(db, runId, job, prepared.body, attempt, opts) };
+  }
+
+  await transition(db, job.id, "awaiting_batch");
+  return {
+    submission: {
+      jobId: job.id, attempt, request: prepared.request,
+      // The half-spent meter travels with the request: a batched pass is
+      // metered by two processes, and without this the fetching half's cost
+      // is simply lost from the run's total.
+      context: { ...prepared.context, fieldGroup: job.field_group,
+                 companyId: job.company_id, periodAsOf,
+                 model: String(prepared.request.model ?? ""),
+                 spentUsage: meter.usage, spentUsd: meter.cost },
+    },
+  };
+}
+
+/**
+ * The second half: the answer has come back, so finish the pass.
+ *
+ * An expired or cancelled request is NOT a failure -- a batch has 24 hours and
+ * the world sometimes takes longer. The job returns to the queue with its
+ * attempt given back, exactly as a lapsed lease does.
+ */
+export async function settleBatchResult(
+  db: Sql, runId: string, request: BatchRequestRow, result: BatchResult["result"],
+  opts: RunOptions,
+): Promise<ResearchOutcome | null> {
+  const job = await db.get(
+    "select id, company_id, field_group, attempts from enrichment_jobs where id = ?",
+    request.job_id) as ClaimedJob | undefined;
+  if (!job) return null;
+
+  if (result.type === "expired" || result.type === "canceled") {
+    await db.run(`update enrichment_jobs
+        set attempts = case when attempts > 0 then attempts - 1 else 0 end, batch_id = null
+      where id = ?`, job.id);
+    await transition(db, job.id, "queued", {
+      error: `the batch ${result.type}; requeued with no attempt charged` });
+    return null;
+  }
+  if (result.type === "errored") {
+    throw new JobFailed(
+      await routeFailure(db, runId, job.id, result.error),
+      result.error);
+  }
+
+  const context = safeJson(request.context) as PassContext & {
+    fieldGroup?: string; periodAsOf?: string; model?: string;
+    spentUsage?: Record<string, number>; spentUsd?: number;
+  };
+  const deps = opts.live ?? await defaultLiveDeps(db);
+  // Half price, and seeded with what the submitting worker already spent.
+  const meter = new Meter(BATCH_DISCOUNT);
+  meter.seed(context.spentUsage, context.spentUsd);
+  // The batched answer is metered HERE. resumePass only meters calls it makes
+  // itself, and in the ordinary case it makes none -- so without this line the
+  // tokens the batch actually billed for never reach the run's spend at all.
+  meter.add(context.model ?? DEFAULT_MODEL, result.message.usage ?? {});
+
+  let body: LiveBody;
+  try {
+    const row = await publicRow(db, job.company_id, String(context.periodAsOf ?? "").slice(0, 10));
+    body = await resumePass(
+      await liveJobFor(db, row, String(context.fieldGroup ?? job.field_group)),
+      context, result.message, deps, meter);
+  } catch (err) {
+    throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
+  }
+
+  await storeRawResult(db, job.id, request.attempt, body, `batch-${request.custom_id}`);
+  return await finishJob(db, runId, job, body, request.attempt, opts);
+}
+
+/** Derive, gate, record: the tail both paths share once a body exists. */
+async function finishJob(
+  db: Sql, runId: string, job: ClaimedJob, body: CassetteBody, attempt: number, opts: RunOptions,
+): Promise<ResearchOutcome> {
+  await transition(db, job.id, "persisting");
+  const findings = await persist(db, runId, job.id, job.company_id, body, attempt, opts);
+  await transition(db, job.id, "completed");
+  const budget = await recordSpend(db, runId, body.cost_usd ?? 0);
+  const state = (await db.get("select state from enrichment_jobs where id = ?", job.id) as { state: string }).state;
+  return { runId, jobId: job.id, findings, spendUsd: budget.spend, jobState: state };
+}
+
+function safeJson(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === "object") return raw as Record<string, unknown>;
+  try { return JSON.parse(String(raw)) as Record<string, unknown>; } catch { return {}; }
 }
 
 /** Step two: derive findings from the STORED response and run every one through the gate. */
@@ -442,6 +583,45 @@ export async function storeDocument(db: Sql, doc: FetchedDocument): Promise<stri
 }
 
 /**
+ * Documents back out of the store, in the order asked for.
+ *
+ * ORDER IS THE POINT. An extraction answer cites its source by position in the
+ * list it was given, so a list that comes back in the database's order, or
+ * short one row, attributes a finding to a different filing. Missing hashes
+ * are simply absent and the caller compares the lengths.
+ */
+export async function loadDocuments(
+  db: Sql, hashes: readonly string[],
+): Promise<FetchedDocument[]> {
+  if (hashes.length === 0) return [];
+  const rows = await db.all(
+    `select content_hash, url, final_url, retrieved_at, extractor, extractor_version,
+            normalization_version, text_content, char_count, page_count, chars_per_page,
+            source_tier, doc_type, has_text_layer
+       from documents where content_hash in (${hashes.map(() => "?").join(", ")})`,
+    ...hashes) as Array<Record<string, unknown>>;
+  const byHash = new Map(rows.map((r) => [String(r.content_hash), r]));
+  return hashes.map((h) => byHash.get(h)).filter((r) => r !== undefined).map((r) => ({
+    contentHash: String(r.content_hash),
+    url: String(r.url),
+    finalUrl: String(r.final_url ?? r.url),
+    retrievedAt: String(r.retrieved_at),
+    extractor: String(r.extractor),
+    extractorVersion: String(r.extractor_version),
+    normalizationVersion: String(r.normalization_version),
+    // Retention clears the text at 90 days and keeps the row, so a document
+    // can exist with nothing to read. An empty string is the honest reading.
+    text: r.text_content === null || r.text_content === undefined ? "" : String(r.text_content),
+    charCount: Number(r.char_count),
+    pageCount: Number(r.page_count),
+    charsPerPage: Number(r.chars_per_page),
+    sourceTier: Number(r.source_tier) as FetchedDocument["sourceTier"],
+    docType: String(r.doc_type) as FetchedDocument["docType"],
+    hasTextLayer: Number(r.has_text_layer) === 1,
+  }));
+}
+
+/**
  * The per-run hallucination rate that gates publish.
  *
  * Abstentions are excluded deliberately: a model that says it cannot find a
@@ -543,14 +723,7 @@ export async function processJob(
     throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
   }
 
-  await transition(db, job.id, "persisting");
-  const findings = await persist(db, runId, job.id, job.company_id, body, attempt, opts);
-  await transition(db, job.id, "completed");
-
-  const budget = await recordSpend(db, runId, body.cost_usd ?? 0);
-  const state = (await db.get("select state from enrichment_jobs where id = ?", job.id) as { state: string }).state;
-
-  return { runId, jobId: job.id, findings, spendUsd: budget.spend, jobState: state };
+  return await finishJob(db, runId, job, body, attempt, opts);
 }
 
 /** Drive one job from queued to completed. */

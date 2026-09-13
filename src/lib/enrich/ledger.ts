@@ -30,7 +30,11 @@ const TRANSITIONS: Record<JobState, JobState[]> = {
   queued: ["claimed"],
   claimed: ["researching", "queued"],
   researching: ["awaiting_batch", "persisting", "queued", "halted", "dead_letter"],
-  awaiting_batch: ["persisting", "halted"],
+  // queued, because a batch that EXPIRES is not a failure. The API gives a
+  // batch 24 hours; past that the request comes back unanswered, and the job
+  // returns to the queue with its attempt given back -- the same treatment a
+  // lapsed lease gets, and for the same reason.
+  awaiting_batch: ["persisting", "queued", "halted", "dead_letter"],
   persisting: ["completed", "dead_letter"],
   completed: [],
   halted: ["queued"],

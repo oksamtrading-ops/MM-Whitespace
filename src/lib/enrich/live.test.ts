@@ -6,13 +6,16 @@ import type { Sql } from "../db/sql.ts";
 import { regionFrom, resetTickerCache } from "./edgar.ts";
 import type { HttpResponse } from "./fetch.ts";
 import { claimJobs, ensureSlots } from "./ledger.ts";
+import { drain, settleReady } from "./drain.ts";
+import { tick } from "./tick.ts";
+import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
   canonicalAuditor, collectSearchUrls, kindFromUrl, linkedFilings, Meter, toFinding, windowsOf,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
 import { EgressViolation } from "./prompt.ts";
 import { extractPdf } from "./pdf.ts";
-import { createRun, JobFailed, processJob, storeDocument } from "./worker.ts";
+import { createRun, JobFailed, loadDocuments, processJob, storeDocument } from "./worker.ts";
 import { seedFixtureDatabase, PERIOD_AS_OF } from "../../../tests/cassettes/build_cassettes.mjs";
 import { makePdf } from "../../../tests/fixtures/make_pdf.mjs";
 
@@ -118,7 +121,8 @@ const EXTRACTION = { findings: [
     text_value: null, year_value: null, stage: null, auditor_change: null, fee: null },
 ] };
 
-function vendor(opts: { pauseFirst?: boolean; refuse?: boolean; report?: Record<string, unknown> } = {}) {
+function vendor(opts: { pauseFirst?: boolean; refuse?: boolean; perCompany?: boolean;
+                        report?: Record<string, unknown> } = {}) {
   const requests: Array<Record<string, unknown>> = [];
   let discoveries = 0;
   const v: Vendor = {
@@ -130,6 +134,19 @@ function vendor(opts: { pauseFirst?: boolean; refuse?: boolean; report?: Record<
       const tools = (request.tools ?? []) as Array<{ name: string }>;
       if (tools.some((t) => t.name === "report_sources")) {
         discoveries++;
+        // Answer the company that was actually asked about. Two companies that
+        // get identical answers cannot expose a result matched to the wrong
+        // request, which is the whole risk the Batch API introduces.
+        if (opts.perCompany) {
+          const asked = JSON.stringify(request.messages ?? "");
+          const who = asked.includes("Royalco") ? "royalco" : "northco";
+          return { stop_reason: "tool_use", usage, content: [
+            searchBlock([`https://${who}.invalid/`]),
+            { type: "tool_use", id: "t1", name: "report_sources",
+              input: { ...DISCOVERY_REPORT, official_website: `https://${who}.invalid`,
+                       sec_cik: null, documents: [] } },
+          ] } as VendorMessage;
+        }
         if (opts.pauseFirst && discoveries === 1) {
           return { content: [searchBlock(["https://northco.invalid/"])], stop_reason: "pause_turn", usage } as VendorMessage;
         }
@@ -171,6 +188,7 @@ async function runOne(db: Sql, periodId: string, companyId: string, fieldGroup: 
 
 function deps(db: Sql, v: Vendor, fetchDeps: LiveDeps["fetch"], terms: string[] = []): LiveDeps {
   return { vendor: v, fetch: fetchDeps, store: (doc) => storeDocument(db, doc),
+           load: (hashes) => loadDocuments(db, hashes),
            restrictions: { terms, restrictedCompanyNames: [] } };
 }
 
@@ -400,4 +418,199 @@ test("values that do not fit their field are dropped, not stored", () => {
   assert.equal(canonicalAuditor("PricewaterhouseCoopers LLP"), "PwC");
   assert.equal(canonicalAuditor("Ernst & Young LLP"), "Ernst & Young");
   assert.equal(canonicalAuditor("Some Regional Firm LLP"), "Some Regional Firm LLP");
+});
+
+
+/* --------------------------------------------------------- the Batch API */
+
+/**
+ * A Batch API backed by the same fake vendor the synchronous tests use.
+ *
+ * Answering batched requests with the identical vendor is the point: any
+ * difference the tests below find is a difference in OUR two paths, not in
+ * two fakes. Results come back reversed, because the real API returns them in
+ * any order and position must never be load-bearing.
+ */
+function batchVendor(v: Vendor, opts: { expire?: boolean; error?: unknown } = {}) {
+  const batches = new Map<string, BatchResult[]>();
+  let n = 0;
+  const vendor: BatchVendor = {
+    async create(requests: BatchRequest[]): Promise<BatchHandle> {
+      const id = `msgbatch_${++n}`;
+      const answers: BatchResult[] = [];
+      for (const r of requests) {
+        if (opts.expire) { answers.push({ custom_id: r.custom_id, result: { type: "expired" } }); continue; }
+        if (opts.error) { answers.push({ custom_id: r.custom_id, result: { type: "errored", error: opts.error } }); continue; }
+        answers.push({ custom_id: r.custom_id,
+                       result: { type: "succeeded", message: await v.create(r.params) } });
+      }
+      batches.set(id, answers.reverse());
+      return { id, processing_status: "in_progress" };
+    },
+    async retrieve(id) { return { id, processing_status: "ended" }; },
+    async results(id) { return (batches.get(id) ?? [])[Symbol.iterator]() as unknown as AsyncIterable<BatchResult>; },
+  };
+  return { vendor, batches };
+}
+
+async function drainBatched(db: Sql, live: LiveDeps, vendor: BatchVendor) {
+  return drain(db, { deadlineSeconds: 30, mode: "live", cassetteDir: CASSETTE_DIR,
+                     batch: true, batchVendor: vendor, live, workerId: `w-${Math.random()}` });
+}
+
+async function findingsOf(db: Sql, runId: string) {
+  return await db.all(`select field_key, state, anchor_mode, proposed_value
+      from enrichment_findings where run_id = ? order by field_key`, runId) as Array<Record<string, string>>;
+}
+
+test("BATCH: a batched pass produces exactly what the synchronous one does", async () => {
+  // The whole reason each pass is cut in half at its model call rather than
+  // reimplemented: the two paths run the same code on either side of the gap.
+  const run = async (batched: boolean) => {
+    const { db, periodId, northco } = await seeded();
+    const { v } = vendor();
+    const { fetchDeps } = world();
+    const live = deps(db, v, fetchDeps);
+    const { runId } = await createRun(db, periodId, [northco.id],
+      { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+    if (!batched) {
+      await ensureSlots(db, 1);
+      const [job] = await claimJobs(db, runId, "w1", 1);
+      await processJob(db, runId, job, PERIOD_AS_OF, { mode: "live", cassetteDir: CASSETTE_DIR, live });
+    } else {
+      const { vendor: bv } = batchVendor(v);
+      const submit = await drainBatched(db, live, bv);
+      assert.equal(submit.jobsBatched, 1, "the job was handed to the batch, not researched");
+      assert.equal(
+        (await db.get("select state from enrichment_jobs where run_id = ?", runId) as { state: string }).state,
+        "awaiting_batch", "and it waits there rather than completing");
+      assert.deepEqual(await findingsOf(db, runId), [], "nothing is derived before the answer arrives");
+
+      const settle = await drainBatched(db, live, bv);
+      assert.equal(settle.jobsSettled, 1);
+    }
+    const state = (await db.get("select state from enrichment_jobs where run_id = ?", runId) as { state: string }).state;
+    assert.equal(state, "completed", batched ? "batched" : "synchronous");
+    return findingsOf(db, runId);
+  };
+
+  assert.deepEqual(await run(true), await run(false),
+                   "the same company, the same findings, whichever path asked");
+});
+
+test("BATCH: an expired request goes back to the queue and is charged no attempt", async () => {
+  // A batch has 24 hours and the world sometimes takes longer. That is not the
+  // company's fault, and must not eat one of its three attempts.
+  const { db, periodId, northco } = await seeded();
+  const { v } = vendor();
+  const { fetchDeps } = world();
+  const live = deps(db, v, fetchDeps);
+  const { runId } = await createRun(db, periodId, [northco.id],
+    { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+  const { vendor: bv } = batchVendor(v, { expire: true });
+
+  await drainBatched(db, live, bv);
+  const submitted = await db.get("select state, attempts from enrichment_jobs where run_id = ?", runId) as
+    { state: string; attempts: number };
+  assert.equal(submitted.state, "awaiting_batch");
+  assert.equal(submitted.attempts, 1, "entering research charges one");
+
+  // settleReady rather than a whole drain: a drain would requeue the job and
+  // then immediately claim and re-submit it, which is right but hides the one
+  // thing under test.
+  await settleReady(db, bv, { deadlineSeconds: 30, mode: "live", cassetteDir: CASSETTE_DIR, live });
+  const after = await db.get("select state, attempts, batch_id from enrichment_jobs where run_id = ?", runId) as
+    { state: string; attempts: number; batch_id: string | null };
+  assert.equal(after.state, "queued", "it is claimable again");
+  assert.equal(after.attempts, 0, "and the attempt was given back");
+  assert.equal(after.batch_id, null, "and it is no longer pointed at a batch that never answered");
+
+  // And a worker picks it straight back up rather than leaving it for a tick.
+  await drainBatched(db, live, bv);
+  assert.equal(
+    (await db.get("select state from enrichment_jobs where run_id = ?", runId) as { state: string }).state,
+    "awaiting_batch", "it is asked again");
+});
+
+test("BATCH: the discount is in the ledger, not just in the invoice", async () => {
+  // The budget that halts a run reads this number. A meter that priced a
+  // batched request at full rate would halt a run at half its budget.
+  const { db, periodId, northco } = await seeded();
+  const { v } = vendor();
+  const { fetchDeps } = world();
+  const live = deps(db, v, fetchDeps);
+  const spend = async (batched: boolean) => {
+    const { runId } = await createRun(db, periodId, [northco.id],
+      { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+    if (batched) {
+      const { vendor: bv } = batchVendor(v);
+      await drainBatched(db, live, bv);
+      await drainBatched(db, live, bv);
+    } else {
+      await ensureSlots(db, 1);
+      const [job] = await claimJobs(db, runId, `w-${Math.random()}`, 1);
+      await processJob(db, runId, job, PERIOD_AS_OF, { mode: "live", cassetteDir: CASSETTE_DIR, live });
+    }
+    const r = await db.get("select spend_usd from enrichment_runs where id = ?", runId) as { spend_usd: number };
+    return Number(r.spend_usd);
+  };
+  const batchedSpend = await spend(true);
+  const liveSpend = await spend(false);
+  assert.ok(batchedSpend > 0 && liveSpend > 0, `${batchedSpend} / ${liveSpend}`);
+  assert.ok(Math.abs(batchedSpend - liveSpend / 2) < 1e-9,
+            `a batched company costs half: ${batchedSpend} against ${liveSpend}`);
+});
+
+test("BATCH: an open batch is work, so the tick still invokes a worker", async () => {
+  // Once every job is submitted nothing is queued. Without counting batches
+  // the tick would conclude "nothing to do" and the answers would never be
+  // collected -- a period that stops advancing, with no error anywhere.
+  const { db, periodId, northco } = await seeded();
+  const { v } = vendor();
+  const { fetchDeps } = world();
+  const { vendor: bv } = batchVendor(v);
+  await createRun(db, periodId, [northco.id],
+    { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+  await drainBatched(db, deps(db, v, fetchDeps), bv);
+
+  const queued = await db.get("select count(*) n from enrichment_jobs where state = 'queued'") as { n: number };
+  assert.equal(Number(queued.n), 0, "nothing is queued");
+  const t = await tick(db, { kick: async () => ({ ok: true, note: "kicked" }) });
+  assert.equal(t.pending, 0);
+  assert.equal(t.openBatches, 1);
+  assert.equal(t.invokedWorker, true, "a worker is still invoked, to collect the answer");
+});
+
+test("BATCH: two companies in one batch are told apart by custom_id, never by position", async () => {
+  // The worst output this system can produce is a well-cited value from the
+  // wrong company's filing, and reading results by position is how that would
+  // happen: the API returns them in ANY order. The fake returns them reversed.
+  resetTickerCache();
+  const { db, periodId, companies } = seedFixtureDatabase() as {
+    db: Sql; periodId: string; companies: Array<{ id: string; name: string }>;
+  };
+  assert.ok(companies.length >= 2, "this test needs two companies");
+  const { v } = vendor({ perCompany: true });
+  const { fetchDeps } = world();
+  const live = deps(db, v, fetchDeps);
+  const { vendor: bv } = batchVendor(v);
+
+  const ids = companies.slice(0, 2).map((c) => c.id);
+  await createRun(db, periodId, ids, { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+  const submit = await drainBatched(db, live, bv);
+  assert.equal(submit.jobsBatched, 2, "both went in one batch");
+  await drainBatched(db, live, bv);
+
+  // Each company's own answer must land on its own row. The two answers name
+  // different websites, so a result read by position lands the wrong one.
+  const rows = await db.all(`select c.canonical_name as name, e.proposed_value as value
+       from enrichment_findings e join companies c on c.id = e.company_id
+      where e.field_key = 'website' order by c.canonical_name`) as
+    Array<{ name: string; value: string }>;
+  assert.equal(rows.length, 2, `both companies proposed a website: ${JSON.stringify(rows)}`);
+  for (const r of rows) {
+    const expected = r.name.startsWith("Royalco") ? "royalco" : "northco";
+    assert.match(String(r.value), new RegExp(expected),
+      `${r.name} was given ${r.value}, which is the other company's answer`);
+  }
 });

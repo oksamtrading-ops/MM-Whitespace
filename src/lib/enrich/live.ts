@@ -77,19 +77,48 @@ export const PRICES: Record<string, { in: number; out: number; cw5: number; cw1h
 };
 export const WEB_SEARCH_USD = 0.01;
 
+/**
+ * The Batch API's discount. Every token in a batched request is half price,
+ * so a meter that did not know would overstate the run's spend twofold -- and
+ * the budget that halts a run reads that number.
+ */
+export const BATCH_DISCOUNT = 0.5;
+
 /** Usage and cost across every call a job makes. */
 export class Meter {
   usage: Record<string, number> = {};
   cost = 0;
+  /**
+   * Scales every price. 0.5 for a request answered by the Batch API.
+   *
+   * A plain field assigned in the body, not a parameter property: `node --test`
+   * strips types rather than compiling them, and refuses that syntax.
+   */
+  readonly rate: number;
+  constructor(rate = 1) { this.rate = rate; }
+
+  /**
+   * Carry a suspended pass's spend across the gap.
+   *
+   * A batched pass is metered by two processes -- the one that fetched and
+   * submitted, and the one that reads the answer hours later. Without this the
+   * first half's cost is simply lost from the run's total.
+   */
+  seed(usage: Record<string, number> | undefined, cost: number | undefined): void {
+    for (const [k, v] of Object.entries(usage ?? {})) this.usage[k] = (this.usage[k] ?? 0) + Number(v || 0);
+    this.cost += cost ?? 0;
+  }
+
   add(model: string, u: VendorMessage["usage"]): void {
     const p = PRICES[model] ?? PRICES["claude-opus-5"];
     const cw5 = u.cache_creation?.ephemeral_5m_input_tokens ?? 0;
     // Without the breakdown, price every cache write at the dearer 1-hour rate.
     const cw1h = u.cache_creation?.ephemeral_1h_input_tokens ?? ((u.cache_creation_input_tokens ?? 0) - cw5);
     const searches = u.server_tool_use?.web_search_requests ?? 0;
-    this.cost += ((u.input_tokens ?? 0) * p.in + (u.output_tokens ?? 0) * p.out +
-                  cw5 * p.cw5 + Math.max(0, cw1h) * p.cw1h + (u.cache_read_input_tokens ?? 0) * p.cr) / 1e6
-               + searches * WEB_SEARCH_USD;
+    this.cost += this.rate *
+      (((u.input_tokens ?? 0) * p.in + (u.output_tokens ?? 0) * p.out +
+        cw5 * p.cw5 + Math.max(0, cw1h) * p.cw1h + (u.cache_read_input_tokens ?? 0) * p.cr) / 1e6
+       + searches * WEB_SEARCH_USD);
     for (const [k, v] of Object.entries({
       input_tokens: u.input_tokens, output_tokens: u.output_tokens,
       cache_read_input_tokens: u.cache_read_input_tokens, cache_creation_input_tokens: u.cache_creation_input_tokens,
@@ -103,6 +132,14 @@ export type LiveDeps = {
   fetch: FetchDeps;
   /** Persist a fetched document's text (worker.storeDocument). */
   store: (doc: FetchedDocument) => Promise<unknown>;
+  /**
+   * Read documents back by content hash, in the order asked for.
+   *
+   * The counterpart of store, and the reason a pass can be suspended between
+   * its fetching and its extraction: a batch submitted now is answered by a
+   * different worker minutes later, with nothing of this one's memory.
+   */
+  load: (hashes: readonly string[]) => Promise<FetchedDocument[]>;
   restrictions: RestrictionSet;
 };
 
@@ -206,30 +243,59 @@ export function collectSearchUrls(node: unknown, into: Set<string>): void {
   for (const v of Object.values(o)) if (v && typeof v === "object") collectSearchUrls(v, into);
 }
 
-export async function discover(row: PublicCompanyRow, deps: LiveDeps, meter: Meter): Promise<Discovery> {
+/**
+ * The discovery request, built and not sent.
+ *
+ * Separated from the sending so the SAME request can go to the Batch API. The
+ * web searches happen inside this one call -- the tool is server-side -- so
+ * one request is the whole of discovery in the ordinary case: in Run 2 all 30
+ * identity jobs and 40 of 41 field jobs made exactly one vendor call. The loop
+ * below exists for the company where it does not.
+ */
+export function discoveryRequest(row: PublicCompanyRow): Record<string, unknown> {
   const cfg = ROUTE_CONFIG.discovery;
   const prompt = buildPrompt("discovery", row);
-  const system = [{ type: "text", text: `${prompt.stablePrefix}\n\n${DISCOVERY_RULES}`,
-                    cache_control: { type: "ephemeral", ttl: "1h" } }];
-  // A constant tools block: a per-company domain list here would rebuild the
-  // cache for every company (docs/design/06).
-  const tools = [
-    { type: "web_search_20260209", name: "web_search", max_uses: 6, blocked_domains: EXCLUDED_DOMAINS },
-    REPORT_TOOL,
-  ];
-  const messages: Array<Record<string, unknown>> = [{ role: "user", content: prompt.userContent }];
+  return {
+    model: cfg.model, max_tokens: 16000, thinking: { type: "adaptive" },
+    output_config: { effort: cfg.effort },
+    system: [{ type: "text", text: `${prompt.stablePrefix}\n\n${DISCOVERY_RULES}`,
+               cache_control: { type: "ephemeral", ttl: "1h" } }],
+    // A constant tools block: a per-company domain list here would rebuild the
+    // cache for every company (docs/design/06).
+    tools: [
+      { type: "web_search_20260209", name: "web_search", max_uses: 6, blocked_domains: EXCLUDED_DOMAINS },
+      REPORT_TOOL,
+    ],
+    messages: [{ role: "user", content: prompt.userContent }],
+  };
+}
+
+/** The report out of one answer, or null when the model has not filed one yet. */
+function reportIn(msg: VendorMessage): Discovery["report"] | null {
+  const block = msg.content.find((b) => b.type === "tool_use" && b.name === "report_sources");
+  return block ? block.input as Discovery["report"] : null;
+}
+
+/**
+ * Read the report out of the first answer, forcing one if it is missing.
+ *
+ * Both the synchronous path and the batch's resume come through here, so a
+ * batched discovery and a live one cannot diverge -- and a batch result that
+ * arrived without a report is finished synchronously rather than thrown away.
+ */
+export async function continueDiscovery(
+  request: Record<string, unknown>, first: VendorMessage, deps: LiveDeps, meter: Meter,
+): Promise<Discovery> {
+  const messages = [...(request.messages as Array<Record<string, unknown>>)];
   const seenUrls = new Set<string>();
+  let msg = first;
 
   for (let turn = 0; turn < 6; turn++) {
-    const msg = await call(deps, meter, {
-      model: cfg.model, max_tokens: 16000, thinking: { type: "adaptive" },
-      output_config: { effort: cfg.effort }, system, tools, messages,
-    });
     collectSearchUrls(msg.content, seenUrls);
-    const report = msg.content.find((b) => b.type === "tool_use" && b.name === "report_sources");
+    const report = reportIn(msg);
     if (report) {
       const seenHosts = new Set([...seenUrls].map(hostOf).filter((h): h is string => Boolean(h)));
-      return { report: report.input as Discovery["report"], seenUrls, seenHosts };
+      return { report, seenUrls, seenHosts };
     }
     if (msg.stop_reason === "max_tokens") throw new Error("discovery ran out of output tokens before reporting");
     messages.push({ role: "assistant", content: msg.content });
@@ -237,8 +303,14 @@ export async function discover(row: PublicCompanyRow, deps: LiveDeps, meter: Met
     if (msg.stop_reason !== "pause_turn") {
       messages.push({ role: "user", content: "Call report_sources now with what you found. Use null where you found nothing." });
     }
+    msg = await call(deps, meter, { ...request, messages });
   }
   throw new Error("discovery did not report its sources within six turns");
+}
+
+export async function discover(row: PublicCompanyRow, deps: LiveDeps, meter: Meter): Promise<Discovery> {
+  const request = discoveryRequest(row);
+  return continueDiscovery(request, await call(deps, meter, request), deps, meter);
 }
 
 /* ---------------------------------------------------------- identity pass */
@@ -321,8 +393,34 @@ export type LiveJob = {
 
 export type LiveBody = CassetteBody & { candidates?: CandidateDoc[]; notes?: string[] };
 
-export async function identityPass(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<LiveBody> {
-  const found = await discover(job.row, deps, meter);
+/**
+ * A pass, cut in half at its model call.
+ *
+ * Everything before the call is `prepare`; everything after it is `resume`.
+ * The synchronous path is prepare, call, resume -- so there is ONE
+ * implementation of each pass, and a batched company and a live one cannot
+ * drift apart. A pass that finishes without needing the model at all (pass 2
+ * where nothing was fetchable) returns its body from prepare.
+ */
+export type Prepared =
+  | { kind: "request"; request: Record<string, unknown>; context: PassContext }
+  | { kind: "done"; body: LiveBody };
+
+/** What resume needs and the worker that submitted the batch will not be alive to hold. */
+export type PassContext = {
+  /** Documents pass 2 fetched, by content hash, in the order the prompt indexes them. */
+  docHashes?: string[];
+  notes?: string[];
+};
+
+export function identityPrepare(job: LiveJob): Prepared {
+  return { kind: "request", request: discoveryRequest(job.row), context: {} };
+}
+
+export async function identityResume(
+  job: LiveJob, _context: PassContext, first: VendorMessage, deps: LiveDeps, meter: Meter,
+): Promise<LiveBody> {
+  const found = await continueDiscovery(discoveryRequest(job.row), first, deps, meter);
   const findings: ProposedFinding[] = [];
   const documents: NonNullable<CassetteBody["documents"]> = [];
   const notes: string[] = [];
@@ -366,6 +464,13 @@ export async function identityPass(job: LiveJob, deps: LiveDeps, meter: Meter): 
   }
 
   return { findings, documents, usage: meter.usage, cost_usd: meter.cost, candidates, notes };
+}
+
+export async function identityPass(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<LiveBody> {
+  const prepared = identityPrepare(job);
+  if (prepared.kind === "done") return prepared.body;
+  const msg = await call(deps, meter, prepared.request);
+  return identityResume(job, prepared.context, msg, deps, meter);
 }
 
 /* ------------------------------------------------------------ fields pass */
@@ -631,7 +736,7 @@ export function linkedFilings(links: string[], allow: Set<string>, seen: Set<str
   return picked;
 }
 
-export async function fieldsPass(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<LiveBody> {
+export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<Prepared> {
   const siteHost = job.website ? hostOf(job.website) : null;
   if (!siteHost) {
     throw new Error("the fields pass needs a website the application trusts; run the identity pass and accept its website first");
@@ -680,7 +785,10 @@ export async function fieldsPass(job: LiveJob, deps: LiveDeps, meter: Meter): Pr
     docs.push(doc);
   }
   if (docs.length === 0) {
-    return { findings: [], documents: [], usage: meter.usage, cost_usd: meter.cost, notes };
+    // Nothing to read, so nothing to ask. This pass finishes without a model
+    // call, which is why prepare may return a finished body.
+    return { kind: "done",
+             body: { findings: [], documents: [], usage: meter.usage, cost_usd: meter.cost, notes } };
   }
 
   let budget = MAX_CHARS_TOTAL;
@@ -692,13 +800,35 @@ export async function fieldsPass(job: LiveJob, deps: LiveDeps, meter: Meter): Pr
 
   const cfg = ROUTE_CONFIG.extract_general;
   const prompt = buildPrompt("extract_general", job.row);
-  const msg = await call(deps, meter, {
-    model: cfg.model, max_tokens: 16000, thinking: { type: "adaptive" },
-    output_config: { effort: cfg.effort, format: { type: "json_schema", schema: EXTRACTION_SCHEMA } },
-    system: [{ type: "text", text: `${prompt.stablePrefix}\n\n${EXTRACTION_RULES}`,
-               cache_control: { type: "ephemeral", ttl: "1h" } }],
-    messages: [{ role: "user", content: [...blocks, { type: "text", text: prompt.userContent }] }],
-  });
+  return {
+    kind: "request",
+    request: {
+      model: cfg.model, max_tokens: 16000, thinking: { type: "adaptive" },
+      output_config: { effort: cfg.effort, format: { type: "json_schema", schema: EXTRACTION_SCHEMA } },
+      system: [{ type: "text", text: `${prompt.stablePrefix}\n\n${EXTRACTION_RULES}`,
+                 cache_control: { type: "ephemeral", ttl: "1h" } }],
+      messages: [{ role: "user", content: [...blocks, { type: "text", text: prompt.userContent }] }],
+    },
+    // The documents are named by hash rather than carried: the worker that
+    // reads the answer is not the one that fetched them. They are already
+    // stored -- deps.store above -- so the hash is enough.
+    context: { docHashes: docs.map((d) => d.contentHash), notes },
+  };
+}
+
+export async function fieldsResume(
+  _job: LiveJob, context: PassContext, msg: VendorMessage, deps: LiveDeps, meter: Meter,
+): Promise<LiveBody> {
+  const notes = context.notes ?? [];
+  const docs = await deps.load(context.docHashes ?? []);
+  if (docs.length !== (context.docHashes ?? []).length) {
+    // document_index in the answer points into THIS list. A short list would
+    // silently attribute a finding to the wrong filing, which is the worst
+    // output this system can produce.
+    throw new Error(
+      `the extraction cited ${(context.docHashes ?? []).length} document(s) but only ` +
+      `${docs.length} could be read back; refusing to map findings onto a different list`);
+  }
   if (msg.stop_reason === "max_tokens") throw new Error("extraction ran out of output tokens");
   const text = msg.content.filter((b) => b.type === "text").map((b) => String(b.text)).join("");
   let parsed: { findings: Extracted[] };
@@ -707,6 +837,27 @@ export async function fieldsPass(job: LiveJob, deps: LiveDeps, meter: Meter): Pr
   const findings = parsed.findings.map((e) => toFinding(e, docs)).filter((f): f is ProposedFinding => f !== null);
   const documents = docs.map((d) => asStored(d, detectScale(d.text) ?? null));
   return { findings, documents, usage: meter.usage, cost_usd: meter.cost, notes };
+}
+
+export async function fieldsPass(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<LiveBody> {
+  const prepared = await fieldsPrepare(job, deps, meter);
+  if (prepared.kind === "done") return prepared.body;
+  const msg = await call(deps, meter, prepared.request);
+  return fieldsResume(job, prepared.context, msg, deps, meter);
+}
+
+/** Prepare one pass: everything up to, but not including, its model call. */
+export async function preparePass(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<Prepared> {
+  return job.pass === "identity" ? identityPrepare(job) : fieldsPrepare(job, deps, meter);
+}
+
+/** Finish one pass from the answer to that call, whoever obtained it. */
+export async function resumePass(
+  job: LiveJob, context: PassContext, msg: VendorMessage, deps: LiveDeps, meter: Meter,
+): Promise<LiveBody> {
+  return job.pass === "identity"
+    ? identityResume(job, context, msg, deps, meter)
+    : fieldsResume(job, context, msg, deps, meter);
 }
 
 export async function researchLive(job: LiveJob, deps: LiveDeps): Promise<LiveBody> {
