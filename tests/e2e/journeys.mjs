@@ -100,6 +100,38 @@ function startRunDirectly(dbPath, email) {
   }
 }
 
+/**
+ * Accept a field's current proposal, then record a LATER one that says
+ * something else -- the situation Run 1 produced twice. Done straight into the
+ * database because the clock is what matters: the decision must predate the
+ * proposal, and both happen within one second of each other here.
+ */
+function supersedeDecision(dbPath, fieldKey, newValue) {
+  execFileSync("node", ["--input-type=module", "-e", `
+    import { DatabaseSync } from "node:sqlite";
+    const db = new DatabaseSync(${JSON.stringify(dbPath)});
+    const f = db.prepare(\`select e.*, r.period_id from enrichment_findings e
+        join enrichment_runs r on r.id = e.run_id
+       where e.field_key = ? order by e.created_at limit 1\`).get(${JSON.stringify(fieldKey)});
+    db.prepare(\`insert into review_decisions
+        (period_id, company_id, field_key, decision, finding_id, finding_attempt, decided_at)
+        values (?, ?, ?, 'accept', ?, ?, '2026-01-01 00:00:00')\`)
+      .run(f.period_id, f.company_id, f.field_key, f.id, f.attempt);
+    db.prepare(\`insert into company_period_field_values
+        (period_id, company_id, field_key, value, source, evidence_state)
+        values (?, ?, ?, ?, 'ai_accepted', 'asserted')
+        on conflict (period_id, company_id, field_key) do update set value = excluded.value,
+            source = 'ai_accepted'\`)
+      .run(f.period_id, f.company_id, f.field_key, f.proposed_value);
+    db.prepare(\`insert into enrichment_findings
+        (run_id, job_id, attempt, company_id, field_key, proposed_value, evidence_strength,
+         anchor_mode, state, evidence_excerpt, model, prompt_version, created_at)
+        values (?, ?, ?, ?, ?, ?, 0.9, 'exact_normalized', 'proposed', ?, ?, ?, '2026-06-01 00:00:00')\`)
+      .run(f.run_id, f.job_id, f.attempt + 90, f.company_id, f.field_key,
+           ${JSON.stringify(newValue)}, f.evidence_excerpt ?? 'a later filing', f.model, f.prompt_version);
+  `], { cwd: ROOT, stdio: "ignore" });
+}
+
 function setActive(dbPath, email, active) {
   execFileSync("node", ["--input-type=module", "-e", `
     import { DatabaseSync } from "node:sqlite";
@@ -395,6 +427,21 @@ async function journeys(dbPath) {
     put(before?.value, before?.source, before?.evidence_state);
     handle.close();
   }
+
+  // Run 1, twice over: a value accepted, then researched again with a better
+  // answer, and the row hidden from every queue because it counted as decided
+  // -- with its controls hidden too, so even finding it left nothing to click.
+  supersedeDecision(dbPath, "auditor", '"Ernst & Young"');
+  const supersededBoard = (await get("/review", analyst.cookie)).html;
+  check("the board counts values that later research disagrees with",
+        supersededBoard.includes("accepted, then researched again"));
+  const superseded = await get("/review/auditor?bucket=superseded", analyst.cookie);
+  check("the row is listed, and says its decision has been overtaken",
+        superseded.html.includes("newer research") && superseded.html.includes("Ernst &amp; Young"),
+        "the superseded bucket did not open the row");
+  check("and it can be taken, which a decided row otherwise cannot",
+        superseded.html.includes("Take the newer research"),
+        "a decided row's controls stayed hidden, so the newer value could not be accepted");
 
   // 9. docs/design/03: run state is explicit and user-visible, and NEVER a
   //    bare spinner. Two of the seven states are derived, not stored.

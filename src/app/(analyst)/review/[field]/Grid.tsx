@@ -380,11 +380,20 @@ export default function Grid(props: Props) {
               </p>
               {row.tierNote && <p className="tiernote">{row.tierNote}</p>}
 
-              {!row.decided && (
+              {/* A decided row has no controls -- its decision stands, and Undo
+                  walks it back. The exception is a row research has overtaken:
+                  the whole point of surfacing it is that it can be taken, and
+                  with the controls hidden there was no way to (Run 1, twice). */}
+              {(!row.decided || row.newerThanDecision) && (
                 /* On a conflict the choice is between two named values, so the
                    controls name them. No default is pre-selected and nothing
                    resolves it by timing out. */
                 <div className="acts">
+                  {row.decided && row.newerThanDecision && (
+                    <p className="hint" style={{ width: "100%" }}>
+                      Accepted before this proposal existed. Taking it replaces the stored value.
+                    </p>
+                  )}
                   {row.conflict ? (
                     <>
                       <button type="button" className="btn" disabled={busy}
@@ -397,7 +406,8 @@ export default function Grid(props: Props) {
                   ) : (
                     <>
                       <button type="button" className="btn primary" disabled={busy}
-                              onClick={() => submit("accept")}>Accept <kbd>A</kbd></button>
+                              onClick={() => submit("accept")}>
+                        {row.decided ? "Take the newer research" : "Accept"} <kbd>A</kbd></button>
                       <button type="button" className="btn" disabled={busy}
                               onClick={() => setEditing(true)}>Override <kbd>O</kbd></button>
                     </>

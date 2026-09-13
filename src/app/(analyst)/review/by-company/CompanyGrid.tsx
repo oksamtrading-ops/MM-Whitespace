@@ -302,8 +302,15 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
               </p>
               {cell.tierNote && <p className="tiernote">{cell.tierNote}</p>}
 
-              {!cell.decided && (
+              {/* Decided rows keep their decision and are walked back with Undo
+                  -- except one research has overtaken, which must be takeable. */}
+              {(!cell.decided || cell.newerThanDecision) && (
                 <div className="acts">
+                  {cell.decided && cell.newerThanDecision && (
+                    <p className="hint" style={{ width: "100%" }}>
+                      Accepted before this proposal existed. Taking it replaces the stored value.
+                    </p>
+                  )}
                   {cell.conflict ? (
                     <>
                       <button type="button" className="btn" disabled={busy} onClick={keep}>
@@ -313,7 +320,8 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                     </>
                   ) : (
                     <button type="button" className="btn primary" disabled={busy}
-                            onClick={() => submit("accept")}>Accept <kbd>A</kbd></button>
+                            onClick={() => submit("accept")}>
+                      {cell.decided ? "Take the newer research" : "Accept"} <kbd>A</kbd></button>
                   )}
                   <button type="button" className="btn" disabled={busy} onClick={() => setEditing(true)}>
                     Override <kbd>O</kbd></button>
