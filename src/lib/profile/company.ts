@@ -265,10 +265,15 @@ type TierRow = {
 };
 
 /** The published population, for the company index. */
-export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Promise<Array<{
+export type CompanyRow = {
   companyId: string; name: string; ticker: string | null; exchange: string | null;
-  tier: number | null; status: string; auditor: string | null;
-}>>{
+  tier: number | null; status: string; footprint: string; auditor: string | null;
+  market: string | null; marketCap: number | null;
+  /** Canadian subdivision codes the company holds a property in, as recorded. */
+  provinces: string[];
+};
+
+export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Promise<CompanyRow[]> {
   const period = await db.get("select id from periods order by market_cap_as_of desc limit 1") as { id: string } | undefined;
   if (!period) return [];
   const pub = await db.get(`select id from period_publications where period_id = ? order by revision desc limit 1`, period.id) as { id: string } | undefined;
@@ -279,25 +284,31 @@ export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Pro
                 max(case when v.field_key = 'root_ticker' then cast(v.value as text) end) as ticker,
                 max(case when v.field_key = 'exchange' then cast(v.value as text) end) as exchange,
                 max(case when v.field_key = 'auditor' then cast(v.value as text) end) as auditor,
-                t.tier as tier, t.status as status
+                max(case when v.field_key = 'dtt_market' then cast(v.value as text) end) as market,
+                max(case when v.field_key = 'market_cap_cad' then cast(v.value as text) end) as market_cap,
+                max(case when v.field_key = 'property_regions' then cast(v.value as text) end) as regions,
+                t.tier as tier, t.status as status, t.footprint as footprint
            from published_period_tiers t
            join companies c on c.id = t.company_id
            left join published_period_values v
                   on v.publication_id = t.publication_id and v.company_id = t.company_id
           where t.publication_id = ? and c.status != 'merged'
-          group by c.id, c.canonical_name, t.tier, t.status
+          group by c.id, c.canonical_name, t.tier, t.status, t.footprint
           order by c.canonical_name`, pub.id)
     : await db.all(`select c.id as company_id, c.canonical_name as name,
                 max(case when v.field_key = 'root_ticker' then cast(v.value as text) end) as ticker,
                 max(case when v.field_key = 'exchange' then cast(v.value as text) end) as exchange,
                 max(case when v.field_key = 'auditor' then cast(v.value as text) end) as auditor,
-                t.tier as tier, t.status as status
+                max(case when v.field_key = 'dtt_market' then cast(v.value as text) end) as market,
+                max(case when v.field_key = 'market_cap_cad' then cast(v.value as text) end) as market_cap,
+                max(case when v.field_key = 'property_regions' then cast(v.value as text) end) as regions,
+                t.tier as tier, t.status as status, t.footprint as footprint
            from tiers t
            join companies c on c.id = t.company_id
            left join company_period_field_values v
                   on v.period_id = t.period_id and v.company_id = t.company_id
           where t.period_id = ? and c.status != 'merged'
-          group by c.id, c.canonical_name, t.tier, t.status
+          group by c.id, c.canonical_name, t.tier, t.status, t.footprint
           order by c.canonical_name`, period.id);
 
   return (rows as Array<Record<string, unknown>>).map((r) => ({
@@ -307,6 +318,17 @@ export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Pro
     exchange: (parseJson(r.exchange) as string | null) ?? null,
     tier: r.tier === null ? null : Number(r.tier),
     status: String(r.status),
+    footprint: String(r.footprint),
     auditor: (parseJson(r.auditor) as string | null) ?? null,
+    market: (parseJson(r.market) as string | null) ?? null,
+    marketCap: typeof parseJson(r.market_cap) === "number" ? (parseJson(r.market_cap) as number) : null,
+    provinces: canadianRegions(parseJson(r.regions)),
   }));
+}
+
+/** The CANADA group of a property_regions value, or nothing. */
+function canadianRegions(v: unknown): string[] {
+  if (!v || typeof v !== "object") return [];
+  const canada = (v as Record<string, unknown>).CANADA;
+  return Array.isArray(canada) ? canada.map(String) : [];
 }

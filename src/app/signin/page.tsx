@@ -4,6 +4,7 @@ import { authContext } from "../../lib/auth/context.ts";
 import { resolveUser } from "../../lib/auth/session.ts";
 import SignInButtons from "./SignInButtons.tsx";
 import SignInForm from "./SignInForm.tsx";
+import Orb from "../_ui/Orb.tsx";
 import { signOut } from "./actions.ts";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,16 @@ export default async function SignIn(
 
   return (
     <div className="signin rise">
-      <h1 translate="no">Whitespace<span className="stop" aria-hidden="true" /></h1>
+      {/* The lockup: the mark with the firm beneath it. Sign-in, print and the
+          export are the only places the firm's name joins the mark; inside the
+          product the wordmark stands alone. The lettering here is a
+          placeholder until the brand hub's own Deloitte wordmark asset is
+          supplied [confirm]. */}
+      <div className="lockup">
+        <h1 translate="no">Whitespace<span className="stop" aria-hidden="true" /></h1>
+        <span className="firm" translate="no">Deloitte</span>
+      </div>
+      <Orb className="orb" />
       {user ? (
         <>
           <p className="lede">

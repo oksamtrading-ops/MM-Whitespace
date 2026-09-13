@@ -5,12 +5,14 @@ import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { findDuplicateCandidates } from "../../../lib/identity/merge.ts";
 import { listCompanies } from "../../../lib/profile/company.ts";
 import Refusal from "../../_ui/Refusal.tsx";
-import Finder from "./Finder.tsx";
+import Roster from "./Roster.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Companies" };
 
-export default async function Companies() {
+export default async function Companies(
+  { searchParams }: { searchParams: Promise<{ province?: string }> },
+) {
   let ctx;
   try {
     ctx = await requireRole(["viewer", "analyst", "admin"]);
@@ -21,6 +23,7 @@ export default async function Companies() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
+  const { province } = await searchParams;
   const allowDraft = ctx.user.role !== "viewer";
   const rows = await listCompanies(ctx.db, { allowDraft });
   if (rows.length === 0) {
@@ -34,7 +37,7 @@ export default async function Companies() {
     : 0;
 
   return (
-    <div className="reading rise">
+    <div className="reading wide rise">
       <h1>Companies</h1>
       <p className="sub">
         Every company in the published population. Open one before a pursuit conversation:
@@ -49,7 +52,7 @@ export default async function Companies() {
           </span>
         </p>
       )}
-      <Finder rows={rows} deloitteAudits={deloitteAudits} />
+      <Roster rows={rows} deloitteAudits={deloitteAudits} province={province ?? null} />
     </div>
   );
 }

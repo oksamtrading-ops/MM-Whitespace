@@ -1,9 +1,12 @@
 import "./globals.css";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import { Archivo, Open_Sans } from "next/font/google";
 import { authContext } from "../lib/auth/context.ts";
 import { resolveUser } from "../lib/auth/session.ts";
 import Nav, { type NavItem } from "./_ui/Nav.tsx";
+import ThemeToggle from "./_ui/ThemeToggle.tsx";
+import { THEME_COOKIE, type Theme } from "./_ui/theme.ts";
 import { periodName } from "./_ui/format.ts";
 
 /* Open Sans is the brand face and carries everything you read. Archivo carries
@@ -19,7 +22,24 @@ const figure = Archivo({
   fallback: ["Arial Narrow", "Arial", "sans-serif"],
 });
 
-export const viewport = { themeColor: "#FFFFFF" };
+/* The theme is a cookie so the first paint is already in it. Absent a choice
+   the product is dark: that is the brand decision (docs/design/18), and the
+   light theme is one press away in the top bar. */
+async function readTheme(): Promise<Theme> {
+  const v = (await cookies()).get(THEME_COOKIE)?.value;
+  return v === "light" || v === "system" ? v : "dark";
+}
+
+export async function generateViewport(): Promise<Viewport> {
+  const theme = await readTheme();
+  if (theme === "system") {
+    return { themeColor: [
+      { media: "(prefers-color-scheme: light)", color: "#FFFFFF" },
+      { media: "(prefers-color-scheme: dark)", color: "#000000" },
+    ] };
+  }
+  return { themeColor: theme === "light" ? "#FFFFFF" : "#000000" };
+}
 
 export const metadata: Metadata = {
   title: { default: "Whitespace", template: "%s · Whitespace" },
@@ -33,6 +53,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const email = await ctx.claims.emailClaim(ctx.cookieHeader);
   const user = await resolveUser(ctx.db, email);
   const canReview = user?.role === "analyst" || user?.role === "admin";
+  const theme = await readTheme();
 
   const items: NavItem[] = [];
   if (canReview) items.push({ href: "/upload", label: "Upload" });
@@ -45,6 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   items.push({ href: "/dashboard", label: "Dashboard" });
   if (user?.role === "admin") items.push({ href: "/access", label: "Access" });
   if (user?.role === "admin") items.push({ href: "/settings", label: "Settings" });
+  if (user?.role === "admin") items.push({ href: "/styleguide", label: "Styleguide" });
 
   // The period chip. A Viewer is shown a period only once it is published;
   // draft state is the workstation's business.
@@ -58,13 +80,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const showPeriod = period && (period.revision !== null || canReview);
 
   return (
-    <html lang="en-CA" className={`${text.variable} ${figure.variable}`}>
+    <html lang="en-CA" data-theme={theme} className={`${text.variable} ${figure.variable}`}>
       <body>
         <a className="skip" href="#main">Skip to content</a>
         <header className="topbar">
           <a className="brand" href="/" translate="no">Whitespace<span className="stop" aria-hidden="true" /></a>
           <Nav items={items} />
           <div className="right">
+            <ThemeToggle initial={theme} />
             {showPeriod && (
               <span className="chip">
                 <span className={`dot${period.revision === null ? " draft" : ""}`} aria-hidden="true" />

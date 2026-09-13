@@ -6,7 +6,9 @@ This records the derivations doc 09 asked to have written down, so a later revie
 
 ## Palette
 
-Decision 8 (light-first) stands. The ground is true white and the type is black, which is what Deloitte is on paper. The earlier green-tinted off-white was a first-draft choice, not a brand one, and it read as a template.
+**Superseded, 13 September 2026.** Doc 18 reverses decision 8: the product is dark-first with this light system kept as a full second theme, for print, export and anyone who prefers it. The derivations below still govern the light theme and are unchanged; doc 18 records the reversal and its reasons.
+
+Decision 8 (light-first) stood when this was written. The ground is true white and the type is black, which is what Deloitte is on paper. The earlier green-tinted off-white was a first-draft choice, not a brand one, and it read as a template.
 
 | Token | Value | Role | Ratio on white |
 |---|---|---|---|

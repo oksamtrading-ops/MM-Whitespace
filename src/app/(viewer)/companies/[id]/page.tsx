@@ -130,6 +130,8 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
                  caption={p.trace
                    ? "Each rule in order. The one that fired decides, and the inputs it read are shown beside it."
                    : "The rule trace is not part of the frozen snapshot, and the rules have been re-run since this revision was published."}>
+          <div className="glance">
+          <div>
           {p.trace && p.trace.length > 0 ? (
             <ol className="trace">
               {p.trace.map((step) => (
@@ -151,6 +153,9 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
               ))}
             </ol>
           ) : p.trace ? <p className="empty">No rule was recorded for this company.</p> : null}
+          </div>
+          <Glance values={researched} />
+          </div>
           {p.tier && (
             <p className="note">
               Rule set <code>{p.tier.ruleSetVersion}</code>.{" "}
@@ -228,6 +233,37 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
           </p>
         )}
       </aside>
+    </div>
+  );
+}
+
+const BAND_CELLS: Record<string, number> = { low: 1, medium: 2, high: 3, "very high": 4 };
+
+/** Evidence at a glance: one line per researched value, beside the trace. */
+function Glance({ values }: { values: ProfileValue[] }) {
+  if (values.length === 0) return null;
+  return (
+    <div>
+      <p className="k">Evidence at a glance</p>
+      <ul className="ev-list">
+        {values.slice(0, 8).map((v) => {
+          const band = v.strength === null ? null : evidenceBand(v.strength);
+          return (
+            <li key={v.fieldKey}>
+              <span className="f">{v.label}</span>
+              {band === null
+                ? <span className="meta">accepted</span>
+                : <span className="ev">
+                    <span aria-hidden="true" className={`strip b-${band.replace(" ", "-")}`}>
+                      {[1, 2, 3, 4].map((c) => <i key={c} className={c <= (BAND_CELLS[band] ?? 0) ? "on" : ""} />)}
+                    </span>
+                    <span className="num">{v.strength!.toFixed(2)}</span>
+                    <span className="bandword">{band}</span>
+                  </span>}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

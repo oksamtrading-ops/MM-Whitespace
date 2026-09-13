@@ -9,7 +9,9 @@ import {
   populationTiles, PROVINCE_TITLE, proofLine, tierMigration, UNKNOWN_AUDITOR,
   type Aggregates, type Bar, type Gated,
 } from "../../../lib/publish/views.ts";
-import Bars from "../../_ui/Bars.tsx";
+import Bars, { Footing } from "../../_ui/Bars.tsx";
+import FootprintMap from "../../_ui/FootprintMap.tsx";
+import { foldProvinces, provinceName } from "../../../lib/publish/jurisdictions.ts";
 import Contents from "../../_ui/Contents.tsx";
 import Gauge from "../../_ui/Gauge.tsx";
 import Ledger from "../../_ui/Ledger.tsx";
@@ -35,6 +37,7 @@ const FOOTPRINT_LABEL: Record<string, string> = {
 };
 
 const SECTIONS = [
+  { id: "map", label: "Footprint map" },
   { id: "coverage", label: "Coverage" },
   { id: "tiers", label: "Tier distribution" },
   { id: "footprint", label: "Footprint" },
@@ -115,7 +118,14 @@ export default async function Dashboard() {
     }));
   const market = marketBars(agg);
   const auditor = auditorBars(agg);
-  const province = footprintBars(agg, "province_footprint");
+  // Provinces, folded onto the controlled vocabulary so two spellings of one
+  // territory are one number, on the map and in its twin alike.
+  const provinceRows = [...foldProvinces(agg.province_footprint ?? [])]
+    .map(([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n);
+  const provinceMax = provinceRows[0]?.n ?? 1;
+  const province = { bars: provinceRows.map((r): Bar => ({
+    label: provinceName(r.code), n: r.n, pct: Math.round((1000 * r.n) / provinceMax) / 10,
+  })) };
   const jurisdiction = footprintBars(agg, "jurisdiction_footprint", 12);
   const migration = tierMigration(agg, Boolean(agg.migration));
 
@@ -161,7 +171,21 @@ export default async function Dashboard() {
           </p>
         )}
 
-        <div className="rise" style={{ "--i": 3 } as React.CSSProperties}>
+        {/* The hero: the map, lit by where the practice's whitespace is, and
+            under it the footprint proof. Province counts count a company once
+            per province and do not sum to the population, which is why the
+            footing is the footprint's and the caption says so. */}
+        <div id="map" className="rise" style={{ "--i": 3 } as React.CSSProperties}>
+          <FootprintMap rows={provinceRows} hero twinHref="#province" />
+          <Footing proof={proofLine(footprint, population)} />
+          <p className="note">
+            The footing is the footprint proof: every company holds properties in Canada only,
+            abroad only, both, or none. A province's count is companies with a property there,
+            counted once per province, so the provinces do not add to the population.
+          </p>
+        </div>
+
+        <div className="rise" style={{ "--i": 4 } as React.CSSProperties}>
           <Ledger items={[
             ...tiles.map((t) => ({ value: t.value, label: t.label })),
             { value:snap.publication.unresolved_count, label: "Unresolved values", quiet: true },

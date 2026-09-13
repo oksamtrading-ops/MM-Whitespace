@@ -5,6 +5,7 @@ export function DashboardSkeleton() {
     <div className="reading" aria-busy="true" aria-label="Loading the dashboard">
       <div className="sk line" style={{ width: 360 }} />
       <div className="sk sk-hero" />
+      <div className="sk sk-map" />
       <div className="sk-ledger">
         {[0, 1, 2, 3].map((i) => <div className="sk fig" key={i} />)}
       </div>

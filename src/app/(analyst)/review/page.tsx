@@ -102,7 +102,7 @@ export default async function ReviewBoard() {
               );
               return (
                 <li key={b.key} className={b.startHere ? "here" : ""}>
-                  {href ? <Link href={href as Route} prefetch={false}>{inner}</Link> : inner}
+                  {href ? <Link href={href as Route} prefetch={false}>{inner}</Link> : <span className="cell">{inner}</span>}
                 </li>
               );
             })}
