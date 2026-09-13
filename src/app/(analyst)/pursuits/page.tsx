@@ -105,10 +105,17 @@ export default async function Pursuits(
       )}
 
       <Section id="list" title="Open pursuits" index={stranded.length > 0 ? 1 : 0}
-               caption={pursuits.length === 0
-                 ? "None yet. A pursuit starts from a company profile, where the evidence is."
-                 : `Ranked by priority — ${v.priorities.join(", ")} — and then by what happened most recently.`}>
-        {allOpen.length > 1 && (
+               caption={pursuits.length > 0
+                 ? `Ranked by priority — ${v.priorities.join(", ")} — and then by what happened most recently.`
+                 // Narrowed to nothing is not the same as having none, and the
+                 // body below says which. A caption saying "none yet" above a
+                 // line saying "nothing matches" contradicts itself.
+                 : narrowed
+                   ? undefined
+                   : "None yet. A pursuit starts from a company profile, where the evidence is."}>
+        {/* Also when narrowed, or a link somebody was sent arrives with no way
+            to widen it. */}
+        {(allOpen.length > 1 || narrowed) && (
           <Filters filter={filter} sort={sort} people={people} priorities={v.priorities}
                    active={narrowed} total={pursuits.length} mineId={ctx.user.id} />
         )}
