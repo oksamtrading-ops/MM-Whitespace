@@ -196,8 +196,8 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 414 Node tests, 72 Python tests, the authorisation check, the
-colour-contrast check, the build, and 144 end-to-end checks.
+**Checks:** 419 Node tests, 72 Python tests, the authorisation check, the
+colour-contrast check, the build, and 147 end-to-end checks.
 
 ```bash
 npm test && npm run check:auth && npm run check:contrast && npm run build && npm run e2e:isolated
@@ -523,7 +523,10 @@ it. Never run `git add -A` outside this project's folder.
    surfaced**: `/pursuits` counts overdue and due-within-a-week, marks the row
    and tags the action. A due date is a calendar day (not late on the day it is
    due); a closed action's date is history; and a closed pursuit reports nothing
-   overdue, since closing with work outstanding is allowed. **A pursuit's own words must never
+   overdue, since closing with work outstanding is allowed. **The list narrows
+   by company, owner, priority and what is due**, and sorts four ways — a plain
+   GET form, so every narrowed view is a URL somebody can be sent. The counts
+   above it always describe every open pursuit, never the narrowed set. **A pursuit's own words must never
    reach a prompt** (doc 06) — a canary test pushes one through `publicRow` and
    `buildPrompt`, and it was watched failing against a planted leak.
 
