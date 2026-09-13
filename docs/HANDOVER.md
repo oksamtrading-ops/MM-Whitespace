@@ -196,7 +196,7 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 402 Node tests, 72 Python tests, the authorisation check, the
+**Checks:** 410 Node tests, 72 Python tests, the authorisation check, the
 colour-contrast check, the build, and 143 end-to-end checks.
 
 ```bash
@@ -514,7 +514,12 @@ it. Never run `git add -A` outside this project's folder.
    into a status. Nothing is ever deleted. An action carries its own status, owner and due
    date, all three changeable after it is made — handing work over must not have
    to look like abandoning it. `patchAction` is the one place that writes an
-   action, so a fourth costs a validation and a name. **A pursuit's own words must never
+   action, so a fourth costs a validation and a name. **A pursuit can be closed
+   with an outcome** (`Won, Lost, Dormant`, a setting) and reopened; closure is
+   its own table (`0022`/`0023`), so closing, reopening and closing again is a
+   history rather than a latest value. Open actions never block a close — a
+   pursuit is often lost with work outstanding. **A company merge moves its
+   pursuits**, and both survive when both companies had one. **A pursuit's own words must never
    reach a prompt** (doc 06) — a canary test pushes one through `publicRow` and
    `buildPrompt`, and it was watched failing against a planted leak.
 
