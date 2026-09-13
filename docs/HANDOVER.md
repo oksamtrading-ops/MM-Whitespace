@@ -456,9 +456,9 @@ it. Never run `git add -A` outside this project's folder.
    work that has not been done.
 
 2. **Switch the Batch API on, in that order.** It is **built and off**
-   (`MM_ENRICH_BATCH=1`; `docs/decisions/BATCH-API.md`). Before the flag goes
-   on: apply migrations `0016` and `0017` to Supabase, and set the variable in
-   Vercel. **Nothing in it has run against the real Batch API** — the tests
+   (`MM_ENRICH_BATCH=1`; `docs/decisions/BATCH-API.md`). Migrations `0016` and
+   `0017` are applied to Supabase; what is left is setting the variable in
+   Vercel and redeploying. **Nothing in it has run against the real Batch API** — the tests
    drive a fake one, which proves our two paths agree, not that the vendor
    behaves as documented. So the first real use is a handful of companies with
    `/runs` watched, not Run 3.
