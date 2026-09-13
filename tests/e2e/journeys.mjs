@@ -141,6 +141,24 @@ function setActive(dbPath, email, active) {
   `], { cwd: ROOT, stdio: "ignore" });
 }
 
+function seedPursuit(dbPath, email, note) {
+  return execFileSync("node", ["--input-type=module", "-e", `
+    import { DatabaseSync } from "node:sqlite";
+    const db = new DatabaseSync(${JSON.stringify(dbPath)});
+    const id = () => db.prepare("select lower(hex(randomblob(16))) v").get().v;
+    const co = db.prepare("select id, canonical_name from companies order by canonical_name limit 1").get();
+    const who = db.prepare("select id from app_users where email = ?").get(${JSON.stringify(email)});
+    const p = id();
+    db.prepare("insert into pursuits (id, company_id, priority, owner_id, created_at) values (?,?,?,?,?)")
+      .run(p, co.id, "High", who.id, "2026-09-13 09:00:00.000000");
+    db.prepare("insert into pursuit_notes (id, pursuit_id, body, author_id, created_at) values (?,?,?,?,?)")
+      .run(id(), p, ${JSON.stringify(note)}, who.id, "2026-09-13 09:05:00.000000");
+    db.prepare("insert into pursuit_actions (id, pursuit_id, description, due_date, owner_id, status, created_at) values (?,?,?,?,?,?,?)")
+      .run(id(), p, "Send the fee benchmark", "2026-10-01", who.id, "Open", "2026-09-13 09:06:00.000000");
+    process.stdout.write(JSON.stringify({ pursuitId: p, companyId: co.id, name: co.canonical_name }));
+  `], { cwd: ROOT, encoding: "utf8" });
+}
+
 const get = (path, cookie) =>
   fetch(`${BASE}${path}`, { headers: cookie ? { cookie } : {} })
     .then(async (r) => ({ status: r.status, html: await r.text() }));
@@ -674,6 +692,47 @@ async function journeys(dbPath) {
   check("the tick is recorded on the run screen even though it did nothing",
         /Ticks, last 24 h/.test(afterTick) && !afterTick.includes("none recorded"));
 
+  /* ------------------------------ journey 8 — the pursuit workflow */
+
+  console.log("\njourney 8 — what the practice decided to do");
+  const PURSUIT_NOTE = "Partner met the CFO; audit tender expected in Q1.";
+  const seeded = JSON.parse(seedPursuit(dbPath, "analyst@example.invalid", PURSUIT_NOTE));
+
+  const pursuitList = await get("/pursuits", analyst.cookie);
+  check("an Analyst sees the pursuit list",
+        pursuitList.status === 200 && pursuitList.html.includes(seeded.name));
+  check("with its priority and its open action",
+        pursuitList.html.includes("High") && /1 open/.test(pursuitList.html));
+
+  const pursuitPage = await get(`/pursuits/${seeded.pursuitId}`, analyst.cookie);
+  check("the pursuit opens, with the note and the action on it",
+        pursuitPage.html.includes(PURSUIT_NOTE) &&
+        pursuitPage.html.includes("Send the fee benchmark"));
+  check("and it links back to the evidence, which is the company profile",
+        pursuitPage.html.includes(`/companies/${seeded.companyId}`));
+
+  // THE ONE THAT MATTERS. Pursuit content is Deloitte internal: a Viewer is a
+  // partner, and docs/design/11 keeps them out by policy rather than by
+  // whether a link is drawn.
+  const viewerList = await get("/pursuits", viewer.cookie);
+  check("a Viewer is refused the pursuit list",
+        !viewerList.html.includes(seeded.name) && /Not permitted/.test(viewerList.html));
+  const viewerPursuit = await get(`/pursuits/${seeded.pursuitId}`, viewer.cookie);
+  check("and refused one pursuit, without being told what is in it",
+        !viewerPursuit.html.includes(PURSUIT_NOTE) && /Not permitted/.test(viewerPursuit.html));
+
+  const viewerProfile = await get(`/companies/${seeded.companyId}`, viewer.cookie);
+  check("a Viewer's company profile offers no pursuit and does not say one exists",
+        !viewerProfile.html.includes("Start a pursuit") &&
+        !viewerProfile.html.includes("Open the pursuit"));
+  const analystProfile = await get(`/companies/${seeded.companyId}`, analyst.cookie);
+  check("an Analyst's does, and it points at the one already open",
+        analystProfile.html.includes("Open the pursuit"));
+
+  const signedOut = await get("/pursuits", null);
+  check("signed out, the pursuit list asks for a sign-in rather than rendering",
+        !signedOut.html.includes(seeded.name));
+
   /* ---------------------------------------- accessibility, six routes */
 
   console.log("\naccessibility obligations on six routes");
@@ -695,6 +754,9 @@ async function journeys(dbPath) {
     ["/companies/merge (analyst)", "/companies/merge", analyst.cookie],
     ["/review/by-company (analyst)", "/review/by-company", analyst.cookie],
     [`/companies/{id} (viewer)`, `/companies/${idMatch?.[1]}`, viewer.cookie],
+    ["/pursuits (analyst)", "/pursuits", analyst.cookie],
+    [`/pursuits/{id} (analyst)`, `/pursuits/${seeded.pursuitId}`, analyst.cookie],
+    ["/pursuits (viewer, refused)", "/pursuits", viewer.cookie],
   ];
   for (const [name, path, cookie] of routes) {
     const { html } = await get(path, cookie);

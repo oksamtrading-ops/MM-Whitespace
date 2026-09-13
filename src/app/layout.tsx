@@ -39,6 +39,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   if (canReview) items.push({ href: "/runs", label: "Runs" });
   if (canReview) items.push({ href: "/review", label: "Review" });
   if (canReview) items.push({ href: "/publish", label: "Publish" });
+  // Deloitte internal, so never offered to a Viewer.
+  if (canReview) items.push({ href: "/pursuits", label: "Pursuits" });
   items.push({ href: "/companies", label: "Companies" });
   items.push({ href: "/dashboard", label: "Dashboard" });
   if (user?.role === "admin") items.push({ href: "/access", label: "Access" });

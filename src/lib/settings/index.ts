@@ -11,13 +11,14 @@ import type { Sql } from "../db/sql.ts";
 export type SettingKey =
   | "default_threshold_amount" | "default_threshold_currency"
   | "default_threshold_operator" | "default_proximity_band_pct"
-  | "default_run_budget_usd";
+  | "default_run_budget_usd"
+  | "pursuit_priorities" | "pursuit_action_statuses";
 
 export type Setting = {
   key: SettingKey;
   label: string;
   help: string;
-  kind: "money" | "currency" | "operator" | "percent" | "usd";
+  kind: "money" | "currency" | "operator" | "percent" | "usd" | "list";
   value: string;
   updatedBy: string | null;
   updatedAt: string | null;
@@ -39,9 +40,40 @@ const DEFINITIONS: Array<Pick<Setting, "key" | "label" | "help" | "kind">> = [
   { key: "default_run_budget_usd", label: "Default run budget", kind: "usd",
     help: "What a run gets when nobody names a budget. It warns at 80% and halts " +
           "at 100%; a run cannot exist without one." },
+  // The pursuit vocabularies live here rather than in a check constraint
+  // because nothing in the design specifies them, and a vocabulary invented in
+  // a migration is a decision made by whoever wrote the migration. Here the
+  // practice owns them and can change them without a deployment.
+  { key: "pursuit_priorities", label: "Pursuit priorities", kind: "list",
+    help: "In order, most urgent first. A pursuit already carrying a priority you " +
+          "remove keeps it and shows it as retired, because rewriting somebody's " +
+          "judgement to fit a new list is not a settings change." },
+  { key: "pursuit_action_statuses", label: "Pursuit action statuses", kind: "list",
+    help: "The first is what a new action starts as, and the last counts as done. " +
+          "Two is a working default; more is fine." },
 ];
 
 export class InvalidSetting extends Error {}
+
+/** A comma-separated vocabulary, trimmed, with the blanks dropped. */
+export function splitList(raw: string): string[] {
+  return raw.split(",").map((t) => t.trim()).filter(Boolean);
+}
+
+/**
+ * A vocabulary, or its fallback.
+ *
+ * Read rather than hardcoded, and it has to survive being unset: a database
+ * that has not had 0020 yet returns null, and a screen that then renders no
+ * options is a screen that cannot be used at all.
+ */
+export async function getList(
+  db: Sql, key: SettingKey, fallback: readonly string[],
+): Promise<string[]> {
+  const raw = await getSetting(db, key);
+  const terms = raw === null ? [] : splitList(raw);
+  return terms.length > 0 ? terms : [...fallback];
+}
 
 /** Validation lives here, not in the form: the form is not the boundary. */
 export function validate(key: SettingKey, raw: string): string {
@@ -72,6 +104,16 @@ export function validate(key: SettingKey, raw: string): string {
       if (!Number.isFinite(n) || n <= 0) throw new InvalidSetting("A run cannot be created without a budget.");
       if (n > 10_000) throw new InvalidSetting("That budget is high enough to want a second pair of eyes. Raise it in the database if you mean it.");
       return String(n);
+    }
+    case "pursuit_priorities":
+    case "pursuit_action_statuses": {
+      const terms = splitList(value);
+      if (terms.length < 2) throw new InvalidSetting("A vocabulary of fewer than two terms is not a choice.");
+      if (terms.length > 8) throw new InvalidSetting("More than eight terms is a form nobody reads. Eight is already a lot.");
+      if (terms.some((t) => t.length > 32)) throw new InvalidSetting("A term longer than 32 characters is a sentence, not a label.");
+      const seen = new Set(terms.map((t) => t.toLowerCase()));
+      if (seen.size !== terms.length) throw new InvalidSetting("Two terms differing only in case are the same term.");
+      return terms.join(", ");
     }
   }
 }
