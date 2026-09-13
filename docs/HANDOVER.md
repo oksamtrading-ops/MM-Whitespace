@@ -1,16 +1,13 @@
 # Handover — Mining Whitespace Intelligence Tool
 
 > **Status at 13 September 2026.** Built, deployed, and doing the work it
-> exists to do. Q3-2026 is published at **revision 6**; **30 companies
+> exists to do. Q3-2026 is published at **revision 8**; **30 companies
 > researched** across Run 1 (5) and Run 2 (25) for **US$10.94 all in**;
 > **40 companies carry a tier**, 19 audit fees carry their currency and
 > fiscal year, and the period downloads as a clean workbook.
 >
-> **Five commits sit on `main` unpushed at the time of writing** — Run 2's
-> three research defects fixed, publishing cut from four minutes to seconds,
-> retention taught to run on Postgres, and the Batch API built and switched
-> off. Pushing `main` deploys production. To start a new session, paste
-> everything below the line into it.
+> **Q3-2026 is published at revision 8**, and everything below is deployed.
+> To start a new session, paste everything below the line into it.
 
 ---
 
@@ -47,11 +44,10 @@ this whole note before changing anything.
 
 Both are on `/review` with the reason on the row.
 
-**2. Publish revision 7 when ready.** 178 decisions were recorded on 13
-September and none of them are on the dashboards yet: a published revision is
-frozen, and the working values only reach a Viewer at the next publish. The
-gate will be blocked (coverage floors, and a fabrication rate inflated by
-label gaps since fixed), so it needs the Admin override with a reason.
+**2. ~~Publish revision 7~~ — done.** Revisions 7 and 8 went out on 13
+September. All 178 decisions are on the dashboards: 40 companies carry a tier
+(up from 21) and the auditor cross-tab reads 55.6%. Publishing took seconds
+rather than revision 6's four minutes.
 
 **3. Kay still cannot sign in.** `Kampofo@deloitte.ca` was refused because
 only `gmail.com` is allowed, and Resend can only deliver to
@@ -267,8 +263,15 @@ are committed; none is deployed until someone pushes.
 - **Retention runs on Postgres**, and calls the application's own sweeps
   rather than re-writing their SQL. `pg_smoke` runs every rule as a dry run.
   It still has to be called by something (item 6 below).
-- **The Batch API is built and off.** See item 3 below and
-  `docs/decisions/BATCH-API.md`.
+- **The Batch API is built and off.** See item 2 below and
+  `docs/decisions/BATCH-API.md`. Migrations `0016` and `0017` ARE applied to
+  Supabase; only `MM_ENRICH_BATCH` is still unset.
+- **The publish gate stopped counting decided fields as conflicts.** Its
+  message said "no adjudication" and its query never looked at the decisions,
+  so all 13 of Run 2's EDGAR-versus-filing disagreements were reported for
+  ever — every one of them decided by hand on 13 September. Revision 7 went out
+  through a blocker that was not real; revision 8 corrects its header. The test
+  that should have caught it was named for the distinction it never made.
 
 ## Production settings
 
@@ -452,10 +455,7 @@ it. Never run `git add -A` outside this project's folder.
    ~~Run 1~~, ~~the Excel export~~, ~~Run 2~~ — all done. What follows is the
    work that has not been done.
 
-2. **Publish revision 7.** 178 decisions from 13 September are not on the
-   dashboards until someone publishes. See "What is waiting on Samuel".
-
-3. **Switch the Batch API on, in that order.** It is **built and off**
+2. **Switch the Batch API on, in that order.** It is **built and off**
    (`MM_ENRICH_BATCH=1`; `docs/decisions/BATCH-API.md`). Before the flag goes
    on: apply migrations `0016` and `0017` to Supabase, and set the variable in
    Vercel. **Nothing in it has run against the real Batch API** — the tests
@@ -463,34 +463,34 @@ it. Never run `git add -A` outside this project's folder.
    behaves as documented. So the first real use is a handful of companies with
    `/runs` watched, not Run 3.
 
-4. **Run 3: the remaining 229 companies.** About **US$80** live, or **US$40**
+3. **Run 3: the remaining 229 companies.** About **US$80** live, or **US$40**
    batched, at Run 2's measured rate (US$0.31 a company: pass 1 US$0.22, pass 2
    US$0.10). Start it from `/runs`; the start form estimates per pass.
 
-5. **Mail:** buy and verify a domain for this application (Samuel's decision
+4. **Mail:** buy and verify a domain for this application (Samuel's decision
    and money), then set `MM_MAIL_FROM`; **rotate the Resend key**, which was
    pasted into a chat once. This is what unblocks Kay.
 
-6. **Schedule retention.** The job now runs on either engine
+5. **Schedule retention.** The job now runs on either engine
    (`node scripts/retention.mjs "$MM_DATABASE_URL" --apply`), but nothing calls
    it, so production still sweeps nothing. Putting it on a timer is a decision
    about deleting production data automatically, not a port. (`cron_ticks`
    prunes itself to a week; `worker_runs` is a few rows a day and has no rule
    yet.)
 
-7. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
+6. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
    and S4 (open the generated export in Excel).
 
-8. **The pursuit data model** — a Phase 1 commitment in doc 02, not built.
+7. **The pursuit data model** — a Phase 1 commitment in doc 02, not built.
 
-9. **Hardening:** a monotonic column on `review_decisions` (today
+8. **Hardening:** a monotonic column on `review_decisions` (today
     `decisionStamp()` carries the order); the domain allowlist as a database
     trigger (doc 11; enforced in code because the portable migrations forbid
     triggers); Deloitte SSO and `MM_ALLOWED_DOMAINS=deloitte.ca` when the
    pilot moves to Deloitte addresses. The live pipeline also records the
    replay pipeline's `PROMPT_VERSION` rather than its own.
 
-10. **Tidy-ups:** an empty tracked file named `--` at the repository root.
+9. **Tidy-ups:** an empty tracked file named `--` at the repository root.
 
 ## Working conventions
 
