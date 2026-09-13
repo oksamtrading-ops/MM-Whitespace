@@ -22,8 +22,10 @@ export {
 } from "./scope.ts";
 
 /** The estimate at this deployment's worker cap. */
-export function estimate(count: number, budgetUsd: number, pass?: Pass | null): Estimate {
-  return estimateFor(count, budgetUsd, WORKER_SLOTS, pass);
+export function estimate(
+  count: number, budgetUsd: number, pass?: Pass | null, batched = false,
+): Estimate {
+  return estimateFor(count, budgetUsd, WORKER_SLOTS, pass, batched);
 }
 
 /** Each company in scope with its ticker, so a scope can be narrowed to named companies. */

@@ -20,8 +20,9 @@ export type ScopeOffer = {
  * The pre-flight estimate, blocking (docs/design/01). Nothing here is the
  * boundary: the action re-derives the scope, the estimate and every refusal.
  */
-export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode, workerSlots }: {
-  periodId: string; offers: ScopeOffer[]; defaultBudgetUsd: number; mode: string; workerSlots: number;
+export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode, workerSlots, batched }: {
+  periodId: string; offers: ScopeOffer[]; defaultBudgetUsd: number; mode: string;
+  workerSlots: number; batched: boolean;
 }) {
   const [state, action, pending] = useActionState(start, null);
   const [key, setKey] = useState<string>(offers.find((o) => o.allowed)?.key ?? offers[0].key);
@@ -42,7 +43,7 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
     : undefined;
   const count = wanted.length ? wanted.length - outside.length : chosen.estimate.count;
   const est = wanted.length
-    ? estimate(count, Number.isFinite(budgetNumber) ? budgetNumber : 0, workerSlots, chosen.pass)
+    ? estimate(count, Number.isFinite(budgetNumber) ? budgetNumber : 0, workerSlots, chosen.pass, batched)
     : chosen.estimate;
   const overBudget = Number.isFinite(budgetNumber) && est.estimatedUsd > budgetNumber;
 

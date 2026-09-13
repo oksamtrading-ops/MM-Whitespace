@@ -78,11 +78,12 @@ export const PRICES: Record<string, { in: number; out: number; cw5: number; cw1h
 export const WEB_SEARCH_USD = 0.01;
 
 /**
- * The Batch API's discount. Every token in a batched request is half price,
- * so a meter that did not know would overstate the run's spend twofold -- and
- * the budget that halts a run reads that number.
+ * The Batch API's discount, from scope.ts so the meter and the pre-flight
+ * estimate cannot disagree about what a batched company costs. A meter that did
+ * not know would overstate a run's spend twofold, and the budget that halts a
+ * run reads that number.
  */
-export const BATCH_DISCOUNT = 0.5;
+export { BATCH_DISCOUNT } from "./scope.ts";
 
 /** Usage and cost across every call a job makes. */
 export class Meter {

@@ -7,6 +7,7 @@ import { drain } from "./drain.ts";
 import {
   CONFIRM_ABOVE, estimate, parseTickers, scopeCompanies, startRun, StartRefused,
 } from "./start.ts";
+import { BATCH_DISCOUNT } from "./scope.ts";
 import { seedFixtureDatabase } from "../../../tests/cassettes/build_cassettes.mjs";
 
 const CASSETTE_DIR = join(
@@ -152,4 +153,22 @@ test("a typed count must match the scope exactly", async () => {
     /Type that number/);
   const ok = await startRun(db, { periodId, scope: "unresearched", budgetUsd: 100, mode: "replay", actor: analyst, confirmCount: n });
   assert.equal(ok.jobs, n);
+});
+
+
+test("a batched run is estimated at half price, and the screen is told so", async () => {
+  // The flag halves what a run costs. An estimate that did not know would quote
+  // Run 3 at US$80 when it is US$40 -- and a number that is quietly half of what
+  // it was is worse than no number, which is why /runs says "Batched" too.
+  const live = estimate(229, 200, "identity");
+  const batched = estimate(229, 200, "identity", true);
+  assert.ok(live.estimatedUsd > 0);
+  assert.equal(batched.estimatedUsd, Math.round(live.estimatedUsd * 0.5 * 100) / 100);
+  assert.equal(batched.count, live.count, "the same companies, at a different price");
+});
+
+test("the estimate and the meter cannot disagree about a batched company", async () => {
+  // Both read BATCH_DISCOUNT from scope.ts. Two copies of one number is how a
+  // budget halts a run at half its cap, or fails to halt it at twice.
+  assert.equal(BATCH_DISCOUNT, 0.5);
 });

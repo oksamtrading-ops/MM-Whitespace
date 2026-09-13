@@ -10,6 +10,7 @@ import {
   type Pass, type Scope,
 } from "../../../lib/enrich/start.ts";
 import { enrichmentMode } from "../../../lib/enrich/worker.ts";
+import { BATCH_ENABLED } from "../../../lib/enrich/batch.ts";
 import { getNumber } from "../../../lib/settings/index.ts";
 import Facts from "../../_ui/Facts.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
@@ -58,6 +59,10 @@ export default async function Runs() {
   const runs = await listRuns(ctx.db, period.id);
   const health = await readWorkerHealth(ctx.db);
   const mode = enrichmentMode();
+  // Whether a run will go through the Batch API. It halves the estimate, so
+  // the screen has to say it: a number that is quietly half of what it was is
+  // worse than no number.
+  const batched = BATCH_ENABLED;
   const inProgress = await runInProgress(ctx.db, period.id);
 
   // The offer is built here so the screen can say what the action would do;
@@ -78,7 +83,7 @@ export default async function Runs() {
           ? `${passCopy.label}: ${scope === "all" ? "every eligible company" : "not yet done"}`
           : SCOPE_COPY[scope].label,
         detail: passCopy ? passCopy.detail : SCOPE_COPY[scope].detail,
-        estimate: estimate(n, budget, pass),
+        estimate: estimate(n, budget, pass, batched),
         tickers: inScope.map((c) => c.ticker).filter(Boolean),
         allowed: n > 0 && (scope !== "all" || !hasFindings || ctx.user.role === "admin"),
         why: n === 0
@@ -101,6 +106,16 @@ export default async function Runs() {
                : inProgress
                  ? "One run at a time. This section returns when the current run finishes."
                  : "The estimate blocks: scope, spend and duration are shown before anything is queued."}>
+      {mode.mode !== null && batched && (
+        <p className="notice" role="status">
+          <b>Batched.</b>
+          <span>
+            Each pass&rsquo;s model call goes to the Batch API, which costs half and
+            answers within hours rather than seconds. The estimates below are the
+            batched price. A run still starts here and nothing researches until it does.
+          </span>
+        </p>
+      )}
       {mode.mode === null ? (
         <div className="notice" role="status">
           <b>Not available</b>
@@ -108,6 +123,7 @@ export default async function Runs() {
         </div>
       ) : inProgress ? null : (
         <StartRunForm periodId={period.id} offers={offers} defaultBudgetUsd={budget} mode={mode.mode}
+                      batched={batched}
                       workerSlots={WORKER_SLOTS} />
       )}
     </Section>

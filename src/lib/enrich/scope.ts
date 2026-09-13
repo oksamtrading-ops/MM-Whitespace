@@ -35,6 +35,15 @@ export const SCOPE_COPY: Record<Scope, { label: string; detail: string }> = {
   },
 };
 
+/**
+ * The Batch API's discount. Every token in a batched request is half price.
+ *
+ * Here rather than beside the meter because the ESTIMATE needs it too, and
+ * this module is the one with no node imports -- a client component draws the
+ * estimate, and reaching the meter would drag the fetch stack into the bundle.
+ */
+export const BATCH_DISCOUNT = 0.5;
+
 /** Above this many companies, the Analyst types the count to confirm. */
 export const CONFIRM_ABOVE = 50;
 
@@ -67,8 +76,9 @@ export const ESTIMATED_USD_PER_COMPANY = 0.25;
 export const ESTIMATED_SECONDS_PER_COMPANY = 90;
 
 export function estimate(count: number, budgetUsd: number, workerSlots: number,
-                         pass?: Pass | null): Estimate {
-  const perCompany = pass ? ESTIMATED_USD_PER_COMPANY_BY_PASS[pass] : ESTIMATED_USD_PER_COMPANY;
+                         pass?: Pass | null, batched = false): Estimate {
+  const perCompany = (pass ? ESTIMATED_USD_PER_COMPANY_BY_PASS[pass] : ESTIMATED_USD_PER_COMPANY)
+    * (batched ? BATCH_DISCOUNT : 1);
   const estimatedUsd = Math.round(count * perCompany * 100) / 100;
   const estimatedMinutes = Math.ceil((count * ESTIMATED_SECONDS_PER_COMPANY) / workerSlots / 60);
   return {
