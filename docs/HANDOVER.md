@@ -74,7 +74,7 @@ already published). And the per-minute schedule ran a full day: **1,440 of
 | Database | Supabase project **MM_Whitespace**, ref `djepptfxdkvmcretnogy`, region `ca-central-1`, Postgres 17.6 |
 | Start here | `README.md` — what is built, how to run it, and why |
 | Operating it | `docs/RUNBOOK.md` — loading a period, sign-in, publishing, incidents |
-| Design | `docs/DESIGN.md` and `docs/design/00`–`17`. **Section 00 first** |
+| Design | `docs/DESIGN.md` and `docs/design/00`–`18`. **Section 00 first**; doc 18 is the brand and interface guide and REVERSES doc 17's light-first decision |
 | Decisions | `docs/decisions/` — all ten closed; decision 1 approved by legal on 4 September 2026. `BATCH-API.md` records why both passes batch |
 | Settings | `.env.example` lists every variable; `.env.local` holds local secrets and is git-ignored |
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
@@ -132,7 +132,7 @@ company profiles and finder, identity merge, admin settings, the access review,
 and magic-link sign-in. Routes: `/upload`, `/upload/[id]`, `/runs`, `/review`,
 `/review/[field]`, `/review/by-company`, `/publish`, `/dashboard`,
 `/companies`, `/companies/[id]`, `/companies/merge`, `/pursuits`,
-`/pursuits/[id]`, `/access`, `/settings`,
+`/pursuits/[id]`, `/access`, `/settings`, `/styleguide`,
 `/signin`, `/auth/verify`, `/api/cron/tick`, `/api/export` (the workbook
 download), and two Python functions, `/api/parse` and `/api/workbook`.
 
@@ -199,7 +199,7 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 419 Node tests, 72 Python tests, the authorisation check, the
+**Checks:** 424 Node tests, 72 Python tests, the authorisation check, the
 colour-contrast check, the build, and 147 end-to-end checks.
 
 ```bash
@@ -341,6 +341,34 @@ seconds.
 - **`.tag` has a background**, and the pair is under `check:contrast`. It had
   none at all, so every pursuit tag rendered bare — the contrast check only
   verifies pairs it is told about.
+
+**Built on 13 September 2026, evening — the brand and interface.** A separate
+session, 143 files, on `main` and deployed. `docs/design/18-brand-guide.md` is
+the record; it extends doc 17 and **reverses its light-first decision**.
+
+- **The product is dark-first**, with the light system kept whole as a second
+  theme and one press away in the rail's foot. The reason is measured, not
+  taste: the brand green passes on black at **9.23:1** and fails on white at
+  **2.27:1**, so on the dark ground green may carry text, lines and focus,
+  where on white it may only fill. Print always renders light.
+- **A left rail**, new UI primitives (`Sidebar`, `Panel`, `PageHeader`, `Orb`,
+  `TierLadder`, `WorkingToggle`) and about 1,700 lines of `globals.css`.
+- **`/styleguide` (Admin)** renders the tokens and components from the build
+  itself, so nothing in it can drift from the product. When you remove a
+  component, remove it there too — the last commit of the evening was exactly
+  that debt being paid.
+- **The dashboard's charts changed shape.** Auditor share is now two donuts,
+  by value and by count, with the research gap drawn as a hatched slice rather
+  than hidden — Deloitte holds 14.6% of the money and 6.6% of the companies.
+  Market penetration is a dot plot, where the rule between two dots is the
+  whitespace. A treemap hero was built and then **withdrawn**: the map is the
+  image the product is remembered by, and two full-width pictures above the
+  fold is one too many. It is at `b435ce4` if that is reopened.
+- **One open decision, recorded rather than worked around.** No fixed set of
+  four competitor colours clears 3:1 on both a white and a black ground once
+  green is reserved for Deloitte, so competitors are steps of grey. Doc 18
+  section 16 also lists every Deloitte brand value still marked *[confirm]*
+  against the brand hub.
 
 ## Production settings
 
