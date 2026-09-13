@@ -196,7 +196,7 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 393 Node tests, 72 Python tests, the authorisation check, the
+**Checks:** 396 Node tests, 72 Python tests, the authorisation check, the
 colour-contrast check, the build, and 143 end-to-end checks.
 
 ```bash
@@ -507,9 +507,11 @@ it. Never run `git add -A` outside this project's folder.
    that CLOSES an action** — production reads `Open, Done*, Superseded*` — so
    finished and abandoned both stop counting as open without pretending to be
    the same thing. A status the vocabulary no longer knows counts as open, so
-   work stays visible when a term is renamed — and `/pursuits` then names that
-   term, says how many actions sit in it, and moves them in one sweep with one
-   audit line. The section is absent when nothing is stranded. Nothing is ever deleted. **A pursuit's own words must never
+   work stays visible when a term is renamed; a retired priority sorts last.
+   Either way `/pursuits` names the term, says how many rows carry it, and
+   moves them in one sweep with one audit line (`pursuit_terms_swept`). The
+   section is absent when nothing is stranded, and a priority cannot be swept
+   into a status. Nothing is ever deleted. **A pursuit's own words must never
    reach a prompt** (doc 06) — a canary test pushes one through `publicRow` and
    `buildPrompt`, and it was watched failing against a planted leak.
 
