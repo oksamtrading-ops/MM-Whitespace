@@ -608,3 +608,76 @@ export async function reopenPursuit(
   await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_reopened', ?, ?)`,
                actorId, JSON.stringify({ pursuitId, wasClosedAs: open.outcome }));
 }
+
+/* ------------------------------------------------- narrowing a long list */
+
+/**
+ * What a person can ask the list for, and it all lives in the URL.
+ *
+ * The review grid keeps its find text there "so a view can be handed to a
+ * colleague", and a pursuit list is more worth handing over than a grid: "the
+ * eleven you own that are past their date" is a message, not a screenshot.
+ *
+ * Narrowing happens over rows already read rather than in SQL. The population
+ * is pursuits, not companies -- tens, not thousands -- and one statement that
+ * answers every combination of four filters is a statement nobody can read.
+ */
+export type PursuitFilter = {
+  /** Matched against the company's name, case-insensitively. */
+  q?: string;
+  /** A user id, or "unassigned". Empty means anyone. */
+  owner?: string;
+  priority?: string;
+  due?: "overdue" | "soon";
+};
+
+export const UNASSIGNED = "unassigned";
+
+export function filterPursuits(
+  rows: readonly PursuitRow[], f: PursuitFilter,
+): PursuitRow[] {
+  const q = (f.q ?? "").trim().toLowerCase();
+  return rows.filter((r) => {
+    if (q && !r.companyName.toLowerCase().includes(q)) return false;
+    if (f.owner === UNASSIGNED) { if (r.ownerId !== null) return false; }
+    else if (f.owner) { if (r.ownerId !== f.owner) return false; }
+    if (f.priority && r.priority !== f.priority) return false;
+    if (f.due === "overdue" && r.overdueActions === 0) return false;
+    // "Due soon" means what needs attention this week, so it includes what is
+    // already past: a list of things due soon that omits the late ones is the
+    // opposite of useful.
+    if (f.due === "soon" && r.overdueActions === 0 && r.dueSoonActions === 0) return false;
+    return true;
+  });
+}
+
+export type PursuitSort = "priority" | "company" | "activity" | "due";
+
+export const SORTS: Record<PursuitSort, string> = {
+  priority: "Priority, then most recent",
+  company: "Company name",
+  activity: "Most recently touched",
+  due: "Most overdue first",
+};
+
+/**
+ * `priority` is the order listPursuits already returns, so it is left alone
+ * rather than re-deriving the vocabulary's rank in a second place.
+ */
+export function sortPursuits(rows: readonly PursuitRow[], sort: PursuitSort): PursuitRow[] {
+  const out = [...rows];
+  switch (sort) {
+    case "priority": return out;
+    case "company": return out.sort((a, b) => a.companyName.localeCompare(b.companyName));
+    case "activity": return out.sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+    case "due": return out.sort((a, b) =>
+      b.overdueActions - a.overdueActions ||
+      b.dueSoonActions - a.dueSoonActions ||
+      a.companyName.localeCompare(b.companyName));
+  }
+}
+
+/** A sort from a URL, or the default. Never throws on a bad one. */
+export function parseSort(raw: string | null | undefined): PursuitSort {
+  return raw === "company" || raw === "activity" || raw === "due" ? raw : "priority";
+}

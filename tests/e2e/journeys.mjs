@@ -175,6 +175,14 @@ function datePastDue(dbPath) {
   `], { cwd: ROOT, stdio: "ignore" });
 }
 
+function analystId(dbPath) {
+  return execFileSync("node", ["--input-type=module", "-e", `
+    import { DatabaseSync } from "node:sqlite";
+    const db = new DatabaseSync(${JSON.stringify(dbPath)});
+    process.stdout.write(db.prepare("select id from app_users where email = 'analyst@example.invalid'").get().id);
+  `], { cwd: ROOT, encoding: "utf8" });
+}
+
 const get = (path, cookie) =>
   fetch(`${BASE}${path}`, { headers: cookie ? { cookie } : {} })
     .then(async (r) => ({ status: r.status, html: await r.text() }));
@@ -764,6 +772,17 @@ async function journeys(dbPath) {
   const overdue = await get("/pursuits", analyst.cookie);
   check("an action past its date is said, on the list, not only on the action",
         /overdue/i.test(overdue.html), "nothing on /pursuits mentions it");
+
+  // Every narrowed view is its own address, so it can be sent to somebody.
+  const mine = await get(`/pursuits?owner=${analystId(dbPath)}`, analyst.cookie);
+  check("a narrowed view is a URL, and the server does the narrowing",
+        mine.status === 200 && mine.html.includes(seeded.name));
+  const nobodys = await get("/pursuits?owner=unassigned", analyst.cookie);
+  check("and it actually narrows: an unassigned filter hides an owned pursuit",
+        !nobodys.html.includes(seeded.name) && /Nothing open matches that/.test(nobodys.html));
+  const nonsense = await get("/pursuits?sort=nonsense", analyst.cookie);
+  check("a sort nobody asked for falls back rather than failing",
+        nonsense.status === 200 && nonsense.html.includes(seeded.name));
 
   const signedOut = await get("/pursuits", null);
   check("signed out, the pursuit list asks for a sign-in rather than rendering",

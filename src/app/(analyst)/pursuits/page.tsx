@@ -3,7 +3,12 @@ import type { Route } from "next";
 import type { Metadata } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
-import { listPursuits, strandedTerms, vocabulary } from "../../../lib/pursuit/index.ts";
+import {
+  filterPursuits, listPursuits, parseSort, sortPursuits, strandedTerms, vocabulary,
+  type PursuitFilter,
+} from "../../../lib/pursuit/index.ts";
+import Filters from "./Filters.tsx";
+import type { Person } from "./[id]/PursuitDesk.tsx";
 import Sweep from "./Sweep.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
@@ -13,7 +18,9 @@ import { fmtDate } from "../../_ui/format.ts";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Pursuits" };
 
-export default async function Pursuits() {
+export default async function Pursuits(
+  { searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> },
+) {
   let ctx;
   try {
     ctx = await requireRole(["analyst", "admin"]);
@@ -26,14 +33,37 @@ export default async function Pursuits() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
+  const params = await searchParams;
+  const one = (k: string) => {
+    const v = params[k];
+    return (Array.isArray(v) ? v[0] : v) ?? "";
+  };
+  const filter: PursuitFilter = {
+    q: one("q"),
+    owner: one("owner"),
+    priority: one("priority"),
+    due: one("due") === "overdue" ? "overdue" : one("due") === "soon" ? "soon" : undefined,
+  };
+  const sort = parseSort(one("sort"));
+  const narrowed = Boolean(filter.q || filter.owner || filter.priority || filter.due);
+
   const all = await listPursuits(ctx.db);
-  const pursuits = all.filter((p) => p.closedAt === null);
+  // The counts above the list describe EVERY open pursuit, not the narrowed
+  // set: a filter is a way of looking, and a number that moves when you look
+  // at it differently is a number nobody can quote.
+  const allOpen = all.filter((p) => p.closedAt === null);
+  const pursuits = sortPursuits(filterPursuits(allOpen, filter), sort);
   const closed = all.filter((p) => p.closedAt !== null);
+
+  const people = (await ctx.db.all(
+    `select id, email from app_users where is_active and role in ('analyst','admin')
+      order by email`) as Array<{ id: string; email: string }>)
+    .map((p): Person => ({ id: String(p.id), email: String(p.email) }));
   const v = await vocabulary(ctx.db);
   const stranded = await strandedTerms(ctx.db);
-  const open = pursuits.reduce((n, p) => n + p.openActions, 0);
-  const overdue = pursuits.reduce((n, p) => n + p.overdueActions, 0);
-  const soon = pursuits.reduce((n, p) => n + p.dueSoonActions, 0);
+  const open = allOpen.reduce((n, p) => n + p.openActions, 0);
+  const overdue = allOpen.reduce((n, p) => n + p.overdueActions, 0);
+  const soon = allOpen.reduce((n, p) => n + p.dueSoonActions, 0);
 
   return (
     <>
@@ -60,10 +90,10 @@ export default async function Pursuits() {
       )}
 
       <Facts items={[
-        { label: "Pursuits", value: pursuits.length, figure: true },
+        { label: "Pursuits", value: allOpen.length, figure: true },
         { label: "Open actions", value: open, figure: true },
         { label: "Overdue", value: overdue, figure: true },
-        { label: "Unprioritised", value: pursuits.filter((p) => !p.priority).length, figure: true },
+        { label: "Unprioritised", value: allOpen.filter((p) => !p.priority).length, figure: true },
         { label: "Closed", value: closed.length, figure: true },
       ]} />
 
@@ -78,9 +108,15 @@ export default async function Pursuits() {
                caption={pursuits.length === 0
                  ? "None yet. A pursuit starts from a company profile, where the evidence is."
                  : `Ranked by priority — ${v.priorities.join(", ")} — and then by what happened most recently.`}>
+        {allOpen.length > 1 && (
+          <Filters filter={filter} sort={sort} people={people} priorities={v.priorities}
+                   active={narrowed} total={pursuits.length} mineId={ctx.user.id} />
+        )}
         {pursuits.length === 0 ? (
           <p className="meta">
-            <Link href="/companies">Find a company</Link> and open its profile to start one.
+            {narrowed
+              ? <>Nothing open matches that. <Link href={"/pursuits" as Route} prefetch={false}>Clear the filters</Link>.</>
+              : <><Link href="/companies">Find a company</Link> and open its profile to start one.</>}
           </p>
         ) : (
           <table className="grid">

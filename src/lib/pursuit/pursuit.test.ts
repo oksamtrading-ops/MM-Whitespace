@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { memorySql } from "../db/open.ts";
 import type { Sql } from "../db/sql.ts";
 import {
-  addAction, addNote, closedStatuses, closePursuit, dueState, getPursuit, listPursuits,
-  parseStatuses, reopenPursuit,
+  addAction, addNote, closedStatuses, closePursuit, dueState, filterPursuits, getPursuit,
+  listPursuits, parseSort, parseStatuses, reopenPursuit, sortPursuits, UNASSIGNED,
   parseDueDate, PursuitRefused, setActionDueDate, setActionOwner, setActionStatus, setOwner,
   setPriority, startPursuit, statusNames,
   strandedTerms, sweepTerm, vocabulary,
@@ -652,4 +652,70 @@ test("a CLOSED pursuit reports nothing overdue, however old its open actions", a
   assert.equal(row.overdueActions, 0);
   assert.equal(row.openActions, 1, "the action is still open, and still says so");
   assert.equal((await getPursuit(db, id, AT("2026-09-28")))!.actions[0].due, null);
+});
+
+
+/* ------------------------------------------------- narrowing a long list */
+
+async function aFewPursuits() {
+  const { db, northco, southco, actor } = await seeded();
+  const kay = await db.get(
+    "insert into app_users (email, role) values ('kay@example.invalid','analyst') returning id") as { id: string };
+  const a = await startPursuit(db, northco, actor);   // Northco: High, actor, overdue
+  await setPriority(db, a, "High", actor);
+  await addAction(db, a, { description: "late", dueDate: "2026-09-01" }, actor);
+  const b = await startPursuit(db, southco, actor);   // Southco: Low, kay, nothing due
+  await setPriority(db, b, "Low", actor);
+  await setOwner(db, b, kay.id, actor);
+  const rows = await listPursuits(db, AT("2026-09-28"));
+  return { db, rows, actor, kay: kay.id };
+}
+
+test("the list can be narrowed by company, owner, priority and what is due", async () => {
+  const { rows, actor, kay } = await aFewPursuits();
+  assert.equal(filterPursuits(rows, {}).length, 2, "no filter is every pursuit");
+  assert.deepEqual(filterPursuits(rows, { q: "north" }).map((r) => r.priority), ["High"]);
+  assert.deepEqual(filterPursuits(rows, { q: "NORTH" }).map((r) => r.priority), ["High"],
+                   "matching is case-insensitive");
+  assert.deepEqual(filterPursuits(rows, { owner: kay }).map((r) => r.priority), ["Low"]);
+  assert.deepEqual(filterPursuits(rows, { owner: actor }).map((r) => r.priority), ["High"]);
+  assert.deepEqual(filterPursuits(rows, { priority: "Low" }).map((r) => r.priority), ["Low"]);
+  assert.deepEqual(filterPursuits(rows, { due: "overdue" }).map((r) => r.priority), ["High"]);
+  assert.deepEqual(filterPursuits(rows, { q: "north", priority: "Low" }), [],
+                   "filters narrow together, not instead of each other");
+});
+
+test("“due soon” includes what is already late", async () => {
+  // A list of things due soon that omits the late ones is the opposite of
+  // useful: the late ones are the ones that need attention most.
+  const { rows } = await aFewPursuits();
+  assert.equal(filterPursuits(rows, { due: "soon" }).length, 1);
+  assert.equal(filterPursuits(rows, { due: "soon" })[0].overdueActions, 1);
+});
+
+test("unassigned is a filter, not the absence of one", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await setOwner(db, id, null, actor);
+  const rows = await listPursuits(db);
+  assert.equal(filterPursuits(rows, { owner: UNASSIGNED }).length, 1);
+  assert.equal(filterPursuits(rows, { owner: actor }).length, 0);
+});
+
+test("sorting reorders and never drops anybody", async () => {
+  const { rows } = await aFewPursuits();
+  for (const sort of ["priority", "company", "activity", "due"] as const) {
+    assert.equal(sortPursuits(rows, sort).length, rows.length, sort);
+  }
+  assert.deepEqual(sortPursuits(rows, "company").map((r) => r.companyName),
+                   ["Northco Mining Corp.", "Southco Resources Ltd."]);
+  assert.deepEqual(sortPursuits(rows, "due").map((r) => r.overdueActions), [1, 0]);
+  assert.deepEqual(sortPursuits(rows, "priority"), [...rows],
+                   "the default is what listPursuits already returns, not a second ranking");
+});
+
+test("a sort nobody asked for falls back rather than throwing", async () => {
+  assert.equal(parseSort(null), "priority");
+  assert.equal(parseSort("nonsense"), "priority");
+  assert.equal(parseSort("due"), "due");
 });
