@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { memorySql } from "../db/open.ts";
 import type { Sql } from "../db/sql.ts";
 import {
-  addAction, addNote, closedStatuses, getPursuit, listPursuits, parseStatuses, PursuitRefused,
-  setActionStatus, setOwner, setPriority, startPursuit, statusNames, vocabulary,
+  addAction, addNote, closedStatuses, getPursuit, listPursuits, moveAllActions, parseStatuses,
+  PursuitRefused, setActionStatus, setOwner, setPriority, startPursuit, statusNames,
+  strandedStatuses, vocabulary,
 } from "./index.ts";
 import { validate, InvalidSetting, putSettings } from "../settings/index.ts";
 import { publicRow } from "../enrich/worker.ts";
@@ -278,4 +279,75 @@ test("a status the vocabulary no longer knows counts as OPEN", async () => {
   assert.equal((await listPursuits(db))[0].openActions, 1,
                "“Done” no longer closes anything, so the action is open again and visible");
   assert.equal((await getPursuit(db, id))!.actions[0].statusRetired, true);
+});
+
+
+/* ------------------------------------------- moving what a rename left behind */
+
+async function withStranded() {
+  const { db, northco, southco, actor } = await seeded();
+  await putSettings(db, { pursuit_action_statuses: "Open, Done*, Superseded*" }, actor);
+  const a = await startPursuit(db, northco, actor);
+  const b = await startPursuit(db, southco, actor);
+  for (const [p, n] of [[a, 2], [b, 1]] as const) {
+    for (let i = 0; i < n; i++) {
+      await addAction(db, p, { description: `gave up ${i}` }, actor);
+    }
+  }
+  for (const p of [a, b]) {
+    for (const action of (await getPursuit(db, p))!.actions) {
+      await setActionStatus(db, action.id, "Superseded", actor);
+    }
+  }
+  // The rename. It does not rewrite anybody's record, which is the point.
+  await putSettings(db, { pursuit_action_statuses: "Open, Done*, Dropped*" }, actor);
+  return { db, actor, a, b };
+}
+
+test("a renamed status strands its actions, and they are counted where they can be seen", async () => {
+  const { db } = await withStranded();
+  assert.deepEqual(await strandedStatuses(db), [{ status: "Superseded", actions: 3 }]);
+  // Sorted: the list ranks by last activity, which is not what this is about.
+  assert.deepEqual((await listPursuits(db)).map((p) => p.openActions).sort(), [1, 2],
+                   "stranded actions count as open, because nothing says they close");
+});
+
+test("one sweep moves every stranded action, across every pursuit", async () => {
+  const { db, actor } = await withStranded();
+  assert.equal(await moveAllActions(db, "Superseded", "Dropped", actor), 3);
+  assert.deepEqual(await strandedStatuses(db), [], "nothing is left behind");
+  assert.deepEqual((await listPursuits(db)).map((p) => p.openActions), [0, 0]);
+  const statuses = (await getPursuit(db, (await listPursuits(db))[0].id))!
+    .actions.map((x) => x.status);
+  assert.ok(statuses.every((x) => x === "Dropped"));
+});
+
+test("a sweep leaves ONE audit line, with its count", async () => {
+  // A bulk change nobody can see afterwards is why bulk changes are frightening.
+  const { db, actor } = await withStranded();
+  await moveAllActions(db, "Superseded", "Dropped", actor);
+  const rows = await db.all(
+    "select detail from audit_log where event = 'pursuit_actions_swept'") as Array<{ detail: string }>;
+  assert.equal(rows.length, 1);
+  assert.deepEqual(JSON.parse(rows[0].detail),
+                   { from: "Superseded", to: "Dropped", actions: 3 });
+});
+
+test("a sweep will not strand them again, and will not move nothing", async () => {
+  const { db, actor } = await withStranded();
+  await assert.rejects(() => moveAllActions(db, "Superseded", "Abandoned", actor),
+                       /not one of the statuses in use/);
+  await assert.rejects(() => moveAllActions(db, "Nowhere", "Dropped", actor),
+                       /No action is in "Nowhere"/);
+  await assert.rejects(() => moveAllActions(db, "Dropped", "Dropped", actor),
+                       /already in/);
+  assert.deepEqual(await strandedStatuses(db), [{ status: "Superseded", actions: 3 }],
+                   "a refused sweep changes nothing");
+});
+
+test("a status still in use is never called stranded", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await addAction(db, id, { description: "live one" }, actor);
+  assert.deepEqual(await strandedStatuses(db), []);
 });

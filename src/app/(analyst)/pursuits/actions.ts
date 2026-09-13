@@ -16,7 +16,8 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/context.ts";
 import {
-  addAction, addNote, PursuitRefused, setActionStatus, setOwner, setPriority, startPursuit,
+  addAction, addNote, moveAllActions, PursuitRefused, setActionStatus, setOwner, setPriority,
+  startPursuit,
 } from "../../../lib/pursuit/index.ts";
 
 export type ActionResult = { ok: boolean; message: string; pursuitId?: string };
@@ -82,4 +83,18 @@ export async function moveAction(form: FormData): Promise<ActionResult> {
   return attempt(() => setActionStatus(db, String(form.get("actionId") ?? ""),
                                        String(form.get("status") ?? ""), user.id),
                  "Action moved.", ["/pursuits", `/pursuits/${pursuitId}`]);
+}
+
+/** Sweep every action out of a status the vocabulary no longer knows. */
+export async function sweepStatus(form: FormData): Promise<ActionResult> {
+  const { user, db } = await requireRole(["analyst", "admin"]);
+  const from = String(form.get("from") ?? "");
+  const to = String(form.get("to") ?? "");
+  let moved = 0;
+  const result = await attempt(async () => {
+    moved = await moveAllActions(db, from, to, user.id);
+  }, "", ["/pursuits"]);
+  return result.ok
+    ? { ok: true, message: `${moved} action${moved === 1 ? "" : "s"} moved from “${from}” to “${to}”.` }
+    : result;
 }

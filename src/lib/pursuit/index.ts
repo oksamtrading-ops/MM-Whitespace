@@ -302,3 +302,52 @@ async function assertPursuit(db: Sql, pursuitId: string): Promise<void> {
     { id: string } | undefined;
   if (!row) throw new PursuitRefused("There is no such pursuit.");
 }
+
+/**
+ * Statuses that actions are sitting in and the vocabulary no longer knows.
+ *
+ * Renaming a status deliberately does not rewrite anybody's record, so every
+ * action in the old term is stranded: it counts as open again, because nothing
+ * says it closes. With one action that is a click. The first real rename with
+ * fifty actions behind it would be an afternoon, and the temptation would be to
+ * rewrite them in the database, which loses the fact that they were moved.
+ */
+export type Stranded = { status: string; actions: number };
+
+export async function strandedStatuses(db: Sql): Promise<Stranded[]> {
+  const known = new Set(statusNames(await vocabulary(db)));
+  const rows = await db.all(
+    `select status, count(*) as n from pursuit_actions
+      where status is not null group by status order by status`) as
+    Array<{ status: string; n: number }>;
+  return rows
+    .filter((r) => !known.has(String(r.status)))
+    .map((r) => ({ status: String(r.status), actions: Number(r.n) }));
+}
+
+/**
+ * Move every action in one status to another, and say how many moved.
+ *
+ * The destination must be a status the vocabulary knows -- the point is to land
+ * somewhere meaningful, and a bulk move into another unknown term would strand
+ * them all over again. The source is deliberately NOT checked against the
+ * vocabulary: the whole use is moving out of a term that is no longer in it.
+ */
+export async function moveAllActions(
+  db: Sql, from: string, to: string, actorId: string | null,
+): Promise<number> {
+  if (!from.trim()) throw new PursuitRefused("Name the status to move out of.");
+  if (from === to) throw new PursuitRefused("That is the status they are already in.");
+  const v = await vocabulary(db);
+  if (!statusNames(v).includes(to)) {
+    throw new PursuitRefused(
+      `"${to}" is not one of the statuses in use (${statusNames(v).join(", ")}).`);
+  }
+  const r = await db.run("update pursuit_actions set status = ? where status = ?", to, from);
+  if (r.changes === 0) throw new PursuitRefused(`No action is in "${from}".`);
+  // One line for the sweep, with its count: a bulk change nobody can see
+  // afterwards is the reason bulk changes are frightening.
+  await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_actions_swept', ?, ?)`,
+               actorId, JSON.stringify({ from, to, actions: r.changes }));
+  return r.changes;
+}

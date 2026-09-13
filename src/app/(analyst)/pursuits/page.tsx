@@ -3,7 +3,8 @@ import type { Route } from "next";
 import type { Metadata } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
-import { listPursuits, vocabulary } from "../../../lib/pursuit/index.ts";
+import { listPursuits, strandedStatuses, vocabulary } from "../../../lib/pursuit/index.ts";
+import Sweep from "./Sweep.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
 import Facts from "../../_ui/Facts.tsx";
@@ -27,6 +28,7 @@ export default async function Pursuits() {
 
   const pursuits = await listPursuits(ctx.db);
   const v = await vocabulary(ctx.db);
+  const stranded = await strandedStatuses(ctx.db);
   const open = pursuits.reduce((n, p) => n + p.openActions, 0);
 
   return (
@@ -44,7 +46,14 @@ export default async function Pursuits() {
         { label: "Unprioritised", value: pursuits.filter((p) => !p.priority).length, figure: true },
       ]} />
 
-      <Section id="list" title="Open pursuits"
+      {stranded.length > 0 && (
+        <Section id="stranded" title="Actions left behind by a renamed status"
+                 caption="Renaming a status does not rewrite anybody's record, so actions in the old term are still in it — and count as open, because nothing now says they close.">
+          <Sweep stranded={stranded} vocabulary={v} />
+        </Section>
+      )}
+
+      <Section id="list" title="Open pursuits" index={stranded.length > 0 ? 1 : 0}
                caption={pursuits.length === 0
                  ? "None yet. A pursuit starts from a company profile, where the evidence is."
                  : `Ranked by priority — ${v.priorities.join(", ")} — and then by what happened most recently.`}>

@@ -159,6 +159,14 @@ function seedPursuit(dbPath, email, note) {
   `], { cwd: ROOT, encoding: "utf8" });
 }
 
+function strandAction(dbPath, status) {
+  execFileSync("node", ["--input-type=module", "-e", `
+    import { DatabaseSync } from "node:sqlite";
+    const db = new DatabaseSync(${JSON.stringify(dbPath)});
+    db.prepare("update pursuit_actions set status = ?").run(${JSON.stringify(status)});
+  `], { cwd: ROOT, stdio: "ignore" });
+}
+
 const get = (path, cookie) =>
   fetch(`${BASE}${path}`, { headers: cookie ? { cookie } : {} })
     .then(async (r) => ({ status: r.status, html: await r.text() }));
@@ -728,6 +736,18 @@ async function journeys(dbPath) {
   const analystProfile = await get(`/companies/${seeded.companyId}`, analyst.cookie);
   check("an Analyst's does, and it points at the one already open",
         analystProfile.html.includes("Open the pursuit"));
+
+  // The repair for a renamed status appears only when there is something to
+  // repair, and names what is stranded rather than asking the person to know.
+  check("with nothing stranded, the sweep section is not on the page",
+        !pursuitList.html.includes("no longer a status in use"));
+  strandAction(dbPath, "Superseded");
+  const stranded = await get("/pursuits", analyst.cookie);
+  check("a status the vocabulary no longer knows is named, with its count",
+        /One action is in .{1,12}Superseded.{1,12}, which is no longer a status in use/.test(stranded.html),
+        "the sweep section did not appear");
+  check("and it counts as open until it is moved",
+        /1 open/.test(stranded.html));
 
   const signedOut = await get("/pursuits", null);
   check("signed out, the pursuit list asks for a sign-in rather than rendering",
