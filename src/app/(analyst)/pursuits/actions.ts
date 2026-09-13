@@ -16,8 +16,8 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/context.ts";
 import {
-  addAction, addNote, moveAllActions, PursuitRefused, setActionStatus, setOwner, setPriority,
-  startPursuit,
+  addAction, addNote, PursuitRefused, setActionStatus, setOwner, setPriority, startPursuit,
+  sweepTerm, type StrandedKind,
 } from "../../../lib/pursuit/index.ts";
 
 export type ActionResult = { ok: boolean; message: string; pursuitId?: string };
@@ -85,16 +85,21 @@ export async function moveAction(form: FormData): Promise<ActionResult> {
                  "Action moved.", ["/pursuits", `/pursuits/${pursuitId}`]);
 }
 
-/** Sweep every action out of a status the vocabulary no longer knows. */
+/** Sweep every row out of a term the vocabulary no longer knows. */
 export async function sweepStatus(form: FormData): Promise<ActionResult> {
   const { user, db } = await requireRole(["analyst", "admin"]);
+  const kind = String(form.get("kind") ?? "status") as StrandedKind;
   const from = String(form.get("from") ?? "");
   const to = String(form.get("to") ?? "");
+  if (kind !== "status" && kind !== "priority") {
+    return { ok: false, message: "That is not something this can move." };
+  }
   let moved = 0;
   const result = await attempt(async () => {
-    moved = await moveAllActions(db, from, to, user.id);
+    moved = await sweepTerm(db, kind, from, to, user.id);
   }, "", ["/pursuits"]);
-  return result.ok
-    ? { ok: true, message: `${moved} action${moved === 1 ? "" : "s"} moved from “${from}” to “${to}”.` }
-    : result;
+  if (!result.ok) return result;
+  const noun = kind === "status" ? "action" : "pursuit";
+  return { ok: true,
+           message: `${moved} ${noun}${moved === 1 ? "" : "s"} moved from “${from}” to “${to}”.` };
 }

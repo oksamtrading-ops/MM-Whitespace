@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { memorySql } from "../db/open.ts";
 import type { Sql } from "../db/sql.ts";
 import {
-  addAction, addNote, closedStatuses, getPursuit, listPursuits, moveAllActions, parseStatuses,
+  addAction, addNote, closedStatuses, getPursuit, listPursuits, parseStatuses,
   PursuitRefused, setActionStatus, setOwner, setPriority, startPursuit, statusNames,
-  strandedStatuses, vocabulary,
+  strandedTerms, sweepTerm, vocabulary,
 } from "./index.ts";
 import { validate, InvalidSetting, putSettings } from "../settings/index.ts";
 import { publicRow } from "../enrich/worker.ts";
@@ -306,7 +306,7 @@ async function withStranded() {
 
 test("a renamed status strands its actions, and they are counted where they can be seen", async () => {
   const { db } = await withStranded();
-  assert.deepEqual(await strandedStatuses(db), [{ status: "Superseded", actions: 3 }]);
+  assert.deepEqual(await strandedTerms(db), [{ kind: "status", value: "Superseded", count: 3 }]);
   // Sorted: the list ranks by last activity, which is not what this is about.
   assert.deepEqual((await listPursuits(db)).map((p) => p.openActions).sort(), [1, 2],
                    "stranded actions count as open, because nothing says they close");
@@ -314,8 +314,8 @@ test("a renamed status strands its actions, and they are counted where they can 
 
 test("one sweep moves every stranded action, across every pursuit", async () => {
   const { db, actor } = await withStranded();
-  assert.equal(await moveAllActions(db, "Superseded", "Dropped", actor), 3);
-  assert.deepEqual(await strandedStatuses(db), [], "nothing is left behind");
+  assert.equal(await sweepTerm(db, "status", "Superseded", "Dropped", actor), 3);
+  assert.deepEqual(await strandedTerms(db), [], "nothing is left behind");
   assert.deepEqual((await listPursuits(db)).map((p) => p.openActions), [0, 0]);
   const statuses = (await getPursuit(db, (await listPursuits(db))[0].id))!
     .actions.map((x) => x.status);
@@ -325,23 +325,23 @@ test("one sweep moves every stranded action, across every pursuit", async () => 
 test("a sweep leaves ONE audit line, with its count", async () => {
   // A bulk change nobody can see afterwards is why bulk changes are frightening.
   const { db, actor } = await withStranded();
-  await moveAllActions(db, "Superseded", "Dropped", actor);
+  await sweepTerm(db, "status", "Superseded", "Dropped", actor);
   const rows = await db.all(
-    "select detail from audit_log where event = 'pursuit_actions_swept'") as Array<{ detail: string }>;
+    "select detail from audit_log where event = 'pursuit_terms_swept'") as Array<{ detail: string }>;
   assert.equal(rows.length, 1);
   assert.deepEqual(JSON.parse(rows[0].detail),
-                   { from: "Superseded", to: "Dropped", actions: 3 });
+                   { kind: "status", from: "Superseded", to: "Dropped", count: 3 });
 });
 
 test("a sweep will not strand them again, and will not move nothing", async () => {
   const { db, actor } = await withStranded();
-  await assert.rejects(() => moveAllActions(db, "Superseded", "Abandoned", actor),
+  await assert.rejects(() => sweepTerm(db, "status", "Superseded", "Abandoned", actor),
                        /not one of the statuses in use/);
-  await assert.rejects(() => moveAllActions(db, "Nowhere", "Dropped", actor),
-                       /No action is in "Nowhere"/);
-  await assert.rejects(() => moveAllActions(db, "Dropped", "Dropped", actor),
-                       /already in/);
-  assert.deepEqual(await strandedStatuses(db), [{ status: "Superseded", actions: 3 }],
+  await assert.rejects(() => sweepTerm(db, "status", "Nowhere", "Dropped", actor),
+                       /No action carries "Nowhere"/);
+  await assert.rejects(() => sweepTerm(db, "status", "Dropped", "Dropped", actor),
+                       /already carry/);
+  assert.deepEqual(await strandedTerms(db), [{ kind: "status", value: "Superseded", count: 3 }],
                    "a refused sweep changes nothing");
 });
 
@@ -349,5 +349,54 @@ test("a status still in use is never called stranded", async () => {
   const { db, northco, actor } = await seeded();
   const id = await startPursuit(db, northco, actor);
   await addAction(db, id, { description: "live one" }, actor);
-  assert.deepEqual(await strandedStatuses(db), []);
+  assert.deepEqual(await strandedTerms(db), []);
+});
+
+
+test("a renamed PRIORITY strands its pursuits, and one sweep moves them too", async () => {
+  // The same problem and so the same mechanism. A stranded priority does not
+  // corrupt a count the way a stranded status does -- it sorts last, among the
+  // pursuits nobody has judged -- but it is just as permanent without this.
+  const { db, northco, southco, actor } = await seeded();
+  const a = await startPursuit(db, northco, actor);
+  const b = await startPursuit(db, southco, actor);
+  await setPriority(db, a, "Medium", actor);
+  await setPriority(db, b, "Medium", actor);
+  await putSettings(db, { pursuit_priorities: "Urgent, Normal" }, actor);
+
+  assert.deepEqual(await strandedTerms(db), [{ kind: "priority", value: "Medium", count: 2 }]);
+  assert.ok((await listPursuits(db)).every((p) => p.priorityRetired), "and each says so");
+
+  assert.equal(await sweepTerm(db, "priority", "Medium", "Normal", actor), 2);
+  assert.deepEqual(await strandedTerms(db), []);
+  const after = await listPursuits(db);
+  assert.ok(after.every((p) => p.priority === "Normal" && !p.priorityRetired));
+});
+
+test("a sweep cannot put a priority into a status, or the other way round", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await setPriority(db, id, "High", actor);
+  await putSettings(db, { pursuit_priorities: "Urgent, Normal" }, actor);
+  // "Done" is a status. It is not somewhere a pursuit's priority can land.
+  await assert.rejects(() => sweepTerm(db, "priority", "High", "Done", actor),
+                       /not one of the priorities in use/);
+  await assert.rejects(() => sweepTerm(db, "status", "High", "Normal", actor),
+                       /not one of the statuses in use/);
+});
+
+test("both kinds strand at once, and each is listed with its own noun", async () => {
+  const { db, northco, actor } = await seeded();
+  const id = await startPursuit(db, northco, actor);
+  await setPriority(db, id, "Low", actor);
+  await addAction(db, id, { description: "x" }, actor);
+  const action = (await getPursuit(db, id))!.actions[0];
+  await setActionStatus(db, action.id, "Done", actor);
+
+  await putSettings(db, { pursuit_priorities: "Urgent, Normal",
+                          pursuit_action_statuses: "Open, Closed*" }, actor);
+  assert.deepEqual(await strandedTerms(db), [
+    { kind: "status", value: "Done", count: 1 },
+    { kind: "priority", value: "Low", count: 1 },
+  ]);
 });

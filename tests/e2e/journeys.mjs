@@ -744,7 +744,7 @@ async function journeys(dbPath) {
   strandAction(dbPath, "Superseded");
   const stranded = await get("/pursuits", analyst.cookie);
   check("a status the vocabulary no longer knows is named, with its count",
-        /One action is in .{1,12}Superseded.{1,12}, which is no longer a status in use/.test(stranded.html),
+        /One action carries .{1,12}Superseded.{1,12}, which is no longer a status in use/.test(stranded.html),
         "the sweep section did not appear");
   check("and it counts as open until it is moved",
         /1 open/.test(stranded.html));

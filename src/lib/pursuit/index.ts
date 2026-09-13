@@ -304,50 +304,86 @@ async function assertPursuit(db: Sql, pursuitId: string): Promise<void> {
 }
 
 /**
- * Statuses that actions are sitting in and the vocabulary no longer knows.
+ * Terms a vocabulary no longer knows, that rows are still carrying.
  *
- * Renaming a status deliberately does not rewrite anybody's record, so every
- * action in the old term is stranded: it counts as open again, because nothing
- * says it closes. With one action that is a click. The first real rename with
- * fifty actions behind it would be an afternoon, and the temptation would be to
- * rewrite them in the database, which loses the fact that they were moved.
+ * Renaming a term deliberately does not rewrite anybody's record, so every row
+ * in the old one is stranded. For a STATUS that also means the action counts as
+ * open again, because nothing now says it closes; for a PRIORITY it means the
+ * pursuit sorts last, among the ones nobody has judged. With one row that is a
+ * click. The first real rename with fifty behind it would be an afternoon, and
+ * the temptation would be to rewrite them in the database, which loses the fact
+ * that they were moved at all.
+ *
+ * The two are one mechanism because they are one problem. Only the table, the
+ * column and the noun differ.
  */
-export type Stranded = { status: string; actions: number };
+export type StrandedKind = "status" | "priority";
 
-export async function strandedStatuses(db: Sql): Promise<Stranded[]> {
-  const known = new Set(statusNames(await vocabulary(db)));
-  const rows = await db.all(
-    `select status, count(*) as n from pursuit_actions
-      where status is not null group by status order by status`) as
-    Array<{ status: string; n: number }>;
-  return rows
-    .filter((r) => !known.has(String(r.status)))
-    .map((r) => ({ status: String(r.status), actions: Number(r.n) }));
+export type Stranded = {
+  kind: StrandedKind;
+  value: string;
+  /** Actions for a status; pursuits for a priority. */
+  count: number;
+};
+
+const TERMS = {
+  status: { table: "pursuit_actions", column: "status", noun: "action" },
+  priority: { table: "pursuits", column: "priority", noun: "pursuit" },
+} as const satisfies Record<StrandedKind, { table: string; column: string; noun: string }>;
+
+/** The noun to count in, for a screen that has to say what is stranded. */
+export const strandedNoun = (kind: StrandedKind): string => TERMS[kind].noun;
+
+export async function strandedTerms(db: Sql): Promise<Stranded[]> {
+  const v = await vocabulary(db);
+  const known: Record<StrandedKind, Set<string>> = {
+    status: new Set(statusNames(v)),
+    priority: new Set(v.priorities),
+  };
+  const out: Stranded[] = [];
+  for (const kind of ["status", "priority"] as const) {
+    const t = TERMS[kind];
+    // Table and column are literals from TERMS, never a caller's string.
+    const rows = await db.all(
+      `select ${t.column} as value, count(*) as n from ${t.table}
+        where ${t.column} is not null group by ${t.column} order by ${t.column}`) as
+      Array<{ value: string; n: number }>;
+    for (const r of rows) {
+      if (!known[kind].has(String(r.value))) {
+        out.push({ kind, value: String(r.value), count: Number(r.n) });
+      }
+    }
+  }
+  return out;
 }
 
 /**
- * Move every action in one status to another, and say how many moved.
+ * Move every row carrying one term to another, and say how many moved.
  *
- * The destination must be a status the vocabulary knows -- the point is to land
- * somewhere meaningful, and a bulk move into another unknown term would strand
- * them all over again. The source is deliberately NOT checked against the
- * vocabulary: the whole use is moving out of a term that is no longer in it.
+ * The destination must be a term the vocabulary knows -- the point is to land
+ * somewhere meaningful, and a sweep into another unknown term would strand them
+ * all over again. The source is deliberately NOT checked against the
+ * vocabulary: moving out of a term no longer in it is the entire use.
  */
-export async function moveAllActions(
-  db: Sql, from: string, to: string, actorId: string | null,
+export async function sweepTerm(
+  db: Sql, kind: StrandedKind, from: string, to: string, actorId: string | null,
 ): Promise<number> {
-  if (!from.trim()) throw new PursuitRefused("Name the status to move out of.");
-  if (from === to) throw new PursuitRefused("That is the status they are already in.");
+  if (!from.trim()) throw new PursuitRefused(`Name the ${kind} to move out of.`);
+  if (from === to) throw new PursuitRefused(`That is the ${kind} they already carry.`);
   const v = await vocabulary(db);
-  if (!statusNames(v).includes(to)) {
+  const allowed = kind === "status" ? statusNames(v) : v.priorities;
+  if (!allowed.includes(to)) {
     throw new PursuitRefused(
-      `"${to}" is not one of the statuses in use (${statusNames(v).join(", ")}).`);
+      `"${to}" is not one of the ${kind === "status" ? "statuses" : "priorities"} ` +
+      `in use (${allowed.join(", ")}).`);
   }
-  const r = await db.run("update pursuit_actions set status = ? where status = ?", to, from);
-  if (r.changes === 0) throw new PursuitRefused(`No action is in "${from}".`);
+  const t = TERMS[kind];
+  const r = await db.run(
+    `update ${t.table} set ${t.column} = ? where ${t.column} = ?`, to, from);
+  if (r.changes === 0) throw new PursuitRefused(`No ${t.noun} carries "${from}".`);
   // One line for the sweep, with its count: a bulk change nobody can see
   // afterwards is the reason bulk changes are frightening.
-  await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_actions_swept', ?, ?)`,
-               actorId, JSON.stringify({ from, to, actions: r.changes }));
+  await db.run(`insert into audit_log (event, actor_id, detail) values ('pursuit_terms_swept', ?, ?)`,
+               actorId, JSON.stringify({ kind, from, to, count: r.changes }));
   return r.changes;
 }
