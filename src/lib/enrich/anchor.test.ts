@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  anchorNumeric, detectCurrency, detectScale, gate, hasTextLayer, normalize, normalizeNumeral,
-  numericHaystack, type StoredDocument,
+  anchorNumeric, currenciesMentioned, detectCurrency, detectScale, gate, hasTextLayer, normalize,
+  normalizeNumeral, numericHaystack, type StoredDocument,
 } from "./anchor.ts";
 
 /** A fee table as filings actually print one: label and figure not contiguous. */
@@ -349,7 +349,9 @@ test("a fee claimed in a currency the document contradicts is held; a bare $ dec
   const cad = anchorNumeric({ value: 517_116, scale: "units", fiscalYear: 2025, fieldKey: "audit_fee", currency: "CAD" },
                             doc(ELEMENTAL));
   assert.equal(cad.mode, "label_only");
-  assert.match(cad.reason ?? "", /in USD where it appears, not CAD/);
+  // Elemental's 40-F names US dollars and never Canadian ones, so the broader
+  // check answers first; both readings say the same thing.
+  assert.match(cad.reason ?? "", /never mentions CAD|in USD where it appears, not CAD/);
 
   // Agnico's heading says C$; the model saying CAD agrees.
   assert.equal(anchorNumeric({ value: 8_052_000, scale: "thousands", fiscalYear: 2025, fieldKey: "audit_fee",
@@ -368,4 +370,47 @@ test("currency comes from the figure's prefix or a heading, never from a mention
   assert.equal(at("All amounts are expressed in Canadian dollars. Audit fees $412,000", "412000"), "CAD");
   assert.equal(at("(in thousands of U.S. dollars) Audit fees 412", "412"), "USD");
   assert.equal(at("Audit fees C$ 1,200", "1200"), "CAD");
+});
+
+// --- Run 2, 13 September 2026 -------------------------------------------------
+
+test("a fee in a currency the document never names is held, whatever the digits say", async () => {
+  // Barrick: the circular's table reads "$10.3" in millions and talks about US
+  // dollars throughout; the model proposed Australian dollars. The amount, the
+  // label and the year all line up, so only the currency can catch it.
+  const barrick = doc("Audit and other fees (in millions of US dollars) for the years ended " +
+                      "December 31, 2025 and 2024 Audit fees(2) $10.3 $9.7");
+  const claim = { value: 10_300_000, scale: "millions" as const, fiscalYear: 2025, fieldKey: "audit_fee" };
+  const aud = anchorNumeric({ ...claim, currency: "AUD" }, barrick);
+  assert.equal(aud.mode, "label_only");
+  assert.match(aud.reason ?? "", /never mentions AUD; it states amounts in USD/);
+  assert.equal(anchorNumeric({ ...claim, currency: "USD" }, barrick).mode, "proximity",
+               "the same figure in the currency the document states anchors");
+
+  // A filing that names no currency at all says nothing either way, so the
+  // model's reading stands rather than everything being held.
+  const silent = doc("Audit fees for the year ended December 31, 2025 (in millions) $10.3");
+  assert.equal(anchorNumeric({ ...claim, currency: "CAD" }, silent).mode, "proximity");
+  assert.deepEqual(currenciesMentioned(numericHaystack(silent.text)), []);
+});
+
+test("the labels real filings actually use", async () => {
+  // Run 2 threw away Teck's and Pan American's fees over the wording of a row.
+  const teck = doc("EXTERNAL AUDITOR SERVICE FEES Year Ended 2025 ($000) Year Ended 2024 ($000) " +
+                   "Audit Services (1) 6,526 7,955");
+  assert.equal(anchorNumeric(
+    { value: 6_526_000, scale: "thousands", fiscalYear: 2025, fieldKey: "audit_fee" }, teck).mode,
+    "proximity");
+
+  const panAmerican = doc("Fees billed by the auditor for the year ended December 31, 2024, in " +
+                          "United States dollars. Tax-Related Fees (4) 5,100 3,300");
+  assert.equal(anchorNumeric(
+    { value: 5_100, scale: "units", fiscalYear: 2024, fieldKey: "tax_fee", currency: "USD" },
+    panAmerican).mode, "proximity");
+
+  const barrickTax = doc("Fees in millions of US dollars. Tax compliance and advisory fees(4) $0.2 $0.2 " +
+                         "for the year ended December 31, 2025");
+  assert.equal(anchorNumeric(
+    { value: 200_000, scale: "millions", fiscalYear: 2025, fieldKey: "tax_fee", currency: "USD" },
+    barrickTax).mode, "proximity");
 });

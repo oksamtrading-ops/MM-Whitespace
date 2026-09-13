@@ -197,6 +197,28 @@ function codeOf(token: string): string | null {
   return CURRENCY_TOKEN.find(([re]) => re.test(t))?.[1] ?? null;
 }
 
+/**
+ * Every currency the document names anywhere -- its symbol, its code or its
+ * words. Used to catch a claim the document never supports: Run 2 proposed
+ * Barrick's audit fee in Australian dollars from a table reading "$10.3",
+ * in a circular that talks about US dollars and never mentions AUD.
+ *
+ * A filing that names NO currency (only "$") tells us nothing, so nothing is
+ * concluded from its silence -- the claim stands on the model's reading, as
+ * it did before.
+ */
+const CURRENCY_MENTIONS: Array<[string, RegExp]> = [
+  ["USD", /\bu\.?s\.?\s?\$|\busd\b|\bu\.?s\.? dollars?\b|\bunited states dollars?\b/],
+  ["CAD", /\bc\$|\bca\$|\bcdn\$|\bcad\b|\bcanadian dollars?\b|\bdollars? canadiens?\b/],
+  ["AUD", /\ba\$|\bau\$|\baud\b|\baustralian dollars?\b/],
+  ["GBP", /£|\bgbp\b|\bpounds? sterling\b/],
+  ["EUR", /€|\beur\b|\beuros?\b/],
+];
+
+export function currenciesMentioned(text: string): string[] {
+  return CURRENCY_MENTIONS.filter(([, re]) => re.test(text)).map(([code]) => code);
+}
+
 export function detectCurrency(text: string, near: number): string | null {
   const prefix = text.slice(Math.max(0, near - 8), near).match(PREFIX_RE);
   if (prefix) return codeOf(prefix[1]);
@@ -211,15 +233,22 @@ export function detectCurrency(text: string, near: number): string | null {
  * English-only list silently fails on a real subset of the population.
  */
 export const FIELD_LABELS: Record<string, string[]> = {
+  // Run 2 threw away real fees at Teck and Pan American because their filings
+  // head the rows "Audit Services" and "Tax-Related Fees", which were not on
+  // this list. A label list is a controlled vocabulary, and it is only as good
+  // as the wordings actually in use.
   audit_fee: [
     "audit fees", "audit fee", "audit service fees", "fees for audit services",
+    "audit services", "audit and review services", "audit and review fees",
     "honoraires d'audit", "honoraires de verification", "honoraires de vérification",
-    "frais d'audit", "honoraires pour services d'audit",
+    "frais d'audit", "honoraires pour services d'audit", "services d'audit",
   ],
   tax_fee: [
     "tax fees", "tax fee", "tax services", "fees for tax services",
+    "tax-related fees", "tax related fees", "tax compliance and advisory fees",
+    "tax compliance fees", "tax advisory fees", "tax compliance", "tax advice",
     "honoraires fiscaux", "honoraires pour services fiscaux",
-    "frais fiscaux", "honoraires de services fiscaux",
+    "frais fiscaux", "honoraires de services fiscaux", "services fiscaux",
   ],
   auditor: [
     "auditor", "independent auditor", "chartered professional accountants",
@@ -292,6 +321,15 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
 
   let sawLabel = false;
   let currencyClash: string | null = null;
+  // A currency the document never names, in a document that names others, is
+  // not this document's figure whatever the digits say.
+  const claimed = (claim.currency ?? "").toUpperCase();
+  const mentioned = claimed ? currenciesMentioned(hay) : [];
+  if (claimed && mentioned.length > 0 && !mentioned.includes(claimed)) {
+    currencyClash = `the document never mentions ${claimed}; it states amounts in ` +
+                    `${mentioned.join(", ")}`;
+  }
+  const currencyUnsupported = currencyClash !== null;
   for (const { needle, scale } of candidates) {
     if (!needle) continue;
     let from = 0;
@@ -319,9 +357,13 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
       }
       // The currency too, where the document states one: US$517,116 claimed
       // as Canadian dollars is a different amount, and the page would say C$.
+      if (currencyUnsupported) {
+        sawLabel = sawLabel || Boolean(label);
+        continue;
+      }
       const docCurrency = detectCurrency(hay, at);
-      if (claim.currency && docCurrency && docCurrency !== claim.currency.toUpperCase()) {
-        currencyClash = `the figure is in ${docCurrency} where it appears, not ${claim.currency.toUpperCase()}`;
+      if (claim.currency && docCurrency && docCurrency !== claimed) {
+        currencyClash = `the figure is in ${docCurrency} where it appears, not ${claimed}`;
         continue;
       }
       if (label && yearHit) {
