@@ -265,7 +265,7 @@ export async function setTemporaryPassword(
 /** Somebody replaces their own password. */
 export async function changePassword(
   db: Sql, opts: { userId: string; current: string; next: string; confirm: string },
-): Promise<void> {
+): Promise<{ session: NewSession; sessionsRevoked: number }> {
   const row = await db.get(
     `select u.email, p.hash from app_users u
        left join auth_passwords p on p.user_id = u.id where u.id = ?`, opts.userId) as
@@ -291,10 +291,26 @@ export async function changePassword(
   }
 
   const hash = await hashPassword(opts.next);
-  await db.tx(async (db) => {
+  return await db.tx(async (db) => {
     await db.run("update auth_passwords set hash = ?, set_at = ? where user_id = ?",
                  hash, formatStamp(), opts.userId);
     await db.run("update app_users set must_change_password = false where id = ?", opts.userId);
+
+    // EVERY session ends, including the one doing this, and a fresh one is
+    // minted for the caller to set.
+    //
+    // The main reason somebody changes a password unprompted is that they think
+    // it is known. Leaving their other sessions running answers the new
+    // password and ignores the problem -- whoever had the old one stays signed
+    // in until the session lapses on its own, which is the same failure the
+    // access review exists to prevent.
+    //
+    // Revoking all and re-minting rather than sparing the current row: sparing
+    // it means knowing which row is current, and the caller has the cookie, not
+    // the id. One rule is easier to be sure of than one rule with an exception.
+    const revoked = await revokeAllForUser(db, opts.userId, opts.userId, "password changed");
+    const session = await createSession(db, opts.userId, {});
+    return { session, sessionsRevoked: revoked };
   });
 }
 

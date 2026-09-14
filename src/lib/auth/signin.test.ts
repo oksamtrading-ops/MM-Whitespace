@@ -196,7 +196,21 @@ test("changing a password refuses without the current one, and clears the flag",
     db, { userId: analyst.id, current: GOOD, next: "short", confirm: "short" }), ChangeRefused);
 
   await db.run("update app_users set must_change_password = true where id = ?", analyst.id);
-  await changePassword(db, { userId: analyst.id, current: GOOD, next, confirm: next });
+
+  // Two sessions running when the password changes. The main reason somebody
+  // changes one unprompted is that they think it is known, so leaving the
+  // others alive answers the new password and ignores the problem -- whoever
+  // held the old one stays signed in until the session lapses on its own.
+  const one = await createSession(db, analyst.id, {});
+  const two = await createSession(db, analyst.id, {});
+  const changed = await changePassword(
+    db, { userId: analyst.id, current: GOOD, next, confirm: next });
+
+  assert.equal(changed.sessionsRevoked, 2);
+  assert.equal(await userForSession(db, one.token), null, "every prior session ends");
+  assert.equal(await userForSession(db, two.token), null);
+  assert.ok(await userForSession(db, changed.session.token),
+            "and a fresh one is handed back, or changing a password signs you out");
 
   const got = await attempt(db, "analyst@example.invalid", next);
   assert.equal(got.ok, true);

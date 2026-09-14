@@ -1,8 +1,10 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireRole } from "../../lib/auth/context.ts";
 import { changePassword, ChangeRefused } from "../../lib/auth/signin.ts";
+import { SESSION_COOKIE, sessionCookieOptions } from "../../lib/auth/sessions.ts";
 import { formatStamp } from "../../lib/db/stamp.ts";
 
 export type ChangeResult = { ok: false; message: string };
@@ -26,8 +28,9 @@ export async function changePasswordAction(
   const next = String(form.get("next") ?? "");
   const confirm = String(form.get("confirm") ?? "");
 
+  let changed;
   try {
-    await changePassword(db, { userId: user.id, current, next, confirm });
+    changed = await changePassword(db, { userId: user.id, current, next, confirm });
   } catch (err) {
     // Only the refusal's own sentence. Anything else is a fault, not an answer,
     // and must not carry what was typed back to the screen.
@@ -37,7 +40,13 @@ export async function changePasswordAction(
 
   await db.run("insert into audit_log (event, actor_id, detail) values (?, ?, ?)",
                "password_changed", user.id,
-               JSON.stringify({ email: user.email, at: formatStamp() }));
+               JSON.stringify({ email: user.email, at: formatStamp(),
+                                sessionsRevoked: changed.sessionsRevoked }));
+
+  // Changing a password ends every session the account had, this one included,
+  // so the caller has to be handed the new one or they would be signed out by
+  // succeeding. The cookie options come from the one place that holds them.
+  (await cookies()).set(SESSION_COOKIE, changed.session.token, sessionCookieOptions());
 
   // Outside the try, deliberately: redirect() throws NEXT_REDIRECT, and a catch
   // around it renders the form again instead of navigating.
