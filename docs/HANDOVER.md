@@ -660,10 +660,39 @@ it. Never run `git add -A` outside this project's folder.
 6. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
    and S4 (open the generated export in Excel).
 
-7. **Hardening:** a monotonic column on `review_decisions` (today
-   `decisionStamp()` carries the order) is the one still open. Deloitte SSO and
-   `MM_ALLOWED_DOMAINS=deloitte.ca` wait on the pilot moving to Deloitte
-   addresses, which waits on the mail decision.
+7. **Hardening: all done except Deloitte SSO**, which waits with
+   `MM_ALLOWED_DOMAINS=deloitte.ca` on the pilot moving to Deloitte addresses,
+   which waits on the mail decision. It is one seam, `sessionClaimSource`.
+
+   ~~A monotonic column on `review_decisions`; today `decisionStamp()` carries
+   the order.~~ **Done 14 September 2026** (`0025`, `0026`, both applied).
+   `seq` is now the order, and `order by decided_at desc, id desc` became
+   `order by seq desc` at all five query sites — one key instead of two.
+   `decided_at` stays as the time a person decided, no longer load-bearing, so
+   **a clock correction can no longer reorder an audit trail**; a test holds
+   that.
+
+   **The recorded reason was out of date.** The note in `decide.ts` blamed
+   decisions sharing `decided_at` inside one transaction on Postgres, which
+   stopped being true when `recordDecision` started using `decisionStamp()` —
+   production carries 240 decisions and 240 distinct stamps, no ties, bulk
+   accepts included. The real hazard is narrower: `decisionStamp()`'s
+   high-water mark is a module-level variable, so it is monotonic **per
+   process**, and production runs many concurrent instances. This closed while
+   still theoretical; nothing needed repairing.
+
+   The backfill was checked against the old ordering before the unique index
+   went on: **240 rows, numbered 1–240, zero disagreements** with
+   `(decided_at, id)`. History is preserved as the system understood it, not
+   restated.
+
+   Two things a later session should not undo. **`seq` is `not null` on
+   Postgres** (`0026`) because `order by seq desc` puts **NULLS FIRST** there —
+   a row without one would read as the newest decision for ever, which is the
+   exact silent wrongness the column exists to end. And **`0025` must stay
+   idempotent**: adoption cannot recognise a migration that creates no table,
+   so it re-runs on a database predating the ledger. SQLite has no
+   `ADD COLUMN IF NOT EXISTS`, so `applySchema` asks the question itself.
 
    ~~The domain allowlist as a database trigger; enforced in code because the
    portable migrations forbid triggers.~~ **Done 14 September 2026, and the

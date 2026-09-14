@@ -1,0 +1,23 @@
+-- POSTGRES ONLY. seq is the order, so a decision without one is not orderable.
+--
+-- Separate from 0025 because it can only be applied once the code that fills
+-- the column is deployed: between the column existing and the new build going
+-- live, the running application knows nothing about seq, and an insert in that
+-- window would be refused rather than written. 0025 lands, the build ships,
+-- this follows. The window was empty in production -- 240 rows, none
+-- unnumbered -- and this makes sure there is never another one.
+--
+-- WHY IT IS WORTH A MIGRATION OF ITS OWN
+--
+-- On Postgres, `order by seq desc` puts NULLS FIRST. So a row with no seq does
+-- not sort last, or fail to sort: it reads as the NEWEST decision, for ever,
+-- and undo walks back to it instead of the decision somebody actually made.
+-- That is precisely the silent wrongness the column was added to end, and it
+-- would have been reintroduced by any future insert that forgot the column.
+-- Now the database refuses it instead of quietly agreeing.
+--
+-- SQLite cannot ALTER COLUMN, so it never sees this file. It does not need it
+-- as badly: it runs one process, in tests and locally, where decisionStamp()
+-- was already strictly monotonic and the review tests hold the ordering.
+
+alter table review_decisions alter column seq set not null;

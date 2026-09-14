@@ -26,6 +26,10 @@ const PG_ONLY = [
   // unwritten -- the mechanism to ship it already existed.
   /\bcreate\s+(or\s+replace\s+)?function\b/i,
   /\bcreate\s+trigger\b/i,
+  // SQLite cannot alter a column in place at all. Postgres can, and a
+  // constraint is worth having on the engine that holds the real data even
+  // when the other cannot express it.
+  /\balter\s+table\s+\w+\s+alter\s+column\b/i,
 ];
 
 export function isPostgresOnly(sql: string): boolean {
