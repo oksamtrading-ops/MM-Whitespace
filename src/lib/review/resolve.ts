@@ -72,7 +72,7 @@ async function standingValueDecision(db: Sql, periodId: string, companyId: strin
       where d.period_id = ? and d.company_id = ? and d.field_key = ?
         and d.decision in ('accept', 'override')
         and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-      order by d.decided_at desc, d.id desc limit 1`, periodId, companyId, fieldKey) as
+      order by d.seq desc limit 1`, periodId, companyId, fieldKey) as
     { decision: "accept" | "override"; override_value: string | null; finding_id: string | null } | undefined;
 }
 

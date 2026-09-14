@@ -32,6 +32,30 @@ export function isPostgresOnly(sql: string): boolean {
   return PG_ONLY.some((re) => re.test(sql));
 }
 
+/**
+ * `alter table T add column if not exists C ...`, which Postgres has and
+ * SQLite does not.
+ *
+ * A migration that lands after the last table-creating one cannot be
+ * recognised by adoption -- the prefix is found by looking for tables -- so it
+ * RUNS AGAIN on a database that predates the ledger, and must therefore be
+ * idempotent. Every such migration so far has been data-only, where `on
+ * conflict do nothing` says it. An ADD COLUMN has no such phrasing in SQLite,
+ * so the loader supplies the condition: it asks whether the column is there
+ * and skips the statement if it is. Returns what to ask about, or null when
+ * the statement is something else.
+ */
+export function addColumnIfNotExists(stmt: string): { table: string; column: string } | null {
+  const m = stmt.match(
+    /^\s*alter\s+table\s+([a-z_][a-z0-9_]*)\s+add\s+column\s+if\s+not\s+exists\s+([a-z_][a-z0-9_]*)/i);
+  return m ? { table: m[1], column: m[2] } : null;
+}
+
+/** The same statement SQLite will accept: it understands the ADD, not the condition. */
+export function withoutIfNotExists(stmt: string): string {
+  return stmt.replace(/(\badd\s+column\s+)if\s+not\s+exists\s+/i, "$1");
+}
+
 const TYPE_RULES: Array<[RegExp, string]> = [
   // Identity default first, before the bare uuid rule can touch it.
   [/\buuid\s+primary\s+key\s+default\s+gen_random_uuid\(\)/gi,

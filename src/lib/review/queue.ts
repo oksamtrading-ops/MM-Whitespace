@@ -211,19 +211,19 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
               where d.period_id = ? and d.company_id = c.id and d.field_key = e.field_key
                 and d.decision != 'undo'
                 and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-              order by d.decided_at desc, d.id desc limit 1) as decision,
+              order by d.seq desc limit 1) as decision,
             -- Which finding the standing decision judged, and when: a newer
             -- proposal than that is research the decision never saw.
             (select d.finding_id from review_decisions d
               where d.period_id = ? and d.company_id = c.id and d.field_key = e.field_key
                 and d.decision != 'undo'
                 and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-              order by d.decided_at desc, d.id desc limit 1) as "decidedFindingId",
+              order by d.seq desc limit 1) as "decidedFindingId",
             (select d.decided_at from review_decisions d
               where d.period_id = ? and d.company_id = c.id and d.field_key = e.field_key
                 and d.decision != 'undo'
                 and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-              order by d.decided_at desc, d.id desc limit 1) as "decidedAt"
+              order by d.seq desc limit 1) as "decidedAt"
        from enrichment_findings e
        join enrichment_runs r on r.id = e.run_id and r.period_id = ?
        join companies c on c.id = e.company_id

@@ -159,6 +159,52 @@ test("UNDO IS AN INSERT, not a delete", async () => {
     "an undone decision no longer stands");
 });
 
+test("the order is the row's own, not the clock's", async () => {
+  // Ordering was (decided_at, id), and decided_at comes from decisionStamp(),
+  // whose high-water mark is a module-level variable -- monotonic within one
+  // process, and production runs many. Two instances issuing the same
+  // microsecond left a random uuid deciding which read as latest: consistent,
+  // arbitrary, and indistinguishable from an answer.
+  const { db, periodId, companyId } = await seeded();
+  await recordDecision(db, { periodId, companyId, fieldKey: "auditor", decision: "accept" });
+  await recordDecision(db, {
+    periodId, companyId, fieldKey: "auditor", decision: "override", overrideValue: "PwC" });
+
+  const rows = await db.all(
+    "select decision, seq from review_decisions order by seq") as
+      Array<{ decision: string; seq: number }>;
+  assert.deepEqual(rows.map((r) => r.decision), ["accept", "override"]);
+  assert.ok(rows[1].seq > rows[0].seq, "later decisions carry higher numbers");
+  assert.ok(rows.every((r) => r.seq !== null), "and every decision carries one");
+
+  // The clock going backwards must not reorder the trail. Before 0025 this
+  // reordered it, because decided_at WAS the order.
+  await db.run(
+    "update review_decisions set decided_at = '1999-01-01 00:00:00.000000' where seq = ?",
+    rows[1].seq);
+  assert.equal((await effectiveDecision(db, periodId, companyId, "auditor"))?.decision, "override",
+               "the later decision still stands, whatever its timestamp says");
+  const undone = await undoLast(db, periodId, "auditor", null);
+  assert.equal(undone?.undone, (await db.get(
+    "select id from review_decisions where seq = ?", rows[1].seq) as { id: string }).id,
+    "and undo still walks back the one that was actually written last");
+});
+
+test("two decisions cannot claim the same place in the order", async () => {
+  // Between two concurrent transactions both can read the same maximum. The
+  // unique index makes that a raised error a reviewer retries, rather than two
+  // rows silently tying -- which is the state this column exists to end.
+  const { db, periodId, companyId } = await seeded();
+  await recordDecision(db, { periodId, companyId, fieldKey: "auditor", decision: "accept" });
+  const [{ seq }] = await db.all("select seq from review_decisions") as Array<{ seq: number }>;
+  await assert.rejects(
+    () => db.run(`insert into review_decisions
+        (period_id, company_id, field_key, decision, decided_at, seq)
+        values (?, ?, 'auditor', 'accept', '2026-01-01 00:00:00.000000', ?)`,
+      periodId, companyId, seq),
+    /unique/i);
+});
+
 test("undo walks back one decision at a time", async () => {
   const { db, periodId, companyId } = await seeded();
   await recordDecision(db, { periodId, companyId, fieldKey: "auditor", decision: "accept" });

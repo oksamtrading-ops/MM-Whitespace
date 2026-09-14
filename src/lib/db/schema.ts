@@ -3,7 +3,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { isPostgresOnly, statements, toSqlite } from "./dialect.ts";
+import {
+  addColumnIfNotExists, isPostgresOnly, statements, toSqlite, withoutIfNotExists,
+} from "./dialect.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const MIGRATIONS_DIR = join(HERE, "..", "..", "..", "supabase", "migrations");
@@ -39,6 +41,11 @@ function recorded(db: DatabaseSync): Set<string> {
 /** The first table a migration creates, used to recognise one already applied. */
 function firstTable(sql: string): string | null {
   return sql.match(/create\s+table\s+(?:if\s+not\s+exists\s+)?([a-z_][a-z0-9_]*)/i)?.[1] ?? null;
+}
+
+function columnExists(db: DatabaseSync, table: string, column: string): boolean {
+  const cols = db.prepare(`pragma table_info(${table})`).all() as Array<{ name: string }>;
+  return cols.some((c) => c.name === column);
 }
 
 function tableExists(db: DatabaseSync, name: string): boolean {
@@ -82,6 +89,21 @@ export function applySchema(db: DatabaseSync, dir: string = MIGRATIONS_DIR): Loa
     if (isPostgresOnly(sql)) { skipped.push(file); continue; }
     if (already.has(file)) continue;
     for (const stmt of statements(toSqlite(sql))) {
+      // SQLite has no ADD COLUMN IF NOT EXISTS, so the condition is asked here.
+      // Adoption cannot recognise a migration that adds no table, so this one
+      // runs again on a database predating the ledger; without this it would
+      // fail with "duplicate column name" and take the whole schema with it.
+      const add = addColumnIfNotExists(stmt);
+      if (add) {
+        if (columnExists(db, add.table, add.column)) continue;
+        try {
+          db.exec(withoutIfNotExists(stmt));
+        } catch (err) {
+          throw new Error(`${file}: ${(err as Error).message}\n  in: ${stmt.slice(0, 160)}`);
+        }
+        count++;
+        continue;
+      }
       try {
         db.exec(stmt);
       } catch (err) {

@@ -177,10 +177,17 @@ export async function recordDecision(db: Sql, opts: RecordOptions): Promise<stri
   if (opts.decision === "accept" || opts.decision === "override") {
     await preserveExtract(db, opts.periodId, opts.companyId, opts.fieldKey);
   }
+  // seq is the order, and it is read from the table rather than from this
+  // process: decisionStamp()'s high-water mark is a module-level variable, so
+  // two serverless instances can issue the same microsecond. Inside a
+  // transaction this sees the rows already written by it, so a bulk accept
+  // numbers itself; between two concurrent transactions the unique index
+  // refuses the second rather than letting both claim the same place.
   const row = await db.get(`insert into review_decisions
        (period_id, company_id, field_key, decision, override_value, reason,
-        finding_id, finding_attempt, actor_id, bulk, undoes_id, decided_at)
-     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        finding_id, finding_attempt, actor_id, bulk, undoes_id, decided_at, seq)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             (select coalesce(max(seq), 0) + 1 from review_decisions))
      returning id`, opts.periodId, opts.companyId, opts.fieldKey, opts.decision,
         opts.overrideValue === undefined ? null : JSON.stringify(opts.overrideValue),
         opts.reason ?? null, opts.findingId ?? null, opts.findingAttempt ?? null,
@@ -207,17 +214,14 @@ export async function recordDecision(db: Sql, opts: RecordOptions): Promise<stri
 export async function undoLast(
   db: Sql, periodId: string, fieldKey: string, actorId: string | null,
 ): Promise<{ undone: string; companyId: string } | null> {
-  // The tiebreak is d.id, not SQLite's rowid, which Postgres does not have.
-  // Deterministic on both, but NOT insertion order: decisions written in one
-  // transaction share decided_at exactly on Postgres, and a random uuid then
-  // decides which reads as latest. Within one company and field the workflow
-  // writes at most one decision per transaction, so this shows only here,
-  // across a bulk accept, and it changes which company is walked back first
-  // rather than how many are. A monotonic column is the durable fix.
+  // Ordered by seq, which is the order the rows were written in (0025). This
+  // used to be (decided_at, id), where the tiebreak was a random uuid -- so
+  // two decisions sharing a microsecond across instances resolved
+  // consistently but arbitrarily, and undo could walk back the wrong one.
   const last = await db.get(`select d.id, d.company_id, d.decision from review_decisions d
       where d.period_id = ? and d.field_key = ? and d.decision != 'undo'
         and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-      order by d.decided_at desc, d.id desc limit 1`, periodId, fieldKey) as { id: string; company_id: string } | undefined;
+      order by d.seq desc limit 1`, periodId, fieldKey) as { id: string; company_id: string } | undefined;
   if (!last) return null;
 
   await recordDecision(db, {
@@ -237,7 +241,7 @@ export async function effectiveDecision(
       where d.period_id = ? and d.company_id = ? and d.field_key = ?
         and d.decision != 'undo'
         and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
-      order by d.decided_at desc, d.id desc limit 1`, periodId, companyId, fieldKey) as
+      order by d.seq desc limit 1`, periodId, companyId, fieldKey) as
     { id: string; decision: DecisionKind; override_value: string | null;
       reason: string | null; finding_attempt: number | null; bulk: number } | undefined;
 }
