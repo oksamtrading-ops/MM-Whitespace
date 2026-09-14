@@ -90,7 +90,17 @@ export class Meter {
   usage: Record<string, number> = {};
   cost = 0;
   /**
-   * Scales every price. 0.5 for a request answered by the Batch API.
+   * Scales the TOKEN prices only. 0.5 for a request answered by the Batch API.
+   *
+   * Not the web-search charge: "Web search tool calls through the Messages
+   * Batches API are priced the same as those in regular Messages API requests"
+   * (the web search tool's own documentation, read 13 September 2026). The
+   * discount is documented on tokens, and a search is billed per call whoever
+   * asks. Scaling it too understated the two batched runs by half their search
+   * charge -- $0.09 of run b5d3d9c3's 18 searches, $0.03 of run 4ba5d7d7's six
+   * -- and would have understated Run 3's 229 companies by about $6.87. The
+   * budget that HALTS a run reads this number, so understating it spends
+   * further than the Analyst agreed to.
    *
    * A plain field assigned in the body, not a parameter property: `node --test`
    * strips types rather than compiling them, and refuses that syntax.
@@ -118,8 +128,8 @@ export class Meter {
     const searches = u.server_tool_use?.web_search_requests ?? 0;
     this.cost += this.rate *
       (((u.input_tokens ?? 0) * p.in + (u.output_tokens ?? 0) * p.out +
-        cw5 * p.cw5 + Math.max(0, cw1h) * p.cw1h + (u.cache_read_input_tokens ?? 0) * p.cr) / 1e6
-       + searches * WEB_SEARCH_USD);
+        cw5 * p.cw5 + Math.max(0, cw1h) * p.cw1h + (u.cache_read_input_tokens ?? 0) * p.cr) / 1e6)
+      + searches * WEB_SEARCH_USD;
     for (const [k, v] of Object.entries({
       input_tokens: u.input_tokens, output_tokens: u.output_tokens,
       cache_read_input_tokens: u.cache_read_input_tokens, cache_creation_input_tokens: u.cache_creation_input_tokens,

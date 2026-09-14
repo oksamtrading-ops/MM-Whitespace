@@ -156,15 +156,29 @@ test("a typed count must match the scope exactly", async () => {
 });
 
 
-test("a batched run is estimated at half price, and the screen is told so", async () => {
-  // The flag halves what a run costs. An estimate that did not know would quote
-  // Run 3 at US$80 when it is US$40 -- and a number that is quietly half of what
-  // it was is worse than no number, which is why /runs says "Batched" too.
+test("a batched run is discounted on its tokens, not on its searches", async () => {
+  // The flag halves what a run's TOKENS cost. An estimate that did not know
+  // would quote Run 3 at US$80 when it is US$41 -- and a number that is quietly
+  // half of what it was is worse than no number, which is why /runs says
+  // "Batched" too.
+  //
+  // It does not halve the searches: pass 1 makes six per company and the Batch
+  // API charges for them in full. Quoting a flat half under-states Run 3's
+  // pass 1 by 229 x $0.03, and the budget gate halts on spend.
   const live = estimate(229, 200, "identity");
   const batched = estimate(229, 200, "identity", true);
   assert.ok(live.estimatedUsd > 0);
-  assert.equal(batched.estimatedUsd, Math.round(live.estimatedUsd * 0.5 * 100) / 100);
+  assert.equal(live.estimatedUsd, 68.70, "229 companies at $0.30");
+  assert.equal(batched.estimatedUsd, 41.22, "$0.24 halved, plus six cents of search");
+  assert.ok(batched.estimatedUsd > live.estimatedUsd * 0.5,
+            "a flat half would under-quote it");
   assert.equal(batched.count, live.count, "the same companies, at a different price");
+
+  // Pass 2 never searches, so there the discount really is flat.
+  const p2 = estimate(75, 200, "general");
+  const p2Batched = estimate(75, 200, "general", true);
+  assert.equal(p2Batched.estimatedUsd, Math.round(p2.estimatedUsd * 0.5 * 100) / 100,
+               "no searches on pass 2, so nothing escapes the discount");
 });
 
 test("the estimate and the meter cannot disagree about a batched company", async () => {

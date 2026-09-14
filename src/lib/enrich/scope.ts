@@ -68,6 +68,21 @@ export const ESTIMATED_USD_PER_COMPANY_BY_PASS: Record<Pass, number> = {
   general: 0.15,
 };
 /**
+ * What of that is web search, which the Batch API does NOT discount -- "Web
+ * search tool calls through the Messages Batches API are priced the same as
+ * those in regular Messages API requests".
+ *
+ * Measured, not assumed: across 75 real jobs in production, pass 1 made
+ * exactly six searches for every company it touched (34 jobs, 204 searches,
+ * no exceptions) and pass 2 made none at all -- it reads filings from the
+ * trusted domain and EDGAR rather than searching. Six searches at a cent is
+ * six cents that a batched run still owes in full.
+ */
+export const ESTIMATED_SEARCH_USD_BY_PASS: Record<Pass, number> = {
+  identity: 0.06,
+  general: 0,
+};
+/**
  * Replay, which spends nothing, and any run with no pass: the design's
  * synchronous mid-point (docs/design/06: $0.25-0.45 per company).
  */
@@ -77,8 +92,11 @@ export const ESTIMATED_SECONDS_PER_COMPANY = 90;
 
 export function estimate(count: number, budgetUsd: number, workerSlots: number,
                          pass?: Pass | null, batched = false): Estimate {
-  const perCompany = (pass ? ESTIMATED_USD_PER_COMPANY_BY_PASS[pass] : ESTIMATED_USD_PER_COMPANY)
-    * (batched ? BATCH_DISCOUNT : 1);
+  const full = pass ? ESTIMATED_USD_PER_COMPANY_BY_PASS[pass] : ESTIMATED_USD_PER_COMPANY;
+  // The discount reaches the tokens; the searches inside `full` are due either
+  // way. Discounting them too under-quotes pass 1 by three cents a company.
+  const searchUsd = pass ? ESTIMATED_SEARCH_USD_BY_PASS[pass] : 0;
+  const perCompany = batched ? (full - searchUsd) * BATCH_DISCOUNT + searchUsd : full;
   const estimatedUsd = Math.round(count * perCompany * 100) / 100;
   const estimatedMinutes = Math.ceil((count * ESTIMATED_SECONDS_PER_COMPANY) / workerSlots / 60);
   return {

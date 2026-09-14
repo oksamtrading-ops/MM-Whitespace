@@ -10,6 +10,7 @@ import { drain, settleReady } from "./drain.ts";
 import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
+  BATCH_DISCOUNT, WEB_SEARCH_USD,
   canonicalAuditor, collectSearchUrls, kindFromUrl, linkedFilings, Meter, toFinding, windowsOf,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
@@ -383,6 +384,29 @@ test("cost counts tokens at each model's price and every search at a cent", () =
   assert.equal(m.usage.requests, 2);
 });
 
+test("the batch discount halves the tokens and leaves the searches alone", () => {
+  // "Web search tool calls through the Messages Batches API are priced the
+  // same as those in regular Messages API requests" -- the web search tool's
+  // documentation. The batched meter had scaled the search charge too, which
+  // understated every batched run by half of what its searches cost, and the
+  // budget that halts a run reads that number.
+  const m = new Meter(BATCH_DISCOUNT);
+  m.add("claude-sonnet-5", {
+    input_tokens: 1_000_000, output_tokens: 0,
+    server_tool_use: { web_search_requests: 6 },
+  });
+  // $2 of tokens, halved; six searches at a full cent each.
+  assert.equal(m.cost.toFixed(4), (1 + 0.06).toFixed(4));
+
+  // Run b5d3d9c3, the first real batch: 18 searches over three companies.
+  // It recorded $0.3936 having charged nine cents of search; the eighteen
+  // cents it should have charged make the run $0.4836.
+  const searchOnly = new Meter(BATCH_DISCOUNT);
+  searchOnly.add("claude-opus-5", { input_tokens: 0, output_tokens: 0,
+    server_tool_use: { web_search_requests: 18 } });
+  assert.equal(searchOnly.cost.toFixed(4), "0.1800");
+});
+
 test("search URLs are collected wherever they sit, including citations", () => {
   const seen = new Set<string>();
   collectSearchUrls([
@@ -532,9 +556,15 @@ test("BATCH: an expired request goes back to the queue and is charged no attempt
     "awaiting_batch", "it is asked again");
 });
 
-test("BATCH: the discount is in the ledger, not just in the invoice", async () => {
+test("BATCH: the discount is in the ledger, and it stops at the searches", async () => {
   // The budget that halts a run reads this number. A meter that priced a
   // batched request at full rate would halt a run at half its budget.
+  //
+  // But the discount reaches the TOKENS only: "Web search tool calls through
+  // the Messages Batches API are priced the same as those in regular Messages
+  // API requests". This test asserted a flat half and so held the meter's own
+  // error in place -- the fixture searches twice, and those two cents are due
+  // whoever asks.
   const { db, periodId, northco } = await seeded();
   const { v } = vendor();
   const { fetchDeps } = world();
@@ -552,13 +582,26 @@ test("BATCH: the discount is in the ledger, not just in the invoice", async () =
       await processJob(db, runId, job, PERIOD_AS_OF, { mode: "live", cassetteDir: CASSETTE_DIR, live });
     }
     const r = await db.get("select spend_usd from enrichment_runs where id = ?", runId) as { spend_usd: number };
-    return Number(r.spend_usd);
+    const u = await db.get(`select sum((jr.usage ->> 'web_search_requests')) searches
+                              from enrichment_job_results jr
+                              join enrichment_jobs j on j.id = jr.job_id
+                             where j.run_id = ?`, runId) as { searches: number | null };
+    return { spend: Number(r.spend_usd), searches: Number(u.searches ?? 0) };
   };
-  const batchedSpend = await spend(true);
-  const liveSpend = await spend(false);
-  assert.ok(batchedSpend > 0 && liveSpend > 0, `${batchedSpend} / ${liveSpend}`);
-  assert.ok(Math.abs(batchedSpend - liveSpend / 2) < 1e-9,
-            `a batched company costs half: ${batchedSpend} against ${liveSpend}`);
+  const batched = await spend(true);
+  const liveRun = await spend(false);
+  assert.ok(batched.spend > 0 && liveRun.spend > 0, `${batched.spend} / ${liveRun.spend}`);
+  assert.ok(liveRun.searches > 0, "the fixture must search, or this proves nothing");
+  assert.equal(batched.searches, liveRun.searches, "the same work either way");
+
+  // Half the tokens, all of the searches.
+  const searchCharge = liveRun.searches * WEB_SEARCH_USD;
+  const expected = (liveRun.spend - searchCharge) * BATCH_DISCOUNT + searchCharge;
+  assert.ok(Math.abs(batched.spend - expected) < 1e-9,
+            `batched ${batched.spend}, expected ${expected} `
+            + `(${liveRun.searches} searches at full price inside ${liveRun.spend})`);
+  assert.ok(batched.spend > liveRun.spend / 2,
+            "a flat half would understate it, which is the bug this replaced");
 });
 
 test("BATCH: an open batch is work, so the tick still invokes a worker", async () => {

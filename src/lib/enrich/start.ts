@@ -17,6 +17,7 @@ import { cassetteDir, createRun } from "./worker.ts";
 
 export {
   CONFIRM_ABOVE, ESTIMATED_SECONDS_PER_COMPANY, ESTIMATED_USD_PER_COMPANY,
+  ESTIMATED_SEARCH_USD_BY_PASS,
   ESTIMATED_USD_PER_COMPANY_BY_PASS, PASS_COPY, parseTickers,
   SCOPE_COPY, type Estimate, type Pass, type Scope,
 } from "./scope.ts";
