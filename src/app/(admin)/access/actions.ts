@@ -76,3 +76,98 @@ export async function issueTemporaryPassword(
   revalidatePath("/access");
   return { ok: true, email: target.email, password, sessionsRevoked };
 }
+
+export type InviteResult =
+  | { ok: true; email: string; role: string; password: string }
+  | { ok: false; message: string };
+
+const ROLES = ["admin", "analyst", "viewer"] as const;
+
+/**
+ * Put somebody on the roster and give them a way in, in one act.
+ *
+ * Inviting used to be a hand-written INSERT in the runbook, which meant the one
+ * screen called "Access" could review access and end it but not grant it. It
+ * also meant the two halves of onboarding -- the row and the password -- were
+ * documented in different places and easy to half-do: an account with no
+ * password looks invited and cannot sign in.
+ *
+ * So this does both and returns the password once. The row alone is never a
+ * useful state to leave somebody in.
+ */
+export async function inviteUser(
+  _prev: InviteResult | null, form: FormData,
+): Promise<InviteResult> {
+  const { user, db } = await requireRole(["admin"]);
+  const email = String(form.get("email") ?? "").trim();
+  const role = String(form.get("role") ?? "");
+
+  if (!email || !email.includes("@") || email.length > 320) {
+    return { ok: false, message: "That is not an email address." };
+  }
+  if (!ROLES.includes(role as typeof ROLES[number])) {
+    return { ok: false, message: "Pick a role." };
+  }
+  const existing = await db.get(
+    "select id, is_active from app_users where lower(email) = lower(?)", email) as
+    { id: string; is_active: number } | undefined;
+  if (existing) {
+    return { ok: false, message: existing.is_active
+      ? "That address is already on the roster."
+      : "That address is on the roster, deactivated. Reactivate it instead of inviting again." };
+  }
+
+  let created: { id: string };
+  try {
+    created = await db.get(
+      "insert into app_users (email, role) values (?, ?) returning id", email, role) as { id: string };
+  } catch (err) {
+    // The 0024 trigger refuses an address outside the allowlist, and its
+    // message is written for a database session rather than for this screen.
+    // Say what to do about it instead of showing the raw refusal -- the setting
+    // it names is one an Admin can edit, two screens away.
+    const raw = (err as Error).message ?? "";
+    if (/allowlist|not an email address/i.test(raw)) {
+      return { ok: false, message:
+        `The domain of ${email} is not allowed to sign in. Add it to "Sign-in domains" on Settings first.` };
+    }
+    throw err;
+  }
+
+  const { password } = await setTemporaryPassword(db, { targetId: created.id, actorId: user.id });
+
+  await db.run("insert into audit_log (event, actor_id, detail) values (?, ?, ?)",
+               "user_invited", user.id,
+               JSON.stringify({ targetId: created.id, targetEmail: email, role, by: user.email }));
+  revalidatePath("/access");
+  return { ok: true, email, role, password };
+}
+
+/**
+ * Change what somebody may do.
+ *
+ * Not your own, for the reason self-deactivation is refused: an Admin demoting
+ * themselves is one click from an application with no Admin in it, and the cure
+ * is behind an Admin session. The control is also absent, but the control is
+ * not the boundary.
+ */
+export async function setRole(form: FormData): Promise<void> {
+  const { user, db } = await requireRole(["admin"]);
+  const targetId = String(form.get("userId") ?? "");
+  const role = String(form.get("role") ?? "");
+
+  if (targetId === user.id) return;
+  if (!ROLES.includes(role as typeof ROLES[number])) return;
+
+  const before = await db.get(
+    "select email, role from app_users where id = ?", targetId) as
+    { email: string; role: string } | undefined;
+  if (!before || before.role === role) return;
+
+  await db.run("update app_users set role = ? where id = ?", role, targetId);
+  await db.run("insert into audit_log (event, actor_id, detail) values (?, ?, ?)",
+               "user_role_changed", user.id,
+               JSON.stringify({ targetId, targetEmail: before.email,
+                                from: before.role, to: role, by: user.email }));
+  revalidatePath("/access");
+}

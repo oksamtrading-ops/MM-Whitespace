@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden } from "../../../lib/auth/session.ts";
@@ -10,6 +11,8 @@ import Section from "../../_ui/Section.tsx";
 import { setActive } from "./actions.ts";
 import ActiveButton from "./ActiveButton.tsx";
 import TempPasswordButton from "./TempPasswordButton.tsx";
+import InviteForm from "./InviteForm.tsx";
+import RoleSelect from "./RoleSelect.tsx";
 import { agoLabel, daysSince, fmtDate } from "../../_ui/format.ts";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +76,15 @@ export default async function AccessReview() {
         </div>
       )}
 
-      <Section id="accounts" title="Accounts" index={3}>
+      <Section id="invite" title="Invite somebody" index={3}>
+        <p className="lede">
+          A new account gets a password straight away, shown once. Nobody can be
+          invited whose domain is not on <Link href="/settings">Sign-in domains</Link>.
+        </p>
+        <InviteForm />
+      </Section>
+
+      <Section id="accounts" title="Accounts" index={4}>
         <table className="accounts">
           <caption>Every change is written to the audit log with the actor and the target.</caption>
           <thead>
@@ -89,7 +100,7 @@ export default async function AccessReview() {
               return (
                 <tr key={u.id}>
                   <th scope="row">{u.email}{self && <span className="pill quiet you">you</span>}</th>
-                  <td style={{ textTransform: "capitalize" }}>{u.role}</td>
+                  <td><RoleSelect userId={u.id} role={u.role} self={self} /></td>
                   <td>
                     {u.last_sign_in_at
                       ? <>{fmtDate(u.last_sign_in_at)}{" "}

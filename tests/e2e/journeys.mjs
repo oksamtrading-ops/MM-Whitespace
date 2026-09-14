@@ -406,6 +406,20 @@ async function journeys(dbPath) {
   check("a dormant account is counted in days and flagged for review",
         /\(\d+d ago\)/.test(dormantRow) && FLAGGED.test(dormantRow),
         dormantRow.replace(/\s+/g, " ").slice(0, 160));
+  // Access is the screen that grants access as well as reviewing and ending
+  // it. It could do the last two only: inviting somebody was a hand-written
+  // INSERT in the runbook, and changing a role was not possible at all.
+  check("the access review offers a way to invite somebody",
+        access.html.includes("Invite somebody") && access.html.includes('name="role"'),
+        "no invite form on /access");
+  check("and a way to change what somebody may do",
+        access.html.includes('class="rolepick"'), "no role control on the rows");
+  // Your own role is the one you cannot change: an Admin demoting themselves
+  // is one click from an application with no Admin in it.
+  const ownRow = accountRow(access.html, "admin@example.invalid");
+  check("but not your own role", /disabled/.test(ownRow),
+        ownRow.replace(/\s+/g, " ").slice(0, 200));
+
   const neverRow = accountRow(access.html, "never@example.invalid");
   check("an account that has never signed in says so, and is flagged",
         /never<\/span>/.test(neverRow) && FLAGGED.test(neverRow),

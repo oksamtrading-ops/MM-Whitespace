@@ -442,6 +442,9 @@ mark { background: var(--green-soft); color: var(--ink); padding: 0 .1em; border
 .sidebar .who { font-size: 11.5px; color: var(--ink-3); display: flex; align-items: center; gap: 7px; padding: 0 var(--space-2); min-width: 0; }
 .sidebar .who .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar .who .role { color: var(--ink-3); text-transform: capitalize; }
+/* Sign out sits under the identity it ends, and the form must not introduce a
+   block of its own between the rail's foot items. */
+.sidebar .who + .tip form { display: contents; }
 .sidebar .railbtn {
   display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 var(--space-2);
   background: none; border: 0; border-radius: var(--radius-3); color: var(--ink-3);
@@ -873,6 +876,32 @@ td.n, th.n { text-align: right; font-family: var(--font-figure); font-variant-nu
 /* A cell holding prose, a form or a disclosure: top-aligned and free to grow. */
 td.wrap, th.wrap { vertical-align: top; padding-top: 9px; padding-bottom: 9px; white-space: normal; }
 /* The action column: right, tight, and never taller than its row. */
+/* Invite, and the role picker on each row. Access is the screen that grants,
+   reviews and ends access -- it could do the last two and not the first, which
+   left inviting somebody as a hand-written INSERT in the runbook. */
+.invite .fields { display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap; }
+.invite .fields > span { display: flex; flex-direction: column; gap: var(--space-2); min-width: 22ch; }
+.invite label {
+  font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label);
+  text-transform: uppercase; color: var(--ink-3);
+}
+.invite input[type="email"], .invite select, .rolepick select {
+  font: inherit; min-height: 36px; padding: 0 var(--space-2);
+  border: 1px solid var(--input-border); border-radius: var(--radius);
+  background: var(--input-bg); color: var(--ink);
+}
+.invite input[type="email"]:focus-visible, .invite select:focus-visible,
+.rolepick select:focus-visible {
+  outline: 2px solid var(--ink); outline-offset: 2px; border-color: var(--ink);
+}
+.invite .callout { margin-top: var(--space-4); }
+.invite .issued-code {
+  display: block; font-size: 17px; letter-spacing: 0.04em; user-select: all;
+  margin-bottom: var(--space-2); color: var(--ink);
+}
+.rolepick select { min-height: 30px; font-size: var(--fs-body-sm); }
+.rolepick select:disabled { opacity: 0.7; cursor: not-allowed; }
+
 td.act, th.act { text-align: right; padding-right: var(--space-2); white-space: nowrap; }
 td.act .btn { vertical-align: middle; }
 /* The two controls on a row sit side by side; the issued password unwraps

@@ -273,20 +273,19 @@ verified domain — that is the whole reason it changed
 node scripts/migrate.mjs "$DATABASE_URL"   # 0009, 0010 and 0027-0029
 ```
 
-Inviting somebody is two steps, and they are separate on purpose. First the
-row, because sign-in is invite-only and an address with no row is not a user:
+**Invite people on `/access`.** Address and role, and it issues a password
+straight away, shown once — a row with no password looks invited and cannot
+sign in, which is not a state worth being able to leave somebody in. Roles are
+changed on the same screen, from the row; your own is the one you cannot
+change, because an Admin demoting themselves is one click from an application
+with no Admin in it.
 
-```sql
-insert into app_users (email, role) values ('someone@deloitte.ca', 'analyst');
-```
+The address must be on `allowed_email_domains`, which an Admin edits on
+`/settings`. A trigger enforces that, so an address outside the list cannot be
+given an account by any route — including a hand-written insert.
 
-That address must be on `allowed_email_domains`, which an Admin edits on
-`/settings` — a trigger enforces it, so an address outside the list cannot be
-inserted by any route including this one.
-
-A new row has **no password**, and cannot sign in until somebody gives them
-one. An Admin does that on `/access` — *New password*, shown once — or from
-outside the application:
+The same thing from outside the application, which is also the break-glass when
+somebody is locked out:
 
 ```bash
 node scripts/set_temp_password.mjs "$MM_DATABASE_URL" someone@deloitte.ca
@@ -294,6 +293,8 @@ node scripts/set_temp_password.mjs "$MM_DATABASE_URL" someone@deloitte.ca
 
 Either way they are made to replace it the first time they sign in, so nobody
 is left holding a working credential for somebody else's account.
+
+**Signing out** is in the rail's foot, under the address it ends.
 
 **When somebody cannot sign in**, `audit_log` has the answer and the screen
 deliberately does not — every refusal reads identically and takes the same

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { signOut } from "../signin/actions.ts";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -128,11 +129,28 @@ export default function Sidebar({ items, collapsed: initial, theme, period, user
 
         {user
           ? (
-            <p className="who" title={`${user.email} · ${user.role}`}>
-              <Icon name="circle-user" size={15} />
-              {!collapsed && <><span className="email">{user.email}</span><span className="role">{user.role}</span></>}
-              {collapsed && <span className="sr-only">{user.email}, {user.role}</span>}
-            </p>
+            <>
+              <p className="who" title={`${user.email} · ${user.role}`}>
+                <Icon name="circle-user" size={15} />
+                {!collapsed && <><span className="email">{user.email}</span><span className="role">{user.role}</span></>}
+                {collapsed && <span className="sr-only">{user.email}, {user.role}</span>}
+              </p>
+              {/* Signing out belongs where a person can find it, which is
+                  wherever they are. It used to live on /signin alone -- a page
+                  nobody signed in has any reason to open -- so ending your own
+                  session meant knowing a URL. That is not a small thing on a
+                  borrowed laptop, and doc 11 makes a session's revocability a
+                  requirement rather than a nicety. */}
+              <span className="tip">
+                <form action={signOut}>
+                  <button type="submit" className="railbtn" aria-label="Sign out">
+                    <Icon name="log-out" size={15} />
+                    {!collapsed && <span>Sign out</span>}
+                  </button>
+                </form>
+                {collapsed && <span className="bubble" role="tooltip">Sign out</span>}
+              </span>
+            </>
           )
           : (
             <span className="tip">
