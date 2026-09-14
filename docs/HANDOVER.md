@@ -1,15 +1,20 @@
 # Handover — Mining Whitespace Intelligence Tool
 
-> **Status at 13 September 2026.** Built, deployed, and doing the work it
+> **Status at 14 September 2026.** Built, deployed, and doing the work it
 > exists to do. Q3-2026 is published at **revision 8**; **33 companies
 > researched** — Run 1 (5), Run 2 (25) and two batched runs (3 + 1) — for
-> **US$11.6009 all in**, recorded correctly since the meter fix; **40 companies carry a tier**, 19
-> audit fees carry their currency and fiscal year, and the period downloads as
-> a clean workbook. The pursuit workflow is built and carries its first real
-> pursuit.
+> **US$11.6009 all in**; **40 companies carry a tier**, 19 audit fees carry
+> their currency and fiscal year, and the period downloads as a clean workbook.
+> The pursuit workflow carries its first real pursuit.
 >
-> Everything in this note is deployed and every migration is applied. To start
-> a new session, paste everything below the line into it.
+> **Sign-in changed on 14 September: an email address and a password, no mail
+> anywhere in it.** That reversed a design decision and unblocked the thing it
+> was blocking — **Kay has an account and can sign in**. Four people are on the
+> roster.
+>
+> Everything in this note is deployed and every migration is applied, through
+> `0029`. 137 commits. To start a new session, paste everything below the line
+> into it.
 
 ---
 
@@ -58,20 +63,26 @@ Aclara, Alkane and Allied Gold, and **four more from Elemental Royalty**, whose
 run settled at 22:23 UTC on 13 September, after the section below was written.
 All on `/review`. Nothing is wrong with them; nobody has looked.
 
-**4. Kay can be let in now, and it no longer needs a domain.** Sign-in is an
-email address and a password as of 14 September 2026, so nothing waits on mail
-delivery — `docs/decisions/S6-PASSWORD-AUTH.md` has the reversal and its
-reasoning. Two steps, both Samuel's:
+**4. ~~Kay cannot sign in.~~ Done — Kay has an account.** Sign-in became an
+email address and a password on 14 September, `deloitte.ca` is on the allowlist,
+and the roster is four people:
 
-1. Add `deloitte.ca` to **`allowed_email_domains` on `/settings`**. The trigger
-   from `0024` reads that setting, so until it is there the insert below is
-   refused, correctly.
-2. Insert the row, then issue a password — on `/access` (*New password*, shown
-   once) or with
-   `node scripts/set_temp_password.mjs "$MM_DATABASE_URL" Kampofo@deloitte.ca`.
+| Address | Role | State |
+|---|---|---|
+| `oksamtrading@gmail.com` | Admin | password chosen |
+| `samowusuking@gmail.com` | Admin | **still owes a password change** |
+| `Kampofo@deloitte.ca` | Admin | **still owes a password change** |
+| `saowusu@deloitte.ca` | Viewer | **still owes a password change** |
 
-Kay will be made to replace it at first sign-in, so nobody keeps a working
-credential for somebody else's account.
+Three accounts are holding a password somebody else chose. Each is stopped at
+every screen but `/password` until it is replaced, which is the intended
+behaviour, not a fault.
+
+**Two roles are worth a second look**, and are one selector away on `/access`.
+`Kampofo@deloitte.ca` is an **Admin** where the runbook's own example invites
+Kay as an analyst; `saowusu@deloitte.ca` is a **Viewer**, which cannot review
+findings or start a run — the work Kay was blocked from doing. Neither is
+wrong, but neither looks deliberate either.
 
 **Two things that were waiting are now done.** The live upload was confirmed
 from the database side on 11 September (hash and parse matched byte for byte;
@@ -89,13 +100,13 @@ already published). And the per-minute schedule ran a full day: **1,440 of
 | Database | Supabase project **MM_Whitespace**, ref `djepptfxdkvmcretnogy`, region `ca-central-1`, Postgres 17.6 |
 | Start here | `README.md` — what is built, how to run it, and why |
 | Operating it | `docs/RUNBOOK.md` — loading a period, sign-in, publishing, incidents |
-| Design | `docs/DESIGN.md` and `docs/design/00`–`18`. **Section 00 first**; doc 18 is the brand and interface guide and REVERSES doc 17's light-first decision |
-| Decisions | `docs/decisions/` — all ten closed; decision 1 approved by legal on 4 September 2026. `BATCH-API.md` records why both passes batch |
+| Design | `docs/DESIGN.md` and `docs/design/00`–`18`. **Section 00 first**. Two documents reverse earlier ones and say so: doc 18 reverses doc 17's light-first decision, and doc 11's authentication section reverses its own magic-link-only rule |
+| Decisions | `docs/decisions/` — all ten closed; decision 1 approved by legal on 4 September 2026. `BATCH-API.md` records why both passes batch; **`S6-PASSWORD-AUTH.md` records why sign-in is a password, and what that gave up** |
 | Settings | `.env.example` lists every variable; `.env.local` holds local secrets and is git-ignored |
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
-Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 51 commits.
+Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 137 commits.
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -392,10 +403,59 @@ finding already in review still reads "Perth, Wa"** — it is a proposal with it
 evidence anchored to the record it came from, so a reviewer overrides it rather
 than anyone rewriting a stored value.
 
-**Built on 14 September 2026 — sign-in is an email address and a password.**
-Written but **NOT yet applied to production**: the migrations are files, the
-cutover has not run, and the deployed application still mails links until it
-does. `docs/decisions/S6-PASSWORD-AUTH.md` is the record; doc 11 is amended.
+**Built on 14 September 2026, after the cutover — five things, all reported by
+somebody looking at a screen.** Worth reading as a group: not one was caught by
+a check, because in every case the markup was right and what was wrong was
+layout, absence, or a claim in a comment.
+
+- **Changing a password did not end your other sessions.** The plan said it
+  should and the code did not; `revokeAllForUser` was wired into
+  `setTemporaryPassword` alone. Found in production. Every session now ends on a
+  change, the current one included, and a fresh cookie is handed back — without
+  that, succeeding at changing your password would sign you out.
+- **`/access` could review access and end it, but not GRANT it.** Inviting was a
+  hand-written `INSERT` in the runbook and a role could not be changed at all.
+  Now an invite form creates the row AND issues the password in one act, and
+  roles change from the row. Not your own role, for the reason self-deactivation
+  is refused.
+- **There was no sign-out anywhere but `/signin`** — a page nobody signed in has
+  a reason to open. It is in the rail's foot now. Worse than the missing button:
+  `layout.tsx` carried a comment saying the rail keeps the user *"because
+  signing out must stay reachable from anywhere"*, and it was not.
+- **The rail's identity line wore `.role`**, which belongs to the sign-in
+  screen's development buttons — a three-column grid with 22px of padding and a
+  bottom border. The address measured **zero pixels wide** and a horizontal rule
+  appeared under it that nobody drew. It read as a heading for a section that
+  was not there. It is `.whorole`, and there is now a check (below).
+- **A form field's border was 1.54:1 on dark**, against a non-text floor of 3,
+  because `check:contrast` had never been told to look at a form field.
+  `--input-border` is `--rule-raised` now and the pair is checked.
+
+**`npm run check:classes` is new**, and is the gate for the trap that had sprung
+three times (`.filters`, `.tag`, `.role`). It refuses a bare class rule that
+imposes LAYOUT and is worn by two components that did not agree to share it;
+both historical collisions are replanted as tests and watched failing. Two
+earlier shapes were worse and are recorded in the script: flagging every shared
+bare rule reported 33 findings, nearly all legitimate, and a check that cries
+wolf 33 times is silenced in a week. What made it usable was **deriving "shared"
+from `/styleguide`** rather than listing it — the styleguide renders every
+shared component from the build, so a class it wears is already documented as
+shared. To share a class, put the component in the styleguide.
+
+**A request that was raised and dropped, so it is not raised again cold.**
+Self-serve password reset and invite-by-email were discussed on 14 September and
+**deliberately dropped**. Both need working mail, which is the thing that was
+broken in the first place; a reset link is a magic link, so it would restore
+most of what was just deleted; and a new sending domain mailing `@deloitte.ca`
+may be quarantined by Deloitte's gateway, which is a risk worth one test message
+before any work. If it comes back, `auth_magic_links` is still in the database
+and the machinery is in git at `fc00769^`.
+
+**Built and CUT OVER on 14 September 2026 — sign-in is an email address and a
+password.** Applied, deployed, and in use: migrations `0027`–`0029` are on
+Supabase, magic links are deleted, and four people have signed in through it.
+`docs/decisions/S6-PASSWORD-AUTH.md` is the record; doc 11 is amended and keeps
+the sentence it reverses visible.
 
 - **Why:** a mailed link is only as available as the mail behind it, and the
   pilot's sender reaches one inbox — so the practice's own workbook owner could
@@ -431,11 +491,13 @@ Three things this turned up that were not about passwords at all:
   it is two credentials for one person. `0029` closes it — and **can fail on
   real data**, so run the duplicate check in the cutover first.
 
-**The cutover has not run. Steps 1-3 are Samuel's** and are in
-`docs/decisions/S6-PASSWORD-AUTH.md`; the short form is: check for duplicate
-addresses, migrate, seed both admins with `scripts/set_temp_password.mjs` while
-the OLD sign-in still works, then deploy. Nothing is dropped and no variable is
-removed, so rollback is a redeploy.
+**The cutover ran in that order and worked**: duplicate-address check (none),
+migrate, seed both admins while the OLD sign-in still worked, then deploy. The
+one thing that did NOT happen is a sign-in through the password form before the
+deploy — the first admin was still on a pre-cutover magic-link session, which
+stayed valid. Nothing was dropped and no variable removed, so a rollback is
+still a redeploy; `auth_magic_links` is unreferenced but present, and is safe to
+drop in a later migration once nobody wants that escape.
 
 **Built on 13 September 2026, evening — the brand and interface.** A separate
 session, 143 files, on `main` and deployed. `docs/design/18-brand-guide.md` is
@@ -472,7 +534,7 @@ the record; it extends doc 17 and **reverses its light-first decision**.
 | `MM_DATABASE_URL` | Supabase **transaction pooler** string, port 6543 (since 11 September 2026) | **Sensitive**, unreadable. Host `aws-1-ca-central-1.pooler.supabase.com`, user `postgres.djepptfxdkvmcretnogy` |
 | `MM_AUTH` | `session` | Email and password since 14 September 2026 |
 | `MM_MAIL`, `MM_RESEND_KEY`, `MM_MAIL_FROM` | `resend`, key, `Whitespace <onboarding@resend.dev>` | **No longer used by sign-in.** Kept set; `mail.ts` has no caller until something needs to send |
-| `MM_ALLOWED_DOMAINS` | `gmail.com` | Gmail for the pilot |
+| `MM_ALLOWED_DOMAINS` | `gmail.com` | **Only a fallback.** The `allowed_email_domains` setting wins once it exists, and it does: `gmail.com, deloitte.ca` |
 | `MM_PUBLIC_URL` | `https://mm-whitespace.vercel.app` | **How the tick reaches the worker** (`src/lib/enrich/kick.ts`). It used to be the origin in a sign-in link too; deleting it as dead magic-link config breaks enrichment |
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |
 | `MM_CRON_SECRET`, `CRON_SECRET` | same value | The per-minute tick in `vercel.json`, and the worker endpoint |
@@ -487,15 +549,22 @@ uploads on them fail closed as "not configured". A *protection bypass token*
 exists on the project (created by `vercel curl`); Vercel exposes it to
 deployments as `VERCEL_AUTOMATION_BYPASS_SECRET`.
 
-**Sign-in reaches one inbox today.** The Resend account behind `MM_RESEND_KEY`
-belongs to `oksamtrading@gmail.com` and has no verified domain, so it delivers
-only from `onboarding@resend.dev` and only to that address. Admins in
-`app_users`: `oksamtrading@gmail.com`, `samowusuking@gmail.com`. With
-`gmail.com` allowed, the roster is the whole gate — invite by inserting a row:
+**Sign-in sends no mail at all.** The Resend account behind `MM_RESEND_KEY`
+still has no verified domain and still reaches one inbox, and it no longer
+matters: nothing in the auth path sends anything. `mail.ts` is kept and has no
+caller.
+
+**Invite people on `/access`**, which creates the row and issues a password in
+one act, shown once. The raw insert still works and is still subject to the
+`0024` trigger, but the screen is the supported way now:
 
 ```sql
-insert into app_users (email, role) values ('someone@example.com', 'analyst');
+insert into app_users (email, role) values ('someone@deloitte.ca', 'analyst');
 ```
+
+`allowed_email_domains` is **`gmail.com, deloitte.ca`** and lives in
+`app_settings`, editable on `/settings`. `MM_ALLOWED_DOMAINS` is only the
+fallback for a database that has not had `0024`.
 
 **Do not use `archievashipping.com`** for this application's mail. It is the
 client domain of the other application, verified in a *different* Resend
@@ -635,6 +704,26 @@ shares a name with a route again.
 stale while the issuer's own filing is current, and EDGAR outranks the filing
 in evidence scoring. Three wrong values reached review this way in Run 2.
 
+**`e2e:isolated` could not see a DELETION until 14 September.** It builds a git
+worktree at `HEAD` and rsyncs the working tree over it — and did so without
+`--delete`, so a file removed in the working tree survived from `HEAD` and went
+on being served. Journey 6 passed against `/auth/verify` after that route was
+deleted: 147 green checks against code that did not exist. Fixed, but worth
+knowing the suite ran that way for its whole life, so any past run that
+"proved" a removal proved nothing.
+
+**A required field on `AppUser` is a feature, not a nuisance.** There are TWO
+construction sites — `resolveUser` and `userForSession`, which builds one from
+its own join — and an optional field missed at the second reads as `undefined`,
+which is falsy, which silently disables whatever depends on it. Making
+`mustChangePassword` required made the compiler name both. Add fields the same
+way.
+
+**A password must never reach a log, and there are three paths.** An unhandled
+throw whose message quotes the input; a `console.error(err, form)`; and Next's
+development error overlay. Never log `FormData` in `signin/actions.ts` or
+`password/actions.ts`, and catch narrowly — `ChangeRefused` only.
+
 **A CSS class that already exists will silently restyle your component.** The
 pursuit filter form was written as `.filters`, which is the review screen's row
 of bucket chips and styles its links as chips. It inherited a layout meant for
@@ -735,11 +824,15 @@ it. Never run `git add -A` outside this project's folder.
    throttling, not a stall — check `enrichment_batches` before treating it as
    one.
 
-4. **Mail: no longer blocking anybody, and smaller than it was.** It used to
-   be what stood between Kay and an account; sign-in is a password now and
-   needs no mail at all, so buying and verifying a domain is whenever somebody
-   wants the application to send something. **Rotating the Resend key still
-   stands on its own** — it was pasted into a chat once — and is worth doing
+4. **Mail: blocking nothing. Rotate the key anyway.** It used to be what stood
+   between Kay and an account; sign-in needs no mail at all now, and Kay has an
+   account. Buying and verifying a domain is whenever somebody wants the
+   application to SEND something — and on 14 September the obvious candidate for
+   that, self-serve reset and invite-by-email, was raised and dropped on
+   purpose. So there is no pending work behind it.
+
+   **Rotating the Resend key still stands on its own**, because it was pasted
+   into a chat once. That is a live credential in a transcript, and it is true
    whether or not the domain is ever bought.
 
 5. **Schedule retention.** The job now runs on either engine
@@ -752,9 +845,15 @@ it. Never run `git add -A` outside this project's folder.
 6. **The remaining spikes:** S2 (fee disclosure coverage on five companies)
    and S4 (open the generated export in Excel).
 
-7. **Hardening: all done except Deloitte SSO**, which waits with
-   `MM_ALLOWED_DOMAINS=deloitte.ca` on the pilot moving to Deloitte addresses,
-   which waits on the mail decision. It is one seam, `sessionClaimSource`.
+7. **Hardening: all done except Deloitte SSO.** It is still one seam,
+   `sessionClaimSource`, and the password cutover was the first real evidence
+   that the seam holds — it changed the whole of sign-in and touched no policy,
+   no route guard and no role check.
+
+   It no longer waits on mail. What it waits on is the decision to move the
+   pilot onto Deloitte identity, at which point `allowed_email_domains` becomes
+   `deloitte.ca` alone and `auth_passwords` stops being read. Two Deloitte
+   addresses are already on the roster, so that half has happened.
 
    ~~A monotonic column on `review_decisions`; today `decisionStamp()` carries
    the order.~~ **Done 14 September 2026** (`0025`, `0026`, both applied).
