@@ -674,12 +674,20 @@ it. Never run `git add -A` outside this project's folder.
    on the composer, one on the wiring in `worker.ts`, which was the half that
    was actually wrong.
 
-   **The 462 findings already in production still read `2026-09-04.1`.** They
-   are not wrong about the rules — those have not changed since — but they are
-   silent about them. Backfilling the composite would be accurate today and is
-   a one-statement update; it is left as Samuel's call, like the spend ledger,
-   because it rewrites a provenance record. **Do it before Run 3 or not at
-   all**, so the period is not split between two conventions.
+   **The 462 findings already in production still read `2026-09-04.1`**, and
+   the two batched runs still record US$0.12 less than they cost. Both
+   corrections are written and waiting in
+   **`scripts/correct_prompt_version_and_batch_spend.sql`** — one transaction,
+   guarded so a second run changes nothing, and validated against the real
+   PostgreSQL grammar. **Samuel has to run it**, because `MM_DATABASE_URL` is
+   Sensitive and no session can read it:
+
+   ```bash
+   psql "$MM_DATABASE_URL" -f scripts/correct_prompt_version_and_batch_spend.sql
+   ```
+
+   Expect `UPDATE 11`, `UPDATE 462`, `INSERT 0 2`, `COMMIT`. **Run it before
+   Run 3 or not at all**, so the period is not split between two conventions.
 
 8. ~~**Tidy-ups:** an empty tracked file named `--` at the repository root.~~
    **Done** — removed 13 September 2026. Zero bytes, referenced by nothing,
