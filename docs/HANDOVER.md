@@ -69,20 +69,23 @@ and the roster is four people:
 
 | Address | Role | State |
 |---|---|---|
-| `oksamtrading@gmail.com` | Admin | password chosen |
-| `samowusuking@gmail.com` | Admin | **still owes a password change** |
-| `Kampofo@deloitte.ca` | Admin | **still owes a password change** |
-| `saowusu@deloitte.ca` | Viewer | **still owes a password change** |
+| `oksamtrading@gmail.com` | Admin | settled |
+| `Kampofo@deloitte.ca` | Analyst | **temporary password, never signed in** |
+| `samowusuking@gmail.com` | Analyst | settled |
+| `saowusu@deloitte.ca` | Viewer | settled |
 
-Three accounts are holding a password somebody else chose. Each is stopped at
-every screen but `/password` until it is replaced, which is the intended
-behaviour, not a fault.
+**Kay has not signed in yet.** The account holds a password an Admin chose, so
+it is stopped at every screen but `/password` until it is replaced — the gate
+working, not a fault. Read the live state from `/access` rather than from this
+table, which is a snapshot.
 
-**Two roles are worth a second look**, and are one selector away on `/access`.
-`Kampofo@deloitte.ca` is an **Admin** where the runbook's own example invites
-Kay as an analyst; `saowusu@deloitte.ca` is a **Viewer**, which cannot review
-findings or start a run — the work Kay was blocked from doing. Neither is
-wrong, but neither looks deliberate either.
+**There is exactly ONE Admin.** Only `oksamtrading@gmail.com` can invite
+somebody, change a role, deactivate an account or issue a password. If that
+account is lost or locked out, none of those can be done from inside the
+application at all: the way back is `scripts/set_temp_password.mjs`, which needs
+`MM_DATABASE_URL` and therefore Samuel's own shell. That is a thin thread for
+the one screen that exists because there is no leaver process here. A second
+Admin is one selector away on `/access`, and is worth having.
 
 **Two things that were waiting are now done.** The live upload was confirmed
 from the database side on 11 September (hash and parse matched byte for byte;
