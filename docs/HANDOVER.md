@@ -1,11 +1,13 @@
 # Handover — Mining Whitespace Intelligence Tool
 
 > **Status at 13 September 2026.** Built, deployed, and doing the work it
-> exists to do. Q3-2026 is published at **revision 8**; **30 companies
-> researched** across Run 1 (5) and Run 2 (25) for **US$10.94 all in**;
-> **40 companies carry a tier**, 19 audit fees carry their currency and
-> fiscal year, and the period downloads as a clean workbook. The pursuit
-> workflow is built and carries its first real pursuit.
+> exists to do. Q3-2026 is published at **revision 8**; **33 companies
+> researched** — Run 1 (5), Run 2 (25) and two batched runs (3 + 1) — for
+> **US$11.60 all in** (US$11.48 recorded, plus the US$0.12 the batch meter
+> recorded low before the fix; see item 2); **40 companies carry a tier**, 19
+> audit fees carry their currency and fiscal year, and the period downloads as
+> a clean workbook. The pursuit workflow is built and carries its first real
+> pursuit.
 >
 > Everything in this note is deployed and every migration is applied. To start
 > a new session, paste everything below the line into it.
@@ -52,8 +54,10 @@ September. All 178 decisions are on the dashboards: 40 companies carry a tier
 (up from 21) and the auditor cross-tab reads 55.6%. Publishing took seconds
 rather than revision 6's four minutes.
 
-**3. Eleven findings from the batched run are unreviewed** — Aclara, Alkane and
-Allied Gold, on `/review`. Nothing is wrong with them; nobody has looked.
+**3. Fifteen findings from the two batched runs are unreviewed** — eleven from
+Aclara, Alkane and Allied Gold, and **four more from Elemental Royalty**, whose
+run settled at 22:23 UTC on 13 September, after the section below was written.
+All on `/review`. Nothing is wrong with them; nobody has looked.
 
 **4. Kay still cannot sign in.** `Kampofo@deloitte.ca` was refused because
 only `gmail.com` is allowed, and Resend can only deliver to
@@ -356,8 +360,15 @@ persisted — in about five minutes:
 | Run | `b5d3d9c3-0718-4f13-b5ac-1f6369054c1f`, completed |
 | Batch | `msgbatch_01XBFem1wZ5u884GRwpsnNtC`, settled, 3 of 3 succeeded |
 | Companies | Aclara (ARA), Alkane (ALK), Allied Gold (AAUC) |
-| Cost | **US$0.3936** against a US$0.45 estimate |
+| Cost | **US$0.4836** — recorded as US$0.3936 before item 2's fix, against a US$0.45 estimate |
 | Findings | **11, waiting in `/review`, nobody has reviewed them** |
+
+**A second batched run followed**, and is not described anywhere below: run
+`4ba5d7d7-8a6a-46a1-b223-aca18a85ad7a`, batch
+`msgbatch_01JiP5Mmo4fh7zYkdTCEZBJP`, settled, **one company — Elemental
+Royalty, which Run 1 had already researched** — **four findings, unreviewed**,
+US$0.1747 (recorded as US$0.1447). It is why the totals above say 33 companies
+and not 30.
 
 `/runs` says "Batched" and quotes the batched price. The EDGAR profile fields
 all scored **0.585**, below the bulk-accept floor — the demotion above, working
@@ -412,7 +423,7 @@ the record; it extends doc 17 and **reverses its light-first decision**.
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |
 | `MM_CRON_SECRET`, `CRON_SECRET` | same value | The per-minute tick in `vercel.json`, and the worker endpoint |
 | `MM_ENRICH_MODE` | `live` | Set 11 September 2026. Never `replay` in production: it would abandon every real company |
-| `MM_ENRICH_BATCH` | **not set** | `1` sends each pass's model call to the Batch API at half price. Apply migrations `0016`/`0017` first. Never been run against the real Batch API |
+| `MM_ENRICH_BATCH` | `1` | **Set 13 September 2026 and proven end to end** — two real batches have settled. Sends each pass's model call to the Batch API, where the TOKENS are half price and the web searches are not. Migrations `0016`/`0017` are applied |
 | `ANTHROPIC_API_KEY` | model key | **Sensitive**, added 11 September 2026, from workspace `mm-whitespace-prod` (`wrkspc_01W9ytyaac9BqDzPzLkxNAKT`) with a $100/month limit. Unused until `LIVE_ENABLED` is true |
 | `MM_SEC_CONTACT` | contact email | **Sensitive**, set 11 September 2026. SEC EDGAR's required User-Agent contact. Live mode refuses to start without it |
 
@@ -597,20 +608,40 @@ it. Never run `git add -A` outside this project's folder.
    migration `0018` say so; and **a pursuit's own words must never reach a
    prompt**, which `pursuit.test.ts` holds.
 
-2. **Settle what a batched web search costs, before Run 3.** The Batch API is
-   ON and proven (see below), but each job made one call with **six web
-   searches**, and `Meter.add` applies the 50% batch discount to the *whole*
-   cost including the per-search charge. **Nobody has confirmed that Anthropic
-   discounts server-tool use** — the discount is documented on tokens. If
-   searches bill at full price, recorded spend understates by about US$7 across
-   Run 3, and **the budget gate halts a run on recorded spend**. One look at the
-   console's billing for `msgbatch_01XBFem1wZ5u884GRwpsnNtC` against our
-   recorded **US$0.3936** answers it; if they are not discounted, apply the rate
-   to tokens only in `src/lib/enrich/live.ts`.
+2. ~~**Settle what a batched web search costs, before Run 3.**~~ **Done, and
+   the suspicion was right — searches are NOT discounted.** Anthropic's web
+   search documentation says it outright: "Web search tool calls through the
+   Messages Batches API are priced the same as those in regular Messages API
+   requests." The discount is documented on tokens, and it stops there. No
+   console lookup was needed.
 
-3. **Run 3: the remaining 229 companies.** About **US$34 batched** for pass 1
-   (US$68.70 live), and US$5.63 for pass 2's 75 eligible companies. Start it
-   from `/runs`, which now states the batched price. Do item 2 first.
+   `Meter.add` had applied the rate to the whole cost, search charge included,
+   so **both batched runs recorded less than they cost**: run
+   `b5d3d9c3` charged nine cents for eighteen searches instead of eighteen
+   (**US$0.3936 recorded, US$0.4836 true**) and run `4ba5d7d7` three cents
+   instead of six (**US$0.1447 recorded, US$0.1747 true**). The rate now
+   multiplies the tokens only. The pre-flight estimate had the same flaw and is
+   split the same way, from a measurement rather than an assumption: across 75
+   real jobs, **pass 1 makes exactly six searches for every company** (34 jobs,
+   204 searches, no exceptions) and **pass 2 makes none at all** — it reads
+   filings rather than searching — so the flat half was only ever wrong on
+   pass 1. Two tests hold it, both watched failing against the replanted bug.
+
+   **The US$0.12 already recorded low in production has not been rewritten** —
+   amending a spend ledger is Samuel's call, not a side effect of a bug fix.
+
+3. **Run 3: the remaining 229 companies.** **US$41.22 batched** for pass 1
+   (US$68.70 live) — not the US$34 quoted before item 2 was settled, because
+   229 companies × six undiscounted searches is US$13.74 that no discount
+   touches. Pass 2's 75 eligible companies are US$5.63, and genuinely half,
+   since pass 2 never searches. Start it from `/runs`, which states the batched
+   price. **Item 2 is done, so nothing blocks this.**
+
+   Worth knowing before it runs: the Batches API **throttles web search per
+   organisation**, so a batch with ~1,374 searches in it may take longer to
+   settle than the five minutes the three-company smoke run took. That is
+   throttling, not a stall — check `enrichment_batches` before treating it as
+   one.
 
 4. **Mail:** buy and verify a domain for this application (Samuel's decision
    and money), then set `MM_MAIL_FROM`; **rotate the Resend key**, which was
