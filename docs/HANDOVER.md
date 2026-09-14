@@ -214,11 +214,12 @@ stage re-runs the classifier; undo restores the file's value; decisions amend
 a published period's working values (the published revision never moves).
 Before this, none of the three was true.
 
-**Checks:** 424 Node tests, 72 Python tests, the authorisation check, the
-colour-contrast check, the build, and 147 end-to-end checks.
+**Checks:** 446 Node tests, 72 Python tests, the authorisation check, the
+class-collision check, the colour-contrast check, the build, and 153 end-to-end
+checks.
 
 ```bash
-npm test && npm run check:auth && npm run check:contrast && npm run build && npm run e2e:isolated
+npm test && npm run check:auth && npm run check:classes && npm run check:contrast && npm run build && npm run e2e:isolated
 ```
 
 **Built on 12–13 September 2026**, all deployed:
@@ -653,9 +654,22 @@ drew. It read as a heading for a section that was not there, which is exactly
 how it was reported. Nothing failed — the markup was correct the whole time,
 and the defect was purely in which rule won. It is `.whorole` now.
 
-Worth drawing the general lesson: **every one of the three was found by a person
-looking at the screen**, never by a check. The build has no opinion about class
-collisions and neither does anything else here.
+Every one of the three was found by a person looking at the screen, never by a
+check — so there is one now. **`npm run check:classes`** refuses a bare class
+rule that imposes layout and is worn by two components that did not agree to
+share it. Both historical collisions are replanted as tests and watched failing.
+
+Two things about its shape, because the first two attempts were worse. It only
+looks at LAYOUT: two components sharing a colour is not the failure, and a check
+that fired on colour would be silenced inside a week. And **what counts as
+shared is derived from `/styleguide`** rather than listed — a class the
+styleguide wears is documented as shared, which is the rule this project already
+had. To share a class, put the component in the styleguide. `EXEMPT` in the
+script holds the handful that are shared some other way, each with its reason.
+
+It is a static check and cannot see intent: two screens that both want the same
+grid look exactly like a collision. What it does catch is the second wearer of a
+name somebody else already owns, which is all three of these.
 
 **`node --test` strips types, it does not compile them.** A TypeScript
 parameter property (`constructor(private readonly x = 1) {}`) passes both `tsc`
