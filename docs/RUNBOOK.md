@@ -265,26 +265,66 @@ otherwise print a column of PASSes proving nothing.
 
 ## Sign-in
 
+An address and a password. **No mail is involved**, so nothing here waits on a
+verified domain — that is the whole reason it changed
+(`docs/decisions/S6-PASSWORD-AUTH.md`).
+
 ```bash
-node scripts/migrate.mjs "$DATABASE_URL"   # 0009 and 0010 add the auth tables
+node scripts/migrate.mjs "$DATABASE_URL"   # 0009, 0010 and 0027-0029
 ```
 
-Then invite people by inserting them: sign-in is invite-only and an address
-with no row is not a user, whatever the mail provider says.
+Inviting somebody is two steps, and they are separate on purpose. First the
+row, because sign-in is invite-only and an address with no row is not a user:
 
 ```sql
 insert into app_users (email, role) values ('someone@deloitte.ca', 'analyst');
 ```
 
-Set `MM_RESEND_KEY`, `MM_MAIL_FROM` and `MM_PUBLIC_URL`, and verify the sending
-domain with Resend before expecting delivery to `deloitte.ca`. Without a key
-the sender falls back to printing the link to the server log, which refuses to
-run in production.
+That address must be on `allowed_email_domains`, which an Admin edits on
+`/settings` — a trigger enforces it, so an address outside the list cannot be
+inserted by any route including this one.
+
+A new row has **no password**, and cannot sign in until somebody gives them
+one. An Admin does that on `/access` — *New password*, shown once — or from
+outside the application:
+
+```bash
+node scripts/set_temp_password.mjs "$MM_DATABASE_URL" someone@deloitte.ca
+```
+
+Either way they are made to replace it the first time they sign in, so nobody
+is left holding a working credential for somebody else's account.
 
 **When somebody cannot sign in**, `audit_log` has the answer and the screen
-deliberately does not: `sign_in_refused` carries the reason (`domain`, `not on
-the roster`, `too many live links`, `malformed`), `sign_in_link_sent` says one
-went out, and `sign_in_mail_failed` names a provider error.
+deliberately does not — every refusal reads identically and takes the same
+time. `sign_in_refused` carries the reason:
+
+| Reason | What happened |
+|---|---|
+| `malformed` | Not an address, or no password typed |
+| `domain` | Their domain is not on `allowed_email_domains` |
+| `not on the roster` | No row in `app_users`. Invite them |
+| `inactive` | Deactivated. `/access` reactivates |
+| `no password set` | Invited, never given a password. Issue one |
+| `bad password` | The account exists and the password is wrong |
+| `throttled` | Too many recent failures — see below |
+
+`sign_in` records a success, and is the only auth event carrying `actor_id`.
+`password_set_by_admin` and `password_changed` record the two ways a password
+moves.
+
+**A run of `throttled` against one address is the signature worth knowing.**
+Eight failures in fifteen minutes refuses everything from that address, the
+right password included, and anybody who knows a colleague's address can spend
+those eight guesses for them. It expires on its own; there is deliberately no
+unlock button, because both Admins locked out with the cure behind an Admin
+session is the deadlock it would create. `scripts/set_temp_password.mjs` clears
+the counter, and runs from a shell rather than the product.
+
+**Rows written before 14 September 2026 use the old vocabulary** —
+`sign_in_link_sent`, `sign_in_link_refused`, `sign_in_mail_failed`, and a
+`too many live links` reason. Nothing rewrites them, and `audit_log` is kept 24
+months, so expect to meet them until late 2028.
 
 **To end somebody's access now**, deactivate them on `/access`. That revokes
 every session they hold as well as stopping the next sign-in.

@@ -2,40 +2,41 @@
 
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
-import { requestSignInLink, type SignInResult } from "./actions.ts";
+import { signIn, type SignInResult } from "./actions.ts";
 import Callout from "../_ui/Callout.tsx";
 
 function Submit() {
   const { pending } = useFormStatus();
   return (
     <button type="submit" className="btn primary" disabled={pending}>
-      {pending ? "Sending…" : "Email me a sign-in link"}
+      {pending ? "Signing in…" : "Sign in"}
     </button>
   );
 }
 
-export default function SignInForm({ invalid = false }: { invalid?: boolean }) {
-  const [state, action] = useActionState<SignInResult | null, FormData>(
-    requestSignInLink, null);
+export default function SignInForm() {
+  const [state, action] = useActionState<SignInResult | null, FormData>(signIn, null);
 
   return (
-    <form action={action} className="magiclink">
-      {invalid && !state && (
-        <Callout tone="danger" live title="That sign-in link cannot be used">
-          Links last fifteen minutes and work once — ask for another below.
-        </Callout>
-      )}
+    <form action={action} className="credentials">
       <label htmlFor="email">Work email</label>
-      <input id="email" name="email" type="email" autoComplete="email" required
-             spellCheck={false} placeholder="you@deloitte.ca"
-             aria-describedby="signin-help" />
+      <input id="email" name="email" type="email" autoComplete="username" required
+             spellCheck={false} placeholder="you@deloitte.ca" />
+
+      <label htmlFor="password">Password</label>
+      <input id="password" name="password" type="password" required
+             autoComplete="current-password" aria-describedby="signin-help" />
       <p id="signin-help" className="help">
-        Invite only. No password — a link arrives in your inbox.
+        Invite only. An administrator sets your first password.
       </p>
+
       <Submit />
-      {/* One live region for the one answer this form ever gives. */}
+
+      {/* One live region, and one sentence in it. Success never lands here --
+          it redirects -- so anything shown is a refusal, and every refusal
+          reads the same whoever asks. */}
       <div role="status" aria-live="polite">
-        {state && <Callout tone="ok" title="Check your inbox">{state.message}</Callout>}
+        {state && <Callout tone="danger" title="Not signed in">{state.message}</Callout>}
       </div>
     </form>
   );

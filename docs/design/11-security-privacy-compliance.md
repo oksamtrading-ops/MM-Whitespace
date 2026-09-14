@@ -119,7 +119,17 @@ Each line needs a named owner for the deletion job, or none of it happens.
 
 ## Authentication and the Azure path
 
-**Magic link only for the pilot; no passwords.** That removes credential stuffing, password reuse and reset flows in one decision, and it maps cleanly onto the eventual identity provider, since both are an external system asserting an email address.
+**An email address and a password, since 14 September 2026.** This reverses what this section said, and the sentence it reverses is kept here because the reasoning was sound and the record should show what was given up:
+
+> ~~**Magic link only for the pilot; no passwords.** That removes credential stuffing, password reuse and reset flows in one decision, and it maps cleanly onto the eventual identity provider, since both are an external system asserting an email address.~~
+
+What it did not survive was delivery. A mailed link is only as good as the mail, and the pilot's sender has no verified domain — so it reaches one inbox, and **the practice's own workbook owner could not sign in at all**. A sign-in that depends on an external vendor to work is not more available than one that does not; it is less.
+
+All three things the old decision removed are genuinely back, and each is answered rather than waved at. **Credential stuffing** has an invite-only roster of about five accounts to work against, behind a throttle. **Password reuse** is a real residual risk and is accepted. **Reset flows** are the one that is not back: there is no self-serve reset, because there is no mail — an Admin issues a temporary password out of band and the holder must replace it at first sign-in, so no reset token exists to attack.
+
+The property that changed shape is the sign-in form's answer. It used to be one sentence whoever asked, success included. It cannot be: somebody holding the right password is let in. What is defended now is narrower and is stated exactly — **every refusal reads the same, and takes the same time** — which is why an address with no account is still hashed against a decoy, and why every refusal is padded to one floor.
+
+Deloitte SSO remains the destination, and this does not move away from it: the claim source below is still the only thing that changes. See `docs/decisions/S6-PASSWORD-AUTH.md`.
 
 Invite-only, with a domain allowlist enforced in a database trigger rather than in the interface. Sessions bounded and revocable. A quarterly access review as a first-class Admin screen showing last sign-in with one-click deactivation — because there is no leaver process for an application outside Deloitte's own estate, and a partner who rolls off otherwise keeps access to the client roster indefinitely.
 

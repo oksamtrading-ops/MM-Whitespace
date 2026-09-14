@@ -58,11 +58,20 @@ Aclara, Alkane and Allied Gold, and **four more from Elemental Royalty**, whose
 run settled at 22:23 UTC on 13 September, after the section below was written.
 All on `/review`. Nothing is wrong with them; nobody has looked.
 
-**4. Kay still cannot sign in.** `Kampofo@deloitte.ca` was refused because
-only `gmail.com` is allowed, and Resend can only deliver to
-`oksamtrading@gmail.com` until a domain is verified (item 6 in what is left).
-Kay can only get in through a Gmail address inserted into `app_users`. The
-refusal is expected, not a fault.
+**4. Kay can be let in now, and it no longer needs a domain.** Sign-in is an
+email address and a password as of 14 September 2026, so nothing waits on mail
+delivery — `docs/decisions/S6-PASSWORD-AUTH.md` has the reversal and its
+reasoning. Two steps, both Samuel's:
+
+1. Add `deloitte.ca` to **`allowed_email_domains` on `/settings`**. The trigger
+   from `0024` reads that setting, so until it is there the insert below is
+   refused, correctly.
+2. Insert the row, then issue a password — on `/access` (*New password*, shown
+   once) or with
+   `node scripts/set_temp_password.mjs "$MM_DATABASE_URL" Kampofo@deloitte.ca`.
+
+Kay will be made to replace it at first sign-in, so nobody keeps a working
+credential for somebody else's account.
 
 **Two things that were waiting are now done.** The live upload was confirmed
 from the database side on 11 September (hash and parse matched byte for byte;
@@ -135,11 +144,11 @@ without the firm's own due diligence.
 commit, run status, field-major and company-major review with keyboard accept,
 override and flag, bulk accept, the publish gate and override, the dashboard,
 company profiles and finder, identity merge, admin settings, the access review,
-and magic-link sign-in. Routes: `/upload`, `/upload/[id]`, `/runs`, `/review`,
+and password sign-in. Routes: `/upload`, `/upload/[id]`, `/runs`, `/review`,
 `/review/[field]`, `/review/by-company`, `/publish`, `/dashboard`,
 `/companies`, `/companies/[id]`, `/companies/merge`, `/pursuits`,
 `/pursuits/[id]`, `/access`, `/settings`, `/styleguide`,
-`/signin`, `/auth/verify`, `/api/cron/tick`, `/api/export` (the workbook
+`/signin`, `/password`, `/api/cron/tick`, `/api/export` (the workbook
 download), and two Python functions, `/api/parse` and `/api/workbook`.
 
 **Production holds the real Q3-2026 period, published at revision 6.** 259
@@ -382,6 +391,51 @@ finding already in review still reads "Perth, Wa"** — it is a proposal with it
 evidence anchored to the record it came from, so a reviewer overrides it rather
 than anyone rewriting a stored value.
 
+**Built on 14 September 2026 — sign-in is an email address and a password.**
+Written but **NOT yet applied to production**: the migrations are files, the
+cutover has not run, and the deployed application still mails links until it
+does. `docs/decisions/S6-PASSWORD-AUTH.md` is the record; doc 11 is amended.
+
+- **Why:** a mailed link is only as available as the mail behind it, and the
+  pilot's sender reaches one inbox — so the practice's own workbook owner could
+  not sign in. Passwords remove mail from the auth path entirely.
+- **`scrypt` from `node:crypto`, no dependency**, at `ln=15` — deliberately
+  under the published floor, because every concurrent verify allocates its full
+  working set on an unauthenticated endpoint and 128 MB a request is a way to
+  take the whole deployment down. The reasoning is in the decision record; do
+  not raise it without reading that first.
+- **The hash is in `auth_passwords`, not on `app_users`**, under 0010's grants.
+  `must_change_password` is on `app_users`, because a boolean is not a
+  credential.
+- **The gate is thrown by `assertRole`** as a subclass of `Unauthenticated`, so
+  all 16 page catch blocks and the route handlers already render it correctly
+  with no file edited. A redirect could not work: `redirect()` throws
+  `NEXT_REDIRECT` and those same catches would swallow it.
+- **`AppUser.mustChangePassword` is required, not optional**, so the compiler
+  names both construction sites — `resolveUser` and `userForSession`. Optional,
+  a miss reads as `undefined`, which is falsy, and everybody already signed in
+  walks through.
+
+Three things this turned up that were not about passwords at all:
+
+- **`npm run e2e:isolated` could not see a deletion.** It builds a worktree at
+  `HEAD` and rsynced over it **without `--delete`**, so a deleted file survived
+  and kept being served — journey 6 passed against `/auth/verify` after that
+  route was removed. Fixed.
+- **A form field's border was below the non-text floor on dark** (1.54:1
+  against 3), because `check:contrast` was never told to look at one.
+  `--input-border` is `--rule-raised` now and the pair is checked.
+- **`app_users.email` is unique case-sensitively** while every lookup lowercases
+  it, so a case-variant pair is insertable. Harmless with links; with passwords
+  it is two credentials for one person. `0029` closes it — and **can fail on
+  real data**, so run the duplicate check in the cutover first.
+
+**The cutover has not run. Steps 1-3 are Samuel's** and are in
+`docs/decisions/S6-PASSWORD-AUTH.md`; the short form is: check for duplicate
+addresses, migrate, seed both admins with `scripts/set_temp_password.mjs` while
+the OLD sign-in still works, then deploy. Nothing is dropped and no variable is
+removed, so rollback is a redeploy.
+
 **Built on 13 September 2026, evening — the brand and interface.** A separate
 session, 143 files, on `main` and deployed. `docs/design/18-brand-guide.md` is
 the record; it extends doc 17 and **reverses its light-first decision**.
@@ -415,10 +469,10 @@ the record; it extends doc 17 and **reverses its light-first decision**.
 | Vercel variable (Production) | Value | Note |
 |---|---|---|
 | `MM_DATABASE_URL` | Supabase **transaction pooler** string, port 6543 (since 11 September 2026) | **Sensitive**, unreadable. Host `aws-1-ca-central-1.pooler.supabase.com`, user `postgres.djepptfxdkvmcretnogy` |
-| `MM_AUTH` | `session` | Magic link |
-| `MM_MAIL`, `MM_RESEND_KEY`, `MM_MAIL_FROM` | `resend`, key, `Whitespace <onboarding@resend.dev>` | |
+| `MM_AUTH` | `session` | Email and password since 14 September 2026 |
+| `MM_MAIL`, `MM_RESEND_KEY`, `MM_MAIL_FROM` | `resend`, key, `Whitespace <onboarding@resend.dev>` | **No longer used by sign-in.** Kept set; `mail.ts` has no caller until something needs to send |
 | `MM_ALLOWED_DOMAINS` | `gmail.com` | Gmail for the pilot |
-| `MM_PUBLIC_URL` | `https://mm-whitespace.vercel.app` | Written into sign-in links |
+| `MM_PUBLIC_URL` | `https://mm-whitespace.vercel.app` | **How the tick reaches the worker** (`src/lib/enrich/kick.ts`). It used to be the origin in a sign-in link too; deleting it as dead magic-link config breaks enrichment |
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |
 | `MM_CRON_SECRET`, `CRON_SECRET` | same value | The per-minute tick in `vercel.json`, and the worker endpoint |
 | `MM_ENRICH_MODE` | `live` | Set 11 September 2026. Never `replay` in production: it would abandon every real company |
@@ -458,11 +512,13 @@ node scripts/publish_period.mjs ./period.db --publish --override "local baseline
 Insert `admin@`, `analyst@` and `viewer@example.invalid` into `app_users`, then:
 
 ```bash
-MM_DATABASE=./period.db MM_AUTH=dev MM_DEV_AUTH_SECRET=local MM_MAIL=log npx next dev
+MM_DATABASE=./period.db MM_AUTH=dev MM_DEV_AUTH_SECRET=local npx next dev
 ```
 
-`MM_AUTH=dev` puts three one-click accounts on `/signin`. `MM_MAIL=log` prints
-sign-in links to the server log instead of sending them. **One `next dev` per
+`MM_AUTH=dev` puts three one-click accounts on `/signin`, and that path skips
+passwords entirely — so seeded local accounts need none, and
+`must_change_password` must stay false on them or the whole local suite lands
+on the password screen. **One `next dev` per
 project** — `pkill -f "next dev"` before starting another; the end-to-end
 suite needs the project to itself. In the Claude desktop app the browser pane
 reads its launch config from a different folder, so start the server with Bash
@@ -493,10 +549,15 @@ disagree, these govern.
 - Authorisation is `requireRole(...)` as the first statement of every action and
   route; `npm run check:auth` fails the build otherwise. Middleware is not a
   boundary. Row-level security underneath is defence in depth.
-- **Sign-in is magic link and sessions are rows**, because doc 11 requires them
-  revocable; deactivating an account on `/access` ends its live sessions. Auth
-  tables store only SHA-256 hashes. Deloitte SSO replaces one function,
-  `sessionClaimSource`.
+- **Sign-in is an email address and a password** since 14 September 2026,
+  reversing doc 11's magic-link-only assumption because the mail behind it
+  reached one inbox and Kay could not sign in at all
+  (`docs/decisions/S6-PASSWORD-AUTH.md`). **Sessions are rows, and that is
+  unchanged**, because doc 11 requires them revocable; deactivating an account
+  on `/access` still ends its live sessions. `auth_sessions` holds the SHA-256
+  of a random token; `auth_passwords` holds a salted scrypt digest, in its own
+  table under 0010's grants. Deloitte SSO still replaces one function,
+  `sessionClaimSource`, and remains the destination.
 - **One database interface, two engines.** `src/lib/db/sql.ts`: SQLite locally
   and in tests, Postgres in production. `MM_DATABASE_URL` (or `DATABASE_URL` /
   `POSTGRES_URL`) selects Postgres.
@@ -646,9 +707,12 @@ it. Never run `git add -A` outside this project's folder.
    throttling, not a stall — check `enrichment_batches` before treating it as
    one.
 
-4. **Mail:** buy and verify a domain for this application (Samuel's decision
-   and money), then set `MM_MAIL_FROM`; **rotate the Resend key**, which was
-   pasted into a chat once. This is what unblocks Kay.
+4. **Mail: no longer blocking anybody, and smaller than it was.** It used to
+   be what stood between Kay and an account; sign-in is a password now and
+   needs no mail at all, so buying and verifying a domain is whenever somebody
+   wants the application to send something. **Rotating the Resend key still
+   stands on its own** — it was pasted into a chat once — and is worth doing
+   whether or not the domain is ever bought.
 
 5. **Schedule retention.** The job now runs on either engine
    (`node scripts/retention.mjs "$MM_DATABASE_URL" --apply`), but nothing calls

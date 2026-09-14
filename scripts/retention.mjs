@@ -25,7 +25,7 @@ import { DatabaseSync } from "node:sqlite";
 import { SqliteSql } from "../src/lib/db/sqlite.ts";
 import { PostgresSql } from "../src/lib/db/postgres.ts";
 import { formatStamp } from "../src/lib/db/stamp.ts";
-import { purgeExpiredLinks } from "../src/lib/auth/magiclink.ts";
+import { purgeSignInFailures } from "../src/lib/auth/signin.ts";
 import { purgeExpiredSessions } from "../src/lib/auth/sessions.ts";
 import { sweepQuarantine } from "../src/lib/ingest/quarantine.ts";
 
@@ -96,24 +96,27 @@ export const RULES = [
     owner: SOLUTION_OWNER,
     transferable: true,
     apply: async (db, apply) => {
-      // Neither table holds a token -- both hold its SHA-256 -- so what is
-      // swept here is evidence rather than credentials: who asked for a link,
-      // from what address, and when a session ended. Kept a month past expiry
-      // because that is the window in which somebody asks why they were signed
-      // out, and dropped after it because a permanent record of every sign-in
-      // is a permanent record of a person's working hours.
+      // Neither table holds a usable secret -- a session holds its token's
+      // SHA-256, and a failed attempt holds no token at all -- so what is swept
+      // here is evidence rather than credentials: when a session ended, and who
+      // could not get in from where. Kept a month because that is the window in
+      // which somebody asks why they were signed out, and dropped after it
+      // because a permanent record of every sign-in is a permanent record of a
+      // person's working hours. The failures are also a counter that would
+      // otherwise grow without bound: the address column is deliberately not a
+      // foreign key, so anybody can add rows to it by typing.
       const cutoff = isoDaysAgo(30);
-      const links = Number((await db.get(
-        "select count(*) n from auth_magic_links where expires_at < ?", cutoff)).n);
       const sessions = Number((await db.get(
         "select count(*) n from auth_sessions where expires_at < ?", cutoff)).n);
-      // purgeExpiredLinks and purgeExpiredSessions ARE the rule; 30 days is
-      // stated once, in the retention line above, and passed to both.
+      const failures = Number((await db.get(
+        "select count(*) n from auth_sign_in_failures where at < ?", cutoff)).n);
+      // The purge functions ARE the rule; 30 days is stated once, in the
+      // retention line above, and passed to both.
       const deleted = apply
-        ? await purgeExpiredLinks(db, 30) + await purgeExpiredSessions(db, 30)
+        ? await purgeExpiredSessions(db, 30) + await purgeSignInFailures(db, 30)
         : 0;
-      return { examined: links + sessions, deleted,
-               note: `${links} link(s) and ${sessions} session(s) ` +
+      return { examined: sessions + failures, deleted,
+               note: `${sessions} session(s) and ${failures} failed attempt(s) ` +
                      "past 30 days; the audit_log entry for each sign-in is kept" };
     },
   },

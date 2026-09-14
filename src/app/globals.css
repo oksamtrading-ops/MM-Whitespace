@@ -205,7 +205,12 @@
   --btn-primary-hover: var(--wsp-primary-hover-dark);
   --btn-primary-ink: var(--on-ink);
   --input-bg: var(--surface-1);
-  --input-border: var(--rule);
+  /* --rule-raised, not --rule. A rule separates things that are already
+     visible; a field's border is the ONLY thing saying where the field is, so
+     it carries the non-text floor. On dark, --rule measured 1.54:1 against a
+     floor of 3 -- a hairline nobody could find. It went unnoticed because
+     check:contrast was never told to look at a form field, which it now is. */
+  --input-border: var(--rule-raised);
   --skip-bg: var(--ink);
   --skip-ink: var(--on-ink);
   --map-water: var(--ground);
@@ -870,6 +875,22 @@ td.wrap, th.wrap { vertical-align: top; padding-top: 9px; padding-bottom: 9px; w
 /* The action column: right, tight, and never taller than its row. */
 td.act, th.act { text-align: right; padding-right: var(--space-2); white-space: nowrap; }
 td.act .btn { vertical-align: middle; }
+/* The two controls on a row sit side by side; the issued password unwraps
+   beneath them, in the same cell, and never in a table of its own. */
+td.act .inline, td.act .temp-password { display: inline-block; margin-left: var(--space-2); }
+td.act .issued {
+  white-space: normal; text-align: left; max-width: 34ch; margin-top: var(--space-2);
+  padding: var(--space-3); border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--input-bg);
+}
+td.act .issued code {
+  display: block; font-size: 17px; letter-spacing: 0.04em; margin-bottom: var(--space-2);
+  color: var(--ink); user-select: all;
+}
+td.act .issued p, td.act .issued-refused {
+  margin: 0; font-size: var(--fs-body-sm); color: var(--ink-3); white-space: normal;
+}
+td.act .issued-refused { text-align: left; margin-top: var(--space-2); }
 /* Densities. Default is 36px; the roster runs compact, forms run roomy. */
 .t-compact th, .t-compact td { height: 30px; font-size: 12.5px; }
 .t-roomy th, .t-roomy td { height: var(--row-h); }
@@ -1078,22 +1099,42 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .signin .orb { position: absolute; right: -40px; top: -10px; width: 160px; height: 160px; pointer-events: none; }
 @media (max-width: 860px) { .signin .orb { display: none; } }
 
-/* Magic link. One field and one button: the whole of signing in. */
-.magiclink { border-top: 1px solid var(--rule); padding-top: 28px; max-width: 40ch; }
-.magiclink label {
+/* Credentials. An address and a password, on sign-in and on the password
+   screen, which share this shape so the forced change reads as part of the same
+   flow rather than a different product.
+
+   The type selector covers BOTH inputs. It was `input[type="email"]` alone when
+   there was only ever one field, and a password added beside it would have
+   rendered as a browser default with no border and no focus ring -- on the most
+   used unauthenticated screen in the application, where check:contrast would
+   not have said a word about it. */
+.credentials { border-top: 1px solid var(--rule); padding-top: 28px; max-width: 40ch; }
+.credentials label {
   display: block; font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label);
   text-transform: uppercase; color: var(--ink-3); margin-bottom: var(--space-2);
 }
-.magiclink input[type="email"] {
+.credentials input[type="email"],
+.credentials input[type="password"],
+.credentials input[type="text"] {
   font: inherit; font-size: 17px; width: 100%; min-height: 48px; padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius);
   background: var(--input-bg); color: var(--ink);
 }
-.magiclink input[type="email"]:focus-visible {
+/* Every field but the last sits above another label, so it needs the gap the
+   .help paragraph gives the last one. */
+.credentials input + label { margin-top: var(--space-4); }
+.credentials input[type="email"]:focus-visible,
+.credentials input[type="password"]:focus-visible,
+.credentials input[type="text"]:focus-visible {
   outline: 2px solid var(--ink); outline-offset: 2px; border-color: var(--ink);
 }
-.magiclink .help { font-size: var(--fs-body-sm); color: var(--ink-3); margin: var(--space-2) 0 var(--space-5); }
-.magiclink .btn { width: 100%; justify-content: center; }
+.credentials .help { font-size: var(--fs-body-sm); color: var(--ink-3); margin: var(--space-2) 0 var(--space-5); }
+.credentials .btn { width: 100%; justify-content: center; }
+.credentials .callout { margin-bottom: var(--space-4); }
+/* Whose password is being changed, above the form. */
+.signin .who {
+  font-size: var(--fs-body-sm); color: var(--ink-3); margin: 0 0 var(--space-4);
+}
 /* A button in the signed-in state, styled as the quiet label it replaces. */
 .signin form .switch {
   font: inherit; font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label);

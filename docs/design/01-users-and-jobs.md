@@ -62,4 +62,4 @@ Two things this journey requires that the workbook cannot provide:
 
 ## What the roles imply for the Azure move
 
-Authorisation never reads the identity provider's user table directly. An application-level user table is the source of truth, and policies resolve the current role from a single token claim. Swapping the pilot's magic-link sign-in for Deloitte's identity provider then changes the claim source and nothing else. That indirection looks unnecessary at pilot scale and is the entire substance of the "configuration change, not a rewrite" commitment.
+Authorisation never reads the identity provider's user table directly. An application-level user table is the source of truth, and policies resolve the current role from a single token claim. Swapping the pilot's own sign-in for Deloitte's identity provider then changes the claim source and nothing else. That held when the pilot's sign-in was a mailed link and still holds now that it is a password, which is the first real evidence the indirection was worth its weight. That indirection looks unnecessary at pilot scale and is the entire substance of the "configuration change, not a rewrite" commitment.

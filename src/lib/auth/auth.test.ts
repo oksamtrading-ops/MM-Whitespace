@@ -3,7 +3,7 @@ import type { Sql } from "../db/sql.ts";
 import { memorySql } from "../db/open.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,10 +11,11 @@ import { applySchema } from "../db/schema.ts";
 import {
   allowedDomains,
   assertRole, authoriseCron, constantTimeEquals, devClaimSource, Forbidden,
+  PasswordChangeRequired,
   hasRole, isAllowedDomain, readCookie, resolveUser, signDevSession, Unauthenticated,
   sessionClaimSource,
 } from "./session.ts";
-import { createSession, revokeSession, SESSION_COOKIE } from "./sessions.ts";
+import { createSession, revokeSession, SESSION_COOKIE, userForSession } from "./sessions.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SECRET = "test-secret";
@@ -132,7 +133,9 @@ test("an analyst is not an admin", async () => {
 });
 
 test("hasRole is exact membership, never a rank comparison", async () => {
-  const admin = { id: "1", email: "a", role: "admin" as const, isActive: true };
+  const admin = {
+    id: "1", email: "a", role: "admin" as const, isActive: true, mustChangePassword: false,
+  };
   assert.equal(hasRole(admin, ["admin"]), true);
   assert.equal(hasRole(admin, ["analyst"]), false, "admin is not silently an analyst");
   assert.equal(hasRole(null, ["viewer"]), false);
@@ -271,4 +274,80 @@ test("no cookie is not a session, and neither is somebody else's junk", async ()
   assert.equal(await src.emailClaim(null), null);
   assert.equal(await src.emailClaim("other=1"), null);
   assert.equal(await src.emailClaim(`${SESSION_COOKIE}=nonsense`), null);
+});
+
+// ------------------------------------------- the temporary-password gate
+
+test("a temporary password stops everything else, and is an Unauthenticated", async () => {
+  const db = await seeded();
+  const d = await db;
+  await d.run("update app_users set must_change_password = true where email = ?",
+              "analyst@example.invalid");
+
+  const err = await assertRole(ctxFor(d, "analyst@example.invalid"), ["analyst"])
+    .then(() => null, (e: unknown) => e);
+  assert.ok(err instanceof PasswordChangeRequired);
+
+  // THE property the rest of the application leans on. Sixteen pages catch
+  // `err instanceof Forbidden ? ... : ...` and the route handlers do the same
+  // with status codes; nothing catches Unauthenticated by name. So a subclass
+  // lands in every else branch and renders the "Sign in" refusal carrying this
+  // message, with no page edited. Break this inheritance and twenty screens
+  // start reporting "this page could not be drawn" instead.
+  assert.ok(err instanceof Unauthenticated, "a subclass, so every catch already handles it");
+  assert.ok(!(err instanceof Forbidden), "and not the one that means the wrong role");
+
+  // The one way past, and it is still a real role assertion.
+  const ok = await assertRole(ctxFor(d, "analyst@example.invalid"), ["analyst"],
+                              { allowPasswordChange: true });
+  assert.equal(ok.email, "analyst@example.invalid");
+  await assert.rejects(
+    () => assertRole(ctxFor(d, "analyst@example.invalid"), ["admin"],
+                     { allowPasswordChange: true }),
+    Forbidden, "waiving the password gate does not waive the role");
+});
+
+test("the session path carries the flag too, or the gate is no gate at all", async () => {
+  // userForSession builds an AppUser from its OWN join, so it is a second
+  // construction site. Missing the column there leaves the field undefined --
+  // falsy -- and everybody already holding a session walks straight through.
+  const db = await seeded();
+  const d = await db;
+  const row = await d.get("select id from app_users where email = ?",
+                          "analyst@example.invalid") as { id: string };
+  const { token } = await createSession(d, row.id, {});
+
+  assert.equal((await userForSession(d, token))?.mustChangePassword, false);
+  await d.run("update app_users set must_change_password = true where id = ?", row.id);
+  assert.equal((await userForSession(d, token))?.mustChangePassword, true);
+});
+
+test("only four files may waive the password gate", async () => {
+  // check_role_assertions.mjs cannot police this: it scans route handlers and
+  // "use server" files, and never looks at a page.tsx at all. So the file set
+  // is asserted here instead. A fifth file appearing is somebody widening the
+  // one chokepoint the whole authorisation model rests on.
+  const root = join(ROOT, "src");
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.tsx?$/.test(entry.name)) continue;
+      if (readFileSync(full, "utf8").includes("allowPasswordChange")) {
+        found.push(full.slice(root.length + 1).replaceAll("\\", "/"));
+      }
+    }
+  };
+  walk(root);
+  // context.ts is absent deliberately: requireRole forwards an AssertOptions
+  // without naming the field, so it cannot waive anything on its own behalf.
+  // Only the two files that pass the flag, the one that reads it, and this.
+  assert.deepEqual(found.sort(), [
+    "app/password/actions.ts",
+    "app/password/page.tsx",
+    "lib/auth/auth.test.ts",
+    "lib/auth/session.ts",
+  ]);
 });

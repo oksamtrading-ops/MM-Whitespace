@@ -20,7 +20,14 @@ git -C "$ROOT" worktree add -q --detach "$WT" HEAD
 
 # The worktree is at HEAD, so lay the working tree over it: what runs should be
 # what you have edited, not what you last committed.
-rsync -a --exclude node_modules --exclude .next --exclude .git \
+#
+# --delete is load-bearing, and its absence was a hole. Copying over the top
+# adds and replaces but never REMOVES, so a file deleted in the working tree
+# survived here from HEAD and went on being served. The suite then passed
+# against code that no longer exists -- which is exactly the change most worth
+# testing, since deleting a route is how a route stops being reachable. Found
+# when /auth/verify was removed and its journey kept passing.
+rsync -a --delete --exclude node_modules --exclude .next --exclude .git \
       "$ROOT/src" "$ROOT/tests" "$ROOT/scripts" "$ROOT/mmparser" "$ROOT/supabase" "$WT/"
 cp "$ROOT/next.config.ts" "$ROOT/package.json" "$ROOT/tsconfig.json" "$WT/"
 

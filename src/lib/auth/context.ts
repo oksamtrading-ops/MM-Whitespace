@@ -4,7 +4,8 @@ import { cookies, headers } from "next/headers";
 import { openSql, DATABASE_PATH } from "../db/open.ts";
 import type { Sql } from "../db/sql.ts";
 import {
-  assertRole, devClaimSource, firstOf, sessionClaimSource, type ClaimSource, type Role,
+  assertRole, devClaimSource, firstOf, sessionClaimSource,
+  type AssertOptions, type ClaimSource, type Role,
 } from "./session.ts";
 
 export { DATABASE_PATH };
@@ -64,9 +65,9 @@ export async function authContext() {
  * An earlier shape needed authContext() first, and "nearly first" is not a rule
  * a checker can enforce.
  */
-export async function requireRole(required: readonly Role[]) {
+export async function requireRole(required: readonly Role[], options: AssertOptions = {}) {
   const ctx = await authContext();
-  const user = await assertRole(ctx, required);
+  const user = await assertRole(ctx, required, options);
   return { user, db: ctx.db, claims: ctx.claims, cookieHeader: ctx.cookieHeader };
 }
 

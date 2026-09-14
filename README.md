@@ -86,7 +86,7 @@ curl -X POST localhost:3000/api/dev/signin -H 'content-type: application/json' \
   -d '{"email":"you@example.invalid"}' -c cookies.txt
 ```
 
-That development sign-in is **not** magic-link authentication and refuses to run
+That development sign-in is **not** the password path and refuses to run
 outside development. It exists so the app can be run before a Supabase project
 does.
 
@@ -519,30 +519,44 @@ the text and non-text floors and the failure is invisible to eye-checking.
 
 ## Signing in
 
-Magic link, no passwords — doc 11, which removes credential stuffing, password
-reuse and reset flows in one decision, and maps onto the eventual identity
-provider because both are an external system asserting an email address.
+An email address and a password. This reverses doc 11's magic-link-only
+decision, on 14 September 2026, because a mailed link is only as available as
+the mail behind it — and the pilot's sender reaches one inbox, which left the
+practice's own workbook owner unable to sign in at all.
+`docs/decisions/S6-PASSWORD-AUTH.md` records what that decision bought and what
+replaces each part of it.
 
 ```bash
-MM_AUTH=session          # the default: magic link
-MM_MAIL=resend           # or `log`, which prints the link (development only)
-MM_RESEND_KEY=re_...     # the sending key
-MM_MAIL_FROM="Whitespace <no-reply@…>"
-MM_PUBLIC_URL=https://…  # the origin that goes into the link
-MM_ALLOWED_DOMAINS=deloitte.ca
+MM_AUTH=session          # the default: email and password
+MM_ALLOWED_DOMAINS=deloitte.ca   # the fallback; the setting wins once it exists
 ```
 
-**Neither table holds a credential.** `auth_magic_links` and `auth_sessions`
-store the SHA-256 of their token and never the token, so a backup, a support
-export or a leaked replica lets nobody sign in as anybody. Redemption is a
-lookup by hash rather than a comparison of secrets.
+No mail is sent anywhere in the auth path, so nothing here waits on a verified
+domain.
 
-**The form gives one answer, whoever asks.** A valid partner, an address that
-is not on the roster, a domain that is not allowed, a malformed string and a
-send that failed all return the same sentence. A sign-in form that
-distinguishes them is a way to ask "does this partner have access" and get an
-answer, and the roster is the client-adjacent thing this application most needs
-to keep. The differences go to `audit_log`, where an Admin can see them.
+**No table holds a usable secret, and they are two different kinds of thing.**
+`auth_sessions` stores the SHA-256 of a 256-bit random token — correct for
+something unguessable, and wrong for a password. `auth_passwords` stores a
+salted scrypt digest with its own cost parameters written into it, because a
+password is guessable by construction and the storage has to make guessing
+expensive. Neither is reversible; only one of them is *slow*, and that is the
+distinction. The hash lives in its own table under `0010`'s grants rather than
+on `app_users`, which six screens read.
+
+**Every refusal reads the same, and takes the same time.** This used to be the
+stronger "one answer whoever asks", and a password cannot keep it: somebody
+with the right one is let in and already knows the account exists. What is
+still defended is that nobody can learn from this form who is on the roster —
+which is why an address with no account is hashed against a decoy rather than
+returned early, and why every refusal is padded to one floor. The differences
+go to `audit_log`, where an Admin can see them and the person at the form
+cannot.
+
+**A first password comes from an Admin, and must be replaced.** There is no
+self-serve reset, because there is no mail — so `/access` issues a temporary
+one, shown once, and the holder is stopped at every other screen until they
+change it. That gate is thrown by `assertRole`, the one function everything
+already calls.
 
 **Sessions are rows, because doc 11 asks for revocable.** A signed stateless
 token cannot be withdrawn — the remedies are rotating a key, which logs out

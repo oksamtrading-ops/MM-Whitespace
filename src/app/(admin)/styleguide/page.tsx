@@ -313,6 +313,25 @@ export default async function Styleguide() {
               <button type="button" className="btn">Enter my own <kbd>O</kbd></button>
             </div>
           </div>
+          <h3>Text and password fields</h3>
+          {/* The sign-in and password screens, which are the only places this
+              product asks anybody to type a secret. Rendered from the build so
+              the specimen cannot drift from the thing -- and so both themes can
+              be looked at, which is how the field's border was found sitting at
+              1.54:1 on dark, below the floor a boundary has to clear. */}
+          <form className="credentials" style={{ maxWidth: "38ch" }}
+                onSubmit={undefined} action={undefined}>
+            <label htmlFor="sg-email">Work email</label>
+            <input id="sg-email" type="email" autoComplete="off" placeholder="you@deloitte.ca" readOnly />
+            <label htmlFor="sg-password">Password</label>
+            <input id="sg-password" type="password" autoComplete="off"
+                   defaultValue="a password" readOnly aria-describedby="sg-help" />
+            <p id="sg-help" className="help">
+              At least twelve characters. Length is the only rule.
+            </p>
+            <button type="button" className="btn primary">Sign in</button>
+          </form>
+
           <h3>Find, inputs, switch, segmented, tabs, breadcrumb</h3>
           <div className="row">
             <div className="find"><input type="search" placeholder="Find a company…" aria-label="Find a company" /></div>

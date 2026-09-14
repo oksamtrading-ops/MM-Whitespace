@@ -47,7 +47,7 @@ test("the retention schedule matches the design's table", async () => {
   assert.match(byKey.auth_tokens.retention, /30 days/);
 });
 
-test("sign-in links and expired sessions are swept, live sessions are not", async () => {
+test("expired sessions and stale failed attempts are swept, live ones are not", async () => {
   const past = formatStamp(Date.now() - 60 * 86_400_000);
   const future = formatStamp(Date.now() + 3_600_000);
   const rule = (RULES as Rule[]).find((r) => r.key === "auth_tokens")!;
@@ -57,21 +57,25 @@ test("sign-in links and expired sessions are swept, live sessions are not", asyn
   const u = await sql.get(
     "insert into app_users (email, role) values (?, ?) returning id",
     "a@example.invalid", "viewer") as { id: string };
-  await sql.run("insert into auth_magic_links (email, token_hash, expires_at) values (?, ?, ?)",
-                "a@example.invalid", "h1", past);
-  await sql.run("insert into auth_magic_links (email, token_hash, expires_at) values (?, ?, ?)",
-                "a@example.invalid", "h2", future);
   await sql.run("insert into auth_sessions (user_id, token_hash, expires_at) values (?, ?, ?)",
                 u.id, "s1", past);
   await sql.run("insert into auth_sessions (user_id, token_hash, expires_at) values (?, ?, ?)",
                 u.id, "s2", future);
+  // The counter that replaced the link table. It has no foreign key, so
+  // anybody can grow it by typing an address -- which is the other reason it
+  // is swept and not only the working-hours one.
+  await sql.run("insert into auth_sign_in_failures (email_lower, ip, at) values (?, ?, ?)",
+                "a@example.invalid", "10.0.0.1", past);
+  await sql.run("insert into auth_sign_in_failures (email_lower, ip, at) values (?, ?, ?)",
+                "a@example.invalid", "10.0.0.1", formatStamp());
 
   const r = await rule.apply(sql, true, {});
-  assert.equal(r.deleted, 2, "one stale link and one stale session");
-  assert.deepEqual(
-    (await sql.all("select token_hash from auth_magic_links")).map((x) => x.token_hash), ["h2"]);
+  assert.equal(r.deleted, 2, "one expired session and one stale attempt");
   assert.deepEqual(
     (await sql.all("select token_hash from auth_sessions")).map((x) => x.token_hash), ["s2"]);
+  assert.equal(
+    (await sql.all("select id from auth_sign_in_failures")).length, 1,
+    "and the recent one stays, because it is still holding somebody's door shut");
   handle.close();
 });
 

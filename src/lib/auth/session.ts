@@ -30,12 +30,45 @@ export type AppUser = {
   email: string;
   role: Role;
   isActive: boolean;
+  /**
+   * Holding a password somebody else chose. Required, not optional, on purpose.
+   *
+   * There are two places an AppUser is built -- resolveUser here, and
+   * userForSession in sessions.ts, which constructs one from its own join.
+   * Optional, a missed one would be `undefined`, which is falsy, which silently
+   * lets a gated account through the gate. Required means the compiler names
+   * the second site instead of a person finding it.
+   */
+  mustChangePassword: boolean;
 };
 
 export class Unauthenticated extends Error {
   constructor(reason: string) {
     super(`not signed in: ${reason}`);
     this.name = "Unauthenticated";
+  }
+}
+
+/**
+ * Signed in, but holding a password an Admin chose. Nothing else may proceed.
+ *
+ * IT EXTENDS Unauthenticated, AND THAT IS THE DESIGN.
+ *
+ * Sixteen pages catch auth errors with one shape -- `err instanceof Forbidden ?
+ * "Not permitted" : "Sign in"` -- and the route handlers do the same thing with
+ * status codes. Nothing anywhere catches Unauthenticated specifically. So a
+ * subclass lands in the else branch of every one of them and renders the "Sign
+ * in" refusal carrying THIS message, with no page edited.
+ *
+ * The alternative was a redirect from assertRole, and it does not work here:
+ * redirect() throws NEXT_REDIRECT, which those same catch blocks would swallow
+ * into a refusal that never navigates. The loop closes instead at /signin,
+ * which offers the password screen to somebody already holding a session.
+ */
+export class PasswordChangeRequired extends Unauthenticated {
+  constructor() {
+    super("your temporary password has to be replaced before you can go on");
+    this.name = "PasswordChangeRequired";
   }
 }
 
@@ -184,10 +217,17 @@ export function readCookie(cookieHeader: string | null, name: string): string | 
  */
 export async function resolveUser(db: Sql, email: string | null): Promise<AppUser | null> {
   if (!email) return null;
-  const row = await db.get("select id, email, role, is_active from app_users where lower(email) = lower(?)", email) as { id: string; email: string; role: Role; is_active: number } | undefined;
+  const row = await db.get(
+    `select id, email, role, is_active, must_change_password
+       from app_users where lower(email) = lower(?)`, email) as
+    { id: string; email: string; role: Role; is_active: number;
+      must_change_password: number } | undefined;
   if (!row) return null;
   if (!row.is_active) return null;
-  return { id: row.id, email: row.email, role: row.role, isActive: true };
+  return {
+    id: row.id, email: row.email, role: row.role, isActive: true,
+    mustChangePassword: Boolean(row.must_change_password),
+  };
 }
 
 /**
@@ -244,14 +284,34 @@ export function hasRole(user: AppUser | null, required: readonly Role[]): boolea
 export async function assertRole(
   ctx: { db: Sql; claims: ClaimSource; cookieHeader: string | null },
   required: readonly Role[],
+  options: AssertOptions = {},
 ): Promise<AppUser> {
   const email = await ctx.claims.emailClaim(ctx.cookieHeader);
   if (!email) throw new Unauthenticated("no verified email claim");
   const user = await resolveUser(ctx.db, email);
   if (!user) throw new Unauthenticated("no active application user for that claim");
   if (!hasRole(user, required)) throw new Forbidden([...required], user.role);
+  // The gate is HERE and nowhere else, for the same reason the role check is:
+  // this is the one function every route, action and guarded page already calls,
+  // and a rule enforced in 39 places is a rule enforced in 38.
+  if (user.mustChangePassword && !options.allowPasswordChange) throw new PasswordChangeRequired();
   return user;
 }
+
+/**
+ * The one way past the password gate.
+ *
+ * Exactly two callers -- the change-password page and its action -- and a test
+ * asserts that set, because scripts/check_role_assertions.mjs cannot: it never
+ * scans a page.tsx at all, only route handlers and files that open with "use
+ * server".
+ *
+ * Deliberately NOT a new guard name in that checker's list. Adding one would
+ * let any action in the repository satisfy the check while requiring no role,
+ * which is a real weakening of the one chokepoint. This stays a genuine role
+ * assertion; it waives the password gate by name and nothing else.
+ */
+export type AssertOptions = { allowPasswordChange?: boolean };
 
 /**
  * The cron endpoint is publicly addressable, so the secret is compared in

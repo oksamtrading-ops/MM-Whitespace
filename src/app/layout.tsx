@@ -51,7 +51,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const ctx = await authContext();
   const email = await ctx.claims.emailClaim(ctx.cookieHeader);
   const user = await resolveUser(ctx.db, email);
-  const canReview = user?.role === "analyst" || user?.role === "admin";
+  // Every destination in the rail refuses somebody who has not replaced their
+  // temporary password, so offering them is offering a row of dead ends. The
+  // rail keeps the user, because signing out must stay reachable from anywhere.
+  const gated = user?.mustChangePassword === true;
+  const canReview = !gated && (user?.role === "analyst" || user?.role === "admin");
   const jar = await cookies();
   const theme = await readTheme();
   const railCollapsed = jar.get(RAIL_COOKIE)?.value === "1";
@@ -60,17 +64,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
      partner reads, the period an analyst builds, and the administration
      behind both. A Viewer sees the first group only. */
   const items: NavItem[] = [];
-  items.push({ href: "/dashboard", label: "Dashboard", icon: "layout-dashboard", group: "product" });
-  items.push({ href: "/companies", label: "Companies", icon: "building-2", group: "product" });
+  if (!gated) {
+    items.push({ href: "/dashboard", label: "Dashboard", icon: "layout-dashboard", group: "product" });
+    items.push({ href: "/companies", label: "Companies", icon: "building-2", group: "product" });
+  }
   // A pursuit is Deloitte internal, so it is never offered to a Viewer.
   if (canReview) items.push({ href: "/pursuits", label: "Pursuits", icon: "crosshair", group: "product" });
   if (canReview) items.push({ href: "/upload", label: "Upload", icon: "upload", group: "period" });
   if (canReview) items.push({ href: "/runs", label: "Runs", icon: "play", group: "period" });
   if (canReview) items.push({ href: "/review", label: "Review", icon: "clipboard-check", group: "period" });
   if (canReview) items.push({ href: "/publish", label: "Publish", icon: "badge-check", group: "period" });
-  if (user?.role === "admin") items.push({ href: "/access", label: "Access", icon: "users", group: "admin" });
-  if (user?.role === "admin") items.push({ href: "/settings", label: "Settings", icon: "settings", group: "admin" });
-  if (user?.role === "admin") items.push({ href: "/styleguide", label: "Styleguide", icon: "palette", group: "admin" });
+  if (!gated && user?.role === "admin") items.push({ href: "/access", label: "Access", icon: "users", group: "admin" });
+  if (!gated && user?.role === "admin") items.push({ href: "/settings", label: "Settings", icon: "settings", group: "admin" });
+  if (!gated && user?.role === "admin") items.push({ href: "/styleguide", label: "Styleguide", icon: "palette", group: "admin" });
 
   // The period, in the rail's foot. A Viewer is shown one only once it is
   // published; draft state is the workstation's business.

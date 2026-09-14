@@ -19,6 +19,12 @@ import { dirname, join } from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+/* Fixture passwords. Long enough to satisfy the policy, and obviously not
+   secrets: they exist only inside a temporary database this script creates. */
+const ANALYST_PASSWORD = "journey analyst password";
+const NEVER_PASSWORD = "journey never password";
+const TEMP_PASSWORD = "journey temporary password";
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PORT = 3199;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -63,21 +69,65 @@ function accountRow(html, email) {
 
 /**
  * A link, straight into the table. The mailbox is not the thing under test,
- * and hashing here rather than calling into the app keeps this an independent
- * check of what the route reads.
+ * Sign in through the library rather than the form.
+ *
+ * This suite does not drive server actions, and password sign-in has no route
+ * to drive -- which is exactly why the decision lives in a library. Returns the
+ * cookie header a browser would have been sent, or null if it was refused.
  */
-function issueLinkDirectly(dbPath, email, { expired = false } = {}) {
-  const token = randomBytes(32).toString("base64url");
-  const hash = createHash("sha256").update(token, "utf8").digest("hex");
-  const expiresAt = new Date(Date.now() + (expired ? -60_000 : 15 * 60_000))
-    .toISOString().replace("T", " ").slice(0, 23) + "000";
+function signInDirectly(dbPath, email, password) {
+  try {
+    const out = execFileSync("node", ["--input-type=module", "-e", `
+      import { DatabaseSync } from "node:sqlite";
+      import { SqliteSql } from "./src/lib/db/sqlite.ts";
+      import { attemptSignIn } from "./src/lib/auth/signin.ts";
+      const handle = new DatabaseSync(${JSON.stringify(dbPath)});
+      handle.exec("pragma foreign_keys = on");
+      const db = new SqliteSql(handle);
+      const got = await attemptSignIn(db, {
+        email: ${JSON.stringify(email)}, password: ${JSON.stringify(password)}, ip: "10.0.0.9" });
+      process.stdout.write(got.ok ? got.session.token : "");
+      await db.close();
+    `], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    return out ? `mm_session=${out}` : null;
+  } catch (err) {
+    console.log(`  signIn failed: ${(err.stderr ?? err.message).toString().trim().split("\n").pop()}`);
+    return null;
+  }
+}
+
+/** Replace a password the way the /password action does, through the library. */
+function changePasswordDirectly(dbPath, email, current, next) {
   execFileSync("node", ["--input-type=module", "-e", `
     import { DatabaseSync } from "node:sqlite";
-    const db = new DatabaseSync(${JSON.stringify(dbPath)});
-    db.prepare("insert into auth_magic_links (email, token_hash, expires_at) values (?, ?, ?)")
-      .run(${JSON.stringify(email)}, ${JSON.stringify(hash)}, ${JSON.stringify(expiresAt)});
-  `], { cwd: ROOT, stdio: "ignore" });
-  return token;
+    import { SqliteSql } from "./src/lib/db/sqlite.ts";
+    import { changePassword } from "./src/lib/auth/signin.ts";
+    const handle = new DatabaseSync(${JSON.stringify(dbPath)});
+    handle.exec("pragma foreign_keys = on");
+    const db = new SqliteSql(handle);
+    const u = await db.get("select id from app_users where email = ?", ${JSON.stringify(email)});
+    await changePassword(db, { userId: u.id, current: ${JSON.stringify(current)},
+                               next: ${JSON.stringify(next)}, confirm: ${JSON.stringify(next)} });
+    await db.close();
+  `], { cwd: ROOT, stdio: ["ignore", "ignore", "inherit"] });
+}
+
+/** Give somebody a password in the fixture, the way an Admin would. */
+function setPasswordDirectly(dbPath, email, password, mustChange = false) {
+  execFileSync("node", ["--input-type=module", "-e", `
+    import { DatabaseSync } from "node:sqlite";
+    import { SqliteSql } from "./src/lib/db/sqlite.ts";
+    import { hashPassword } from "./src/lib/auth/password.ts";
+    const handle = new DatabaseSync(${JSON.stringify(dbPath)});
+    handle.exec("pragma foreign_keys = on");
+    const db = new SqliteSql(handle);
+    const u = await db.get("select id from app_users where email = ?", ${JSON.stringify(email)});
+    await db.run("insert into auth_passwords (user_id, hash, set_at) values (?, ?, ?)",
+                 u.id, await hashPassword(${JSON.stringify(password)}), "2026-01-01 00:00:00.000000");
+    await db.run("update app_users set must_change_password = ? where id = ?",
+                 ${mustChange ? "true" : "false"}, u.id);
+    await db.close();
+  `], { cwd: ROOT, stdio: ["ignore", "ignore", "inherit"] });
 }
 
 /**
@@ -226,7 +276,21 @@ function buildDatabase(dir) {
       .toISOString().replace("T", " ").slice(0, 19);
     db.prepare("insert into app_users (email, role, last_sign_in_at) values (?, ?, ?)")
       .run("dormant@example.invalid", "viewer", dormant);
+    // An analyst holding a password somebody else chose, for the gate. It is
+    // given a recent sign-in on purpose: the access review's own fixture is two
+    // stale accounts and exactly two, and a third would quietly weaken the
+    // assertion that its central number is the number actually flagged.
+    db.prepare("insert into app_users (email, role, last_sign_in_at) values (?, ?, ?)")
+      .run("temp@example.invalid", "analyst",
+           new Date().toISOString().replace("T", " ").slice(0, 19));
   `], q);
+
+  // Passwords, hashed the way the application hashes them. The dev sign-in
+  // route bypasses all of this -- which is why every other journey is
+  // unaffected by the change and journey 6 has to set them explicitly.
+  setPasswordDirectly(db, "analyst@example.invalid", ANALYST_PASSWORD);
+  setPasswordDirectly(db, "never@example.invalid", NEVER_PASSWORD);
+  setPasswordDirectly(db, "temp@example.invalid", TEMP_PASSWORD, true);
   return db;
 }
 
@@ -622,45 +686,51 @@ async function journeys(dbPath) {
   check("the tick does no work itself", body.invokedWorker === false || "pending" in body);
 
   // 6. Magic link, over HTTP. Redemption is a GET, because it is reached by
-  // clicking a link in a mail client, so it is the part of the flow a test can
-  // drive honestly. The link is issued straight into the database rather than
-  // read out of a mailbox -- doc 13 refuses to make every run wait on an inbox
-  // -- and what is under test is redemption, the session it mints, and the
-  // three ways it stops working. The sign-in form's own behaviour, including
-  // that it answers a stranger and a partner identically, is covered by
-  // src/lib/auth/magiclink.test.ts.
-  console.log("\n6. magic-link sign-in");
+  // driving the sign-in FORM: the suite does not drive server actions, which is
+  // why the decision lives in src/lib/auth/signin.ts and not in the action. So
+  // the attempt is made through the library, in a subprocess, and everything
+  // that follows -- the cookie, the gate, the deactivation -- is real HTTP.
+  console.log("\n6. password sign-in, and the temporary password that must be changed");
 
-  const token = issueLinkDirectly(dbPath, "analyst@example.invalid");
-  const redeemed = await fetch(`${BASE}/auth/verify?token=${encodeURIComponent(token)}`,
-                               { redirect: "manual" });
-  const setCookies = redeemed.headers.getSetCookie?.() ?? [];
-  const sessionCookie = setCookies.find((c) => c.startsWith("mm_session="))
-    ?.split(";")[0] ?? null;
-  check("a link redeems to a session", redeemed.status === 303 && Boolean(sessionCookie),
-        `status ${redeemed.status}`);
-  check("the session cookie is httpOnly",
-        setCookies.some((c) => c.startsWith("mm_session=") && /httponly/i.test(c)));
+  check("a wrong password is refused",
+        signInDirectly(dbPath, "analyst@example.invalid", "not the password") === null);
+
+  const sessionCookie = signInDirectly(dbPath, "analyst@example.invalid", ANALYST_PASSWORD);
+  check("the right password mints a session", Boolean(sessionCookie));
 
   const withSession = await get("/review", sessionCookie);
   check("the session opens the review board",
         withSession.status === 200 && !withSession.html.includes("Not permitted"));
 
-  const replay = await fetch(`${BASE}/auth/verify?token=${encodeURIComponent(token)}`,
-                             { redirect: "manual" });
-  check("the same link cannot be used twice",
-        (replay.headers.get("location") ?? "").includes("link=invalid"));
+  // The throttle, over the same path a person would take. Eight wrong guesses
+  // and the RIGHT password stops working -- which is the point, and also the
+  // denial of service the migration's comment owns up to.
+  for (let i = 0; i < 8; i += 1) signInDirectly(dbPath, "never@example.invalid", `wrong ${i}`);
+  check("eight wrong guesses shut the door on the right one",
+        signInDirectly(dbPath, "never@example.invalid", NEVER_PASSWORD) === null,
+        "the throttle did not bite");
 
-  const forged = await fetch(`${BASE}/auth/verify?token=not-a-real-token`,
-                             { redirect: "manual" });
-  check("a token nobody issued is refused",
-        (forged.headers.get("location") ?? "").includes("link=invalid"));
+  // THE GATE, over HTTP. Somebody holding a password an Admin chose reaches
+  // exactly one screen, and a unit test cannot show that the other twenty
+  // refuse -- only a real request can.
+  const tempCookie = signInDirectly(dbPath, "temp@example.invalid", TEMP_PASSWORD);
+  check("a temporary password still signs in", Boolean(tempCookie));
 
-  const expired = issueLinkDirectly(dbPath, "analyst@example.invalid", { expired: true });
-  const stale = await fetch(`${BASE}/auth/verify?token=${encodeURIComponent(expired)}`,
-                            { redirect: "manual" });
-  check("an expired link is refused",
-        (stale.headers.get("location") ?? "").includes("link=invalid"));
+  const gatedReview = await get("/review", tempCookie);
+  check("but it reaches no review board", !gatedReview.html.includes("Your queue"),
+        "a user owing a password change reached the queue");
+  const gatedExport = await fetch(`${BASE}/api/export?format=csv`,
+                                  { headers: { cookie: tempCookie ?? "" } });
+  check("and no export", gatedExport.status === 401, `status ${gatedExport.status}`);
+  const gatedPassword = await get("/password", tempCookie);
+  check("the one screen it does reach is the password screen",
+        gatedPassword.status === 200 && gatedPassword.html.includes("Current password"));
+
+  changePasswordDirectly(dbPath, "temp@example.invalid", TEMP_PASSWORD, "a replacement password");
+  const freed = signInDirectly(dbPath, "temp@example.invalid", "a replacement password");
+  const freedReview = await get("/review", freed);
+  check("once changed, the gate lifts", freedReview.html.includes("Your queue"),
+        "the queue was still refused after the password was replaced");
 
   // Deactivation is the whole of offboarding for an application outside
   // Deloitte's estate, so it has to end a session that is ALREADY RUNNING

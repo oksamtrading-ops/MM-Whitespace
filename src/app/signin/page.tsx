@@ -13,16 +13,15 @@ export const metadata: Metadata = { title: "Sign in" };
 /**
  * Sign in.
  *
- * Magic link, no passwords -- doc 11, which removes credential stuffing,
- * password reuse and reset flows in one decision. The three development
- * accounts still render when MM_AUTH=dev, so the application can be driven
- * without an inbox; that path refuses to run in production on its own account.
+ * An address and a password. This reverses doc 11's "magic link only for the
+ * pilot; no passwords" -- see docs/decisions/S6-PASSWORD-AUTH.md for what that
+ * bought, what it cost, and what replaces each part of it. The three
+ * development accounts still render when MM_AUTH=dev, so the application can be
+ * driven without a password at all; that path refuses to run in production on
+ * its own account.
  */
-export default async function SignIn(
-  { searchParams }: { searchParams: Promise<{ link?: string }> },
-) {
+export default async function SignIn() {
   const dev = process.env.MM_AUTH === "dev";
-  const { link } = await searchParams;
 
   // Offering a sign-in to somebody who is already signed in is a small lie the
   // top bar immediately contradicts, so say who they are and let them past.
@@ -46,10 +45,19 @@ export default async function SignIn(
           <p className="lede">
             Signed in as {user.email}, {user.role === "admin" ? "an" : "a"} {user.role}.
           </p>
+          {/* A gated user is sent here by every refusal in the product, so
+              this is where the loop has to close. Offering "Continue" would
+              send them to a board that refuses them again. */}
           <p className="actions">
-            <Link className="btn primary" href="/" prefetch={false}>
-              Continue{user.role === "viewer" ? " to the dashboard" : " to the review board"}
-            </Link>
+            {user.mustChangePassword ? (
+              <Link className="btn primary" href="/password" prefetch={false}>
+                Set a new password to continue
+              </Link>
+            ) : (
+              <Link className="btn primary" href="/" prefetch={false}>
+                Continue{user.role === "viewer" ? " to the dashboard" : " to the review board"}
+              </Link>
+            )}
           </p>
           <form action={signOut}>
             <button type="submit" className="switch">Sign out</button>
@@ -60,7 +68,7 @@ export default async function SignIn(
           <p className="lede">
             Which Canadian miners Deloitte does not audit yet, and the evidence for saying so.
           </p>
-          <SignInForm invalid={link === "invalid"} />
+          <SignInForm />
         </>
       )}
       {dev && <SignInButtons currentEmail={user?.email ?? null} />}

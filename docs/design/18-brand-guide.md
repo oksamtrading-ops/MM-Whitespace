@@ -290,7 +290,8 @@ Every component in `src/app/_ui` and every pattern in `globals.css`, with its st
 | Drop zone `.drop` | over | hover, focus-within | rule-raised, green-mark | a label around the input | — |
 | Skeletons `.sk` | dashboard, board, grid | pulse | surface-2 | `aria-busy` | Don't skeleton the map's shape as a card |
 | Refusal `.refusal`, empty `.empty` | with action | — | ink-2 | an h1 and one action | Don't apologise |
-| Sign-in `.signin` | magic link, dev roles | pending | lockup, orb | one field and one button | — |
+| Sign-in `.signin` | password, dev roles | pending | lockup, orb | two fields and one button | — |
+| Change password `.signin` | forced and voluntary | pending | lockup, orb | three fields and one button | — |
 | State bar `.statebar` | eight states | — | brand-fill, green-line, warn, alert, demote | labelled | — |
 | Trace `.trace` | fired / not | — | green-mark, ink-3 | fired state in sr-only text | — |
 | Verdict `.verdict` | tier / unclassified | — | figure-lg | a sentence | — |

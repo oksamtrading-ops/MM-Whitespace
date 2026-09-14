@@ -1,0 +1,29 @@
+-- One account per address, whatever case somebody typed it in.
+--
+-- app_users.email is `not null unique` (0001), which is CASE-SENSITIVE, while
+-- every lookup in the application is `lower(email) = lower(?)`. So Sam@x.com and
+-- sam@x.com are both insertable today, and resolveUser returns whichever the
+-- planner happens to pick.
+--
+-- That was survivable when a sign-in was a mailed link: the link went to an
+-- address, and whichever row answered, a person who could read that inbox was
+-- the right person. With a password it is two credentials for one human being,
+-- and which one is asked is not deterministic -- so a password set on one row
+-- appears to work or not work at random.
+--
+-- LAST OF THE THREE, DELIBERATELY. This is the only one of them that can fail
+-- on real data: if production already holds a case-variant pair, creating the
+-- index aborts, and applySchemaPg wraps each file in its own transaction, so
+-- 0027 and 0028 have already landed and stay landed. Re-running after fixing
+-- the duplicate applies only this file. Check before migrating:
+--
+--   select lower(email), count(*) from app_users group by 1 having count(*) > 1;
+--
+-- `if not exists` is not decoration. This migration creates no table, so adopt()
+-- in src/lib/db/schema.ts cannot recognise it -- the prefix it adopts ends at
+-- the last migration whose first table is present -- and it therefore RE-RUNS on
+-- any database that predates the ledger. Without the guard it throws there and
+-- takes the whole schema load down with it. 0025 has the same shape for the
+-- same reason.
+
+create unique index if not exists app_users_email_lower on app_users (lower(email));

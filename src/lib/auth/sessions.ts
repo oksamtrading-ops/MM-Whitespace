@@ -42,6 +42,27 @@ function stampIn(ms: number): string {
 
 export type NewSession = { token: string; expiresAt: string };
 
+/**
+ * How the session cookie is set, in one place.
+ *
+ * It used to be written out once, in the route that redeemed a link. Now two
+ * callers set it -- signing in, and changing a password, which mints a fresh
+ * session -- and two hand-written copies of these flags is how one of them
+ * quietly loses `httpOnly` or `secure`.
+ *
+ * sameSite "lax" rather than "strict": the session has to survive arriving from
+ * a link somebody was sent, and strict would drop it on that first navigation.
+ */
+export function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_HOURS * 3600,
+  };
+}
+
 export async function createSession(
   db: Sql, userId: string, meta: { ip?: string | null; ua?: string | null } = {},
 ): Promise<NewSession> {
@@ -68,12 +89,14 @@ export async function userForSession(db: Sql, token: string | null): Promise<App
   if (!token) return null;
   const now = formatStamp();
   const row = await db.get(
-    `select s.id, s.last_seen_at, u.id as user_id, u.email, u.role, u.is_active
+    `select s.id, s.last_seen_at, u.id as user_id, u.email, u.role, u.is_active,
+            u.must_change_password
        from auth_sessions s join app_users u on u.id = s.user_id
       where s.token_hash = ? and s.revoked_at is null and s.expires_at > ?`,
     hashToken(token), now) as {
       id: string; last_seen_at: string; user_id: string;
       email: string; role: Role; is_active: number | boolean;
+      must_change_password: number | boolean;
     } | undefined;
   if (!row) return null;
   if (!row.is_active) return null;
@@ -84,7 +107,13 @@ export async function userForSession(db: Sql, token: string | null): Promise<App
     return null;
   }
   await db.run("update auth_sessions set last_seen_at = ? where id = ?", now, row.id);
-  return { id: row.user_id, email: row.email, role: row.role, isActive: true };
+  // The flag comes from the same join, not from a second read. This is the
+  // AppUser the session path builds, and a gate that only knew about
+  // resolveUser's would be no gate at all for anyone already signed in.
+  return {
+    id: row.user_id, email: row.email, role: row.role, isActive: true,
+    mustChangePassword: Boolean(row.must_change_password),
+  };
 }
 
 export async function revokeSession(

@@ -9,6 +9,7 @@ import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
 import { setActive } from "./actions.ts";
 import ActiveButton from "./ActiveButton.tsx";
+import TempPasswordButton from "./TempPasswordButton.tsx";
 import { agoLabel, daysSince, fmtDate } from "../../_ui/format.ts";
 
 export const dynamic = "force-dynamic";
@@ -110,6 +111,13 @@ export default async function AccessReview() {
                       <ActiveButton label={u.is_active ? "Deactivate" : "Reactivate"}
                                     disabled={self && u.is_active === 1} />
                     </form>
+                    {/* Not offered for yourself: it would revoke your own
+                        session mid-request. /password is where an Admin
+                        changes their own. Not offered for a deactivated
+                        account either -- giving somebody a credential for an
+                        account that refuses them is a way to look like access
+                        was restored when it was not. */}
+                    {!self && u.is_active === 1 && <TempPasswordButton userId={u.id} />}
                   </td>
                 </tr>
               );

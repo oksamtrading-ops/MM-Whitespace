@@ -436,7 +436,7 @@ create function app_current_role() returns text language sql stable as $$
 $$;
 ```
 
-Every policy resolves the role through `app_current_role()` and never reads the identity provider's own tables. Swapping magic-link sign-in for Deloitte's provider changes the claim source and nothing else. The indirection looks gratuitous at pilot scale and is the entire substance of the portability commitment.
+Every policy resolves the role through `app_current_role()` and never reads the identity provider's own tables. Swapping the pilot's sign-in for Deloitte's provider changes the claim source and nothing else — as it did when the pilot moved from a mailed link to a password, which touched no policy here. The indirection looks gratuitous at pilot scale and is the entire substance of the portability commitment.
 
 ## Phase 2 pursuit tables
 

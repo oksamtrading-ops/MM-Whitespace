@@ -4,110 +4,76 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { db } from "../../lib/auth/context.ts";
-import { allowedDomains, isAllowedDomain, resolveUser } from "../../lib/auth/session.ts";
-import { issueLink, TooManyLinks } from "../../lib/auth/magiclink.ts";
-import { mailSender } from "../../lib/auth/mail.ts";
-import { revokeSession, SESSION_COOKIE } from "../../lib/auth/sessions.ts";
+import { attemptSignIn } from "../../lib/auth/signin.ts";
+import { revokeSession, SESSION_COOKIE, sessionCookieOptions } from "../../lib/auth/sessions.ts";
 import { formatStamp } from "../../lib/db/stamp.ts";
 
 /**
- * ONE ANSWER, WHOEVER ASKS.
+ * EVERY REFUSAL READS THE SAME, AND TAKES THE SAME TIME.
  *
- * Every path through this action returns the same sentence: a valid address on
- * the roster, an address that is not, a domain that is not allowed, a
- * malformed string, or a send that failed. A sign-in form that distinguishes
- * them is a way to ask "does this partner have access" and get an answer, and
- * the roster is the client-adjacent thing this application most needs to keep.
+ * This used to be the stronger "one answer, whoever asks" -- a link was mailed
+ * or it was not, and the form said the same sentence either way. A password
+ * cannot keep that: somebody holding the right one is let in, and already knows
+ * the account exists. So the property narrowed, and the narrower version is
+ * stated here rather than leaving the old claim standing over code that no
+ * longer has it.
  *
- * The differences are recorded in the audit log, where an Admin can see them
- * and the person at the keyboard cannot.
+ * What is still true, and what the library behind this defends: a person at
+ * this form cannot tell an address that is on the roster from one that is not.
+ * Not by reading -- every refusal below is this one sentence -- and not by
+ * timing, which is why signin.ts hashes against a decoy for an address it has
+ * never seen and floors every refusal to the same wall clock.
+ *
+ * The differences are in the audit log, where an Admin can read them and the
+ * person at the keyboard cannot.
  */
 const SAME_ANSWER =
-  "If that address is on the roster, a sign-in link is on its way. " +
-  "It is good for fifteen minutes and can be used once.";
+  "That email address and password do not match an account. " +
+  "If you have forgotten it, an administrator can set you a new one.";
 
-export type SignInResult = { ok: true; message: string } | { ok: false; message: string };
+export type SignInResult = { ok: false; message: string };
 
 // @public-endpoint sign-in cannot require a session; it is what creates one
-export async function requestSignInLink(
+export async function signIn(
   _prev: SignInResult | null, form: FormData,
 ): Promise<SignInResult> {
   const email = String(form.get("email") ?? "").trim();
+  const password = String(form.get("password") ?? "");
   const h = await headers();
-  const meta = { ip: h.get("x-forwarded-for"), ua: h.get("user-agent") };
   const database = db();
 
-  async function note(event: string, detail: Record<string, unknown>) {
+  const got = await attemptSignIn(database, {
+    email,
+    password,
+    // The first hop. Anything after it is supplied by the client and is not
+    // evidence of anything.
+    ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ua: h.get("user-agent"),
+  });
+
+  if (!got.ok) {
+    // The reason is recorded and never rendered. RUNBOOK has the triage.
     await database.run(
       "insert into audit_log (event, detail) values (?, ?)",
-      event, JSON.stringify({ ...detail, at: formatStamp() }));
+      "sign_in_refused",
+      JSON.stringify({ reason: got.reason, email, at: formatStamp() }));
+    return { ok: false, message: SAME_ANSWER };
   }
 
-  if (!email || !email.includes("@") || email.length > 320) {
-    await note("sign_in_refused", { reason: "malformed" });
-    return { ok: true, message: SAME_ANSWER };
-  }
-  // Read for every well-formed address alike, so the cost is the same whether
-  // the domain passes or not. The property this action protects is that a
-  // stopwatch cannot tell somebody on the roster from somebody who is not, and
-  // the roster is not consulted until after this.
-  if (!isAllowedDomain(email, await allowedDomains(db()))) {
-    await note("sign_in_refused", { reason: "domain", email });
-    return { ok: true, message: SAME_ANSWER };
-  }
+  // Unlike every refusal, a success knows who it was: the actor goes in the
+  // column the rest of the application uses, not only into the detail.
+  await database.run(
+    "insert into audit_log (event, actor_id, detail) values (?, ?, ?)",
+    "sign_in", got.user.id,
+    JSON.stringify({ email: got.user.email, role: got.user.role, at: formatStamp() }));
 
-  // Invite-only. The roster decides whether a link is SENT; it does not change
-  // what this function says, and it does not change how long it takes to say
-  // it in any way a stopwatch could use.
-  const user = await resolveUser(database, email);
-  if (!user) {
-    await note("sign_in_refused", { reason: "not on the roster", email });
-    return { ok: true, message: SAME_ANSWER };
-  }
+  (await cookies()).set(SESSION_COOKIE, got.session.token, sessionCookieOptions());
 
-  let token: string;
-  try {
-    ({ token } = await issueLink(database, email, meta));
-  } catch (err) {
-    if (err instanceof TooManyLinks) {
-      await note("sign_in_refused", { reason: "too many live links", email });
-      return { ok: true, message: SAME_ANSWER };
-    }
-    throw err;
-  }
-
-  // MM_PUBLIC_URL is the answer in a deployment, because a Host header is
-  // attacker-controlled and this string goes into a mail as a link to click.
-  // Falling back to the request's own host keeps local development working,
-  // and the scheme follows the proxy rather than being assumed.
-  const proto = h.get("x-forwarded-proto")
-    ?? (process.env.NODE_ENV === "production" ? "https" : "http");
-  const base = (process.env.MM_PUBLIC_URL ?? `${proto}://${h.get("host") ?? "localhost:3000"}`)
-    .replace(/\/+$/, "");
-  const link = `${base}/auth/verify?token=${encodeURIComponent(token)}`;
-
-  try {
-    await mailSender().send({
-      to: email,
-      subject: "Your sign-in link — Whitespace",
-      text: [
-        "Open this link to sign in to Whitespace:",
-        "",
-        link,
-        "",
-        "It is good for fifteen minutes and can be used once.",
-        "If you did not ask for it, nothing has happened and you can ignore this.",
-      ].join("\n"),
-    });
-    await note("sign_in_link_sent", { email });
-  } catch (err) {
-    // The sender failing is an operational fault, not something to tell the
-    // person at the form -- who would learn from it that the address IS on the
-    // roster. It goes to the log, loudly.
-    console.error("sign-in mail failed:", (err as Error).message);
-    await note("sign_in_mail_failed", { email, error: (err as Error).message });
-  }
-  return { ok: true, message: SAME_ANSWER };
+  // Outside anything that could catch it: redirect() throws NEXT_REDIRECT, and
+  // a try around it renders the form again instead of navigating. "/" sends
+  // each role to the screen it starts on -- and sends somebody still holding a
+  // temporary password to the one screen that will take it.
+  redirect("/");
 }
 
 // @public-endpoint signing out must work whatever the session's state is

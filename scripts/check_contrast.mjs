@@ -153,6 +153,20 @@ const COMMON = (t) => [
   { label: "warning text on surface-3", fg: t("warn"), bg: t("surface-3"), floor: TEXT_FLOOR },
   { label: "tag text on the raised surface", fg: t("ink-2"), bg: t("surface-2"), floor: TEXT_FLOOR },
 
+  // A form field, which this script did not check at all until sign-in grew a
+  // password beside its address. Both tokens were unverified on the one screen
+  // every person meets before they have any other way in.
+  //
+  // The border carries the NON-text floor and genuinely needs it: it is the
+  // only thing that says where the field is. A field you cannot find is not a
+  // cosmetic problem, and this script only ever checks what it is told to.
+  { label: "typed text in a form field", fg: t("ink"), bg: t("input-bg"), floor: TEXT_FLOOR },
+  { label: "the placeholder in a form field", fg: t("ink-3"), bg: t("input-bg"), floor: TEXT_FLOOR },
+  { label: "a form field's edge (non-text) on the page ground",
+    fg: t("input-border"), bg: t("ground"), floor: NON_TEXT_FLOOR },
+  { label: "a form field's edge (non-text) on surface-3",
+    fg: t("input-border"), bg: t("surface-3"), floor: NON_TEXT_FLOOR },
+
   { label: "migration: improved", fg: t("up"), bg: t("surface"), floor: TEXT_FLOOR },
   { label: "migration: declined", fg: t("down"), bg: t("surface"), floor: TEXT_FLOOR },
   { label: "migration: neutral", fg: t("neutral"), bg: t("surface"), floor: TEXT_FLOOR },
