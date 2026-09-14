@@ -3,8 +3,7 @@
 > **Status at 13 September 2026.** Built, deployed, and doing the work it
 > exists to do. Q3-2026 is published at **revision 8**; **33 companies
 > researched** — Run 1 (5), Run 2 (25) and two batched runs (3 + 1) — for
-> **US$11.60 all in** (US$11.48 recorded, plus the US$0.12 the batch meter
-> recorded low before the fix; see item 2); **40 companies carry a tier**, 19
+> **US$11.6009 all in**, recorded correctly since the meter fix; **40 companies carry a tier**, 19
 > audit fees carry their currency and fiscal year, and the period downloads as
 > a clean workbook. The pursuit workflow is built and carries its first real
 > pursuit.
@@ -627,8 +626,12 @@ it. Never run `git add -A` outside this project's folder.
    filings rather than searching — so the flat half was only ever wrong on
    pass 1. Two tests hold it, both watched failing against the replanted bug.
 
-   **The US$0.12 already recorded low in production has not been rewritten** —
-   amending a spend ledger is Samuel's call, not a side effect of a bug fix.
+   **The US$0.12 recorded low has since been corrected** (14 September 2026,
+   on Samuel's instruction): `b5d3d9c3` now reads **US$0.4836** and `4ba5d7d7`
+   **US$0.1747**, and the run total is **US$11.6009**. Both corrections are in
+   `audit_log` as `enrichment_spend_corrected` and
+   `enrichment_prompt_version_backfilled`, each with its reason and the commit
+   that fixed the code.
 
 3. **Run 3: the remaining 229 companies.** **US$41.22 batched** for pass 1
    (US$68.70 live) — not the US$34 quoted before item 2 was settled, because
@@ -674,20 +677,13 @@ it. Never run `git add -A` outside this project's folder.
    on the composer, one on the wiring in `worker.ts`, which was the half that
    was actually wrong.
 
-   **The 462 findings already in production still read `2026-09-04.1`**, and
-   the two batched runs still record US$0.12 less than they cost. Both
-   corrections are written and waiting in
-   **`scripts/correct_prompt_version_and_batch_spend.sql`** — one transaction,
-   guarded so a second run changes nothing, and validated against the real
-   PostgreSQL grammar. **Samuel has to run it**, because `MM_DATABASE_URL` is
-   Sensitive and no session can read it:
-
-   ```bash
-   psql "$MM_DATABASE_URL" -f scripts/correct_prompt_version_and_batch_spend.sql
-   ```
-
-   Expect `UPDATE 11`, `UPDATE 462`, `INSERT 0 2`, `COMMIT`. **Run it before
-   Run 3 or not at all**, so the period is not split between two conventions.
+   **The backfill is done** (14 September 2026, 01:05 UTC, before Run 3). All
+   **462 findings and all 11 runs** now read
+   `2026-09-04.1+live.2026-09-13.1`, one value across the whole population —
+   every run was `mode=live` and the rules had not changed, so the stamp
+   describes them accurately rather than asserting anything new.
+   `scripts/correct_prompt_version_and_batch_spend.sql` records what was done
+   and why; it is guarded, so running it again reports `UPDATE 0`.
 
 8. ~~**Tidy-ups:** an empty tracked file named `--` at the repository root.~~
    **Done** — removed 13 September 2026. Zero bytes, referenced by nothing,
