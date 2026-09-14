@@ -34,6 +34,12 @@ Doc 18 had already set the precedent for a later document reversing an earlier.
 | Reset flows | **No** | There is no self-serve reset, because there is no mail. An Admin issues a temporary password out of band; the holder must replace it |
 | — | New | Account lockout, which the throttle creates. See below |
 
+**And the sign-in screen says so.** A missing "forgot password" link reads as a
+screen that forgot, not as a decision — so the answer sits under the password
+field, where somebody looks for the link. The refusal message carries it too,
+but only after a failed attempt, and a person who knows they have forgotten
+their password never makes one.
+
 ## scrypt, and why one notch below the published floor
 
 `ln=15` (N=32768), r=8, p=1, 32-byte key, 16-byte salt, `maxmem` set explicitly

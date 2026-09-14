@@ -1167,7 +1167,10 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .credentials input[type="text"]:focus-visible {
   outline: 2px solid var(--ink); outline-offset: 2px; border-color: var(--ink);
 }
-.credentials .help { font-size: var(--fs-body-sm); color: var(--ink-3); margin: var(--space-2) 0 var(--space-5); }
+.credentials .help { font-size: var(--fs-body-sm); color: var(--ink-3); margin: var(--space-2) 0 var(--space-5); line-height: 1.5; }
+/* The one emphasised word in the help text, so "Forgotten it?" is findable by
+   somebody scanning for a link that is deliberately not there. */
+.credentials .help strong { color: var(--ink-2); font-weight: 600; }
 .credentials .btn { width: 100%; justify-content: center; }
 .credentials .callout { margin-bottom: var(--space-4); }
 /* Whose password is being changed, above the form. */

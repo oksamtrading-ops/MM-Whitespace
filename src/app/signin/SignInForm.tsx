@@ -26,8 +26,18 @@ export default function SignInForm() {
       <label htmlFor="password">Password</label>
       <input id="password" name="password" type="password" required
              autoComplete="current-password" aria-describedby="signin-help" />
+      {/* The absence of a "forgot password" link is a decision, and a screen
+          that does not say so reads as one that forgot. There is no reset by
+          email because there is no email in this flow at all -- which is the
+          point of it, and is what let the practice onboard somebody the mail
+          provider could not reach. So the answer is here, where a person looks
+          for the link, rather than only in the refusal they would have to fail
+          first to see. */}
       <p id="signin-help" className="help">
-        Invite only. An administrator sets your first password.
+        Invite only — an administrator sets your first password.<br />
+        <strong>Forgotten it?</strong> There is no reset by email. An
+        administrator can issue you a new one, and you choose your own when you
+        sign in with it.
       </p>
 
       <Submit />
