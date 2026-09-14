@@ -4,14 +4,11 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { db } from "../../lib/auth/context.ts";
-import { isAllowedDomain, resolveUser } from "../../lib/auth/session.ts";
+import { allowedDomains, isAllowedDomain, resolveUser } from "../../lib/auth/session.ts";
 import { issueLink, TooManyLinks } from "../../lib/auth/magiclink.ts";
 import { mailSender } from "../../lib/auth/mail.ts";
 import { revokeSession, SESSION_COOKIE } from "../../lib/auth/sessions.ts";
 import { formatStamp } from "../../lib/db/stamp.ts";
-
-const ALLOWED_DOMAINS = (process.env.MM_ALLOWED_DOMAINS ?? "deloitte.ca,example.invalid")
-  .split(",").map((d) => d.trim()).filter(Boolean);
 
 /**
  * ONE ANSWER, WHOEVER ASKS.
@@ -50,7 +47,11 @@ export async function requestSignInLink(
     await note("sign_in_refused", { reason: "malformed" });
     return { ok: true, message: SAME_ANSWER };
   }
-  if (!isAllowedDomain(email, ALLOWED_DOMAINS)) {
+  // Read for every well-formed address alike, so the cost is the same whether
+  // the domain passes or not. The property this action protects is that a
+  // stopwatch cannot tell somebody on the roster from somebody who is not, and
+  // the roster is not consulted until after this.
+  if (!isAllowedDomain(email, await allowedDomains(db()))) {
     await note("sign_in_refused", { reason: "domain", email });
     return { ok: true, message: SAME_ANSWER };
   }

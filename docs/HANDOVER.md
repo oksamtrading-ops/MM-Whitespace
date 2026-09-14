@@ -661,10 +661,35 @@ it. Never run `git add -A` outside this project's folder.
    and S4 (open the generated export in Excel).
 
 7. **Hardening:** a monotonic column on `review_decisions` (today
-   `decisionStamp()` carries the order); the domain allowlist as a database
-   trigger (doc 11; enforced in code because the portable migrations forbid
-   triggers); Deloitte SSO and `MM_ALLOWED_DOMAINS=deloitte.ca` when the
-   pilot moves to Deloitte addresses.
+   `decisionStamp()` carries the order) is the one still open. Deloitte SSO and
+   `MM_ALLOWED_DOMAINS=deloitte.ca` wait on the pilot moving to Deloitte
+   addresses, which waits on the mail decision.
+
+   ~~The domain allowlist as a database trigger; enforced in code because the
+   portable migrations forbid triggers.~~ **Done 14 September 2026, and the
+   stated reason was wrong.** Nothing forbade it: `isPostgresOnly()` already
+   made SQLite skip files it cannot run, which is how five migrations of roles,
+   grants and policies already ship — the list of Postgres-only constructs
+   simply had no pattern for a trigger. Migration `0024` adds the trigger on
+   `app_users`, **applied to Supabase and proven against it**: `deloitte.ca`
+   refused, a malformed address refused, a `gmail.com` address admitted, and —
+   the case worth checking — **deactivating someone still works**, because the
+   trigger fires on `insert or update of email` and not on the `is_active`
+   write that `/access` makes.
+
+   Two comments in the source claimed the database was already enforcing this.
+   It was not. Both now describe what is actually there.
+
+   The list moved to the `allowed_email_domains` setting, because a trigger
+   cannot read `MM_ALLOWED_DOMAINS`. It is seeded with `gmail.com`, which is
+   what production already ran on, so nothing changed behaviour on the day it
+   landed. **It is on `/settings` now**, so an Admin can add `deloitte.ca`
+   without a deployment — and that, not a code change, is what will let Kay in
+   once the mail domain is sorted. `MM_ALLOWED_DOMAINS` survives only as the
+   fallback for a database that has not had `0024`: failing closed in the
+   interface would refuse every sign-in including the Admin's, with no way in
+   to fix it. The trigger fails closed instead, where the worst case is that
+   nobody new can be invited until one value is set.
 
    ~~The live pipeline records the replay pipeline's `PROMPT_VERSION`.~~
    **Fixed 13 September 2026.** A live prompt is two halves — prompt.ts's

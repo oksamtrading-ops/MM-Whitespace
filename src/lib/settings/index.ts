@@ -11,7 +11,7 @@ import type { Sql } from "../db/sql.ts";
 export type SettingKey =
   | "default_threshold_amount" | "default_threshold_currency"
   | "default_threshold_operator" | "default_proximity_band_pct"
-  | "default_run_budget_usd"
+  | "default_run_budget_usd" | "allowed_email_domains"
   | "pursuit_priorities" | "pursuit_action_statuses" | "pursuit_outcomes";
 
 export type Setting = {
@@ -40,6 +40,13 @@ const DEFINITIONS: Array<Pick<Setting, "key" | "label" | "help" | "kind">> = [
   { key: "default_run_budget_usd", label: "Default run budget", kind: "usd",
     help: "What a run gets when nobody names a budget. It warns at 80% and halts " +
           "at 100%; a run cannot exist without one." },
+  { key: "allowed_email_domains", label: "Sign-in domains", kind: "list",
+    help: "Who may be given an account at all. Enforced in a trigger on the " +
+          "user table, so an address outside this list cannot be invited by any " +
+          "route, including a hand-written insert — and refused at sign-in " +
+          "before that, to say something useful. Emptying it invites nobody " +
+          "rather than everybody; people already on the roster keep their " +
+          "access, and can still be deactivated." },
   // The pursuit vocabularies live here rather than in a check constraint
   // because nothing in the design specifies them, and a vocabulary invented in
   // a migration is a decision made by whoever wrote the migration. Here the
@@ -120,6 +127,24 @@ export function validate(key: SettingKey, raw: string): string {
       if (!Number.isFinite(n) || n <= 0) throw new InvalidSetting("A run cannot be created without a budget.");
       if (n > 10_000) throw new InvalidSetting("That budget is high enough to want a second pair of eyes. Raise it in the database if you mean it.");
       return String(n);
+    }
+    case "allowed_email_domains": {
+      const terms = splitList(value);
+      // Emptying it is a real choice -- it invites nobody -- but it has to be
+      // made in the database, not by clearing a field and tabbing away.
+      if (terms.length < 1) {
+        throw new InvalidSetting(
+          "At least one domain, or nobody can be invited. Clear it in the database if you mean that.");
+      }
+      for (const t of terms) {
+        if (t.startsWith("@")) {
+          throw new InvalidSetting(`Write ${t.slice(1)}, not ${t} — the domain alone.`);
+        }
+        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(t)) {
+          throw new InvalidSetting(`${t} is not a domain.`);
+        }
+      }
+      return terms.map((t) => t.toLowerCase()).join(", ");
     }
     case "pursuit_priorities":
     case "pursuit_outcomes":

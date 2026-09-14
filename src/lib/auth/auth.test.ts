@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applySchema } from "../db/schema.ts";
 import {
+  allowedDomains,
   assertRole, authoriseCron, constantTimeEquals, devClaimSource, Forbidden,
   hasRole, isAllowedDomain, readCookie, resolveUser, signDevSession, Unauthenticated,
   sessionClaimSource,
@@ -63,6 +64,36 @@ test("the domain allowlist matches the whole domain, not a suffix", async () => 
   assert.equal(isAllowedDomain("a@evil-deloitte.ca", ["deloitte.ca"]), false);
   assert.equal(isAllowedDomain("a@deloitte.ca.evil.test", ["deloitte.ca"]), false);
   assert.equal(isAllowedDomain("no-at-sign", ["deloitte.ca"]), false);
+});
+
+test("the allowlist comes from the setting, and falls back rather than locking everyone out", async () => {
+  // Two route files each parsed MM_ALLOWED_DOMAINS into their own constant.
+  // One source now, the same one the 0024 trigger reads, so the interface and
+  // the database cannot come to disagree about who may be given an account.
+  const db = await seeded();
+  const before = process.env.MM_ALLOWED_DOMAINS;
+  try {
+    process.env.MM_ALLOWED_DOMAINS = "fallback.test";
+
+    // No setting yet -- a database that has not had 0024. Failing closed here
+    // would refuse every sign-in including the Admin's, with no way in to fix
+    // it, so the environment still answers.
+    assert.deepEqual(await allowedDomains(db), ["fallback.test"]);
+
+    await db.run(
+      "insert into app_settings (key, value) values ('allowed_email_domains', ?)",
+      "gmail.com, deloitte.ca");
+    assert.deepEqual(await allowedDomains(db), ["gmail.com", "deloitte.ca"],
+                     "the setting wins once it exists");
+
+    // Emptied in the database is not the same as never set: the trigger is
+    // what refuses everyone then, where the damage is one value wide.
+    await db.run("update app_settings set value = '' where key = 'allowed_email_domains'");
+    assert.deepEqual(await allowedDomains(db), ["fallback.test"]);
+  } finally {
+    if (before === undefined) delete process.env.MM_ALLOWED_DOMAINS;
+    else process.env.MM_ALLOWED_DOMAINS = before;
+  }
 });
 
 // ------------------------------------------------------------ assertRole

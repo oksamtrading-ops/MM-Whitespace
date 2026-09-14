@@ -17,6 +17,15 @@ const PG_ONLY = [
   /\bcreate\s+policy\b/i,
   /\benable\s+row\s+level\s+security\b/i,
   /^\s*(grant|revoke)\b/im,
+  // SQLite has triggers, but not plpgsql, and a rule enforced in only one of
+  // the two engines is worse than one enforced in neither: local tests would
+  // pass against a gate production does not have, or fail against one it does.
+  // So a trigger file is Postgres-only and the same rule is kept in code for
+  // both engines. Until 0024 this list had no trigger pattern at all, which is
+  // why doc 11's allowlist trigger was recorded as impossible rather than
+  // unwritten -- the mechanism to ship it already existed.
+  /\bcreate\s+(or\s+replace\s+)?function\b/i,
+  /\bcreate\s+trigger\b/i,
 ];
 
 export function isPostgresOnly(sql: string): boolean {

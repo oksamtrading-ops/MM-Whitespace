@@ -7,12 +7,9 @@
  */
 import { NextResponse } from "next/server";
 import { db } from "../../../../lib/auth/context.ts";
-import { isAllowedDomain, signDevSession } from "../../../../lib/auth/session.ts";
+import { allowedDomains, isAllowedDomain, signDevSession } from "../../../../lib/auth/session.ts";
 
 export const dynamic = "force-dynamic";
-
-const ALLOWED_DOMAINS = (process.env.MM_ALLOWED_DOMAINS ?? "deloitte.ca,example.invalid")
-  .split(",").map((d) => d.trim()).filter(Boolean);
 
 // @public-endpoint sign-in cannot require a session; it is dev-only and refuses in production
 export async function POST(request: Request) {
@@ -27,8 +24,10 @@ export async function POST(request: Request) {
   const { email } = (await request.json().catch(() => ({}))) as { email?: string };
   if (!email) return NextResponse.json({ error: "email required" }, { status: 400 });
 
-  // Invite-only, and the domain allowlist is checked here AND in the database.
-  if (!isAllowedDomain(email, ALLOWED_DOMAINS)) {
+  // Invite-only, and since 0024 the allowlist really is checked here AND in
+  // the database -- a trigger on app_users. Before that this comment named a
+  // gate that did not exist.
+  if (!isAllowedDomain(email, await allowedDomains(db()))) {
     return NextResponse.json({ error: "domain not allowed" }, { status: 403 });
   }
   const known = await db().get("select id from app_users where lower(email) = lower(?) and is_active = true", email);

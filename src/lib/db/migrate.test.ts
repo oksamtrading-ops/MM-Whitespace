@@ -64,3 +64,22 @@ test("the ledger records what was applied", async () => {
   assert.deepEqual(recorded, expected, "Postgres-only migrations are skipped, not recorded");
   assert.ok(expected.length < migrationFiles().length, "and some of them are");
 });
+
+test("a trigger migration is Postgres-only, so SQLite never tries to translate it", () => {
+  // SQLite has triggers but not plpgsql, so the translator would throw on
+  // 0024 -- the loud failure it is designed to give rather than silently
+  // changing meaning. That is the right behaviour and the wrong outcome: the
+  // whole schema would refuse to load locally. PG_ONLY carried no trigger
+  // pattern until 0024, which is why doc 11's allowlist trigger was recorded
+  // as forbidden by the portable migrations rather than simply unwritten.
+  const trigger = migrationFiles().find((f) => f.includes("domain_allowlist"));
+  assert.ok(trigger, "0024 is present");
+  const sql = readFileSync(join(MIGRATIONS_DIR, trigger!), "utf8");
+  assert.ok(isPostgresOnly(sql), "and it is skipped locally");
+
+  // The predicate must answer to the construct, not to this one file's name.
+  assert.ok(isPostgresOnly("create trigger t before insert on x for each row execute function f();"));
+  assert.ok(isPostgresOnly("create or replace function f() returns trigger language plpgsql as $$ begin end $$;"));
+  assert.equal(isPostgresOnly("create table t (id text primary key);"), false,
+               "and an ordinary migration still loads on both engines");
+});

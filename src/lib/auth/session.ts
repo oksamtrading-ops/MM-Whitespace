@@ -190,12 +190,46 @@ export async function resolveUser(db: Sql, email: string | null): Promise<AppUse
   return { id: row.id, email: row.email, role: row.role, isActive: true };
 }
 
-/** The domain allowlist is enforced in the database, not the interface. */
+/**
+ * Does this address's domain pass? The comparison only -- see allowedDomains
+ * for where the list comes from.
+ *
+ * The authority is the database: migration 0024 puts the same rule in a
+ * trigger on app_users, so an address that does not pass cannot be given an
+ * account by any route, including a hand-written insert. This function is the
+ * interface's copy of that rule, and it exists to refuse early and say
+ * something useful rather than to be the gate. Until 0024 the comment here
+ * claimed the database was already doing it, which it was not.
+ */
 export function isAllowedDomain(email: string, allowed: readonly string[]): boolean {
   const at = email.lastIndexOf("@");
   if (at < 0) return false;
   const domain = email.slice(at + 1).toLowerCase();
   return allowed.some((d) => domain === d.toLowerCase());
+}
+
+/**
+ * The one list, read from the one place that holds it.
+ *
+ * Two route files each parsed MM_ALLOWED_DOMAINS into their own constant, with
+ * their own copy of the default -- two copies of one fact, which is how the
+ * two ever come to disagree. The setting is the source now, so the interface
+ * and the trigger cannot drift apart, and an Admin can change both at once on
+ * /settings instead of through a redeployment.
+ *
+ * The environment remains the fallback for a database that has not had 0024:
+ * failing closed here would refuse every sign-in, including the Admin's, with
+ * no way in to fix it. The trigger fails closed instead, where the worst case
+ * is that nobody new can be invited for as long as it takes to set one value.
+ */
+export async function allowedDomains(database: Sql): Promise<string[]> {
+  const fromEnv = (process.env.MM_ALLOWED_DOMAINS ?? "deloitte.ca,example.invalid")
+    .split(",").map((d) => d.trim()).filter(Boolean);
+  const row = await database.get(
+    "select value from app_settings where key = 'allowed_email_domains'")
+      .catch(() => null) as { value: string } | null;
+  const configured = (row?.value ?? "").split(",").map((d) => d.trim()).filter(Boolean);
+  return configured.length > 0 ? configured : fromEnv;
 }
 
 export function hasRole(user: AppUser | null, required: readonly Role[]): boolean {
