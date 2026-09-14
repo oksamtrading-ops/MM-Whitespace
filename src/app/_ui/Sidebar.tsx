@@ -132,7 +132,7 @@ export default function Sidebar({ items, collapsed: initial, theme, period, user
             <>
               <p className="who" title={`${user.email} · ${user.role}`}>
                 <Icon name="circle-user" size={15} />
-                {!collapsed && <><span className="email">{user.email}</span><span className="role">{user.role}</span></>}
+                {!collapsed && <><span className="email">{user.email}</span><span className="whorole">{user.role}</span></>}
                 {collapsed && <span className="sr-only">{user.email}, {user.role}</span>}
               </p>
               {/* Signing out belongs where a person can find it, which is

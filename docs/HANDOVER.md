@@ -643,6 +643,20 @@ with no background at all (`.tag`, until today) passes it too. Grep
 `globals.css` for a class name before using it, and add the pair when you add a
 colour.
 
+**It has now happened three times, and the third one shipped and was live for
+months.** The rail's identity line used `.role` for the word "admin" — and the
+sign-in screen's development account buttons already own `.role`, defining it
+as a three-column grid with 22px of padding and a bottom border. So the rail
+inherited all of it: **the address was squeezed to zero width**, the role sat
+alone in a full-width cell, and a horizontal rule appeared under it that nobody
+drew. It read as a heading for a section that was not there, which is exactly
+how it was reported. Nothing failed — the markup was correct the whole time,
+and the defect was purely in which rule won. It is `.whorole` now.
+
+Worth drawing the general lesson: **every one of the three was found by a person
+looking at the screen**, never by a check. The build has no opinion about class
+collisions and neither does anything else here.
+
 **`node --test` strips types, it does not compile them.** A TypeScript
 parameter property (`constructor(private readonly x = 1) {}`) passes both `tsc`
 and `tsx` and then fails the whole suite with
