@@ -13,7 +13,7 @@
 > roster.
 >
 > Everything in this note is deployed and every migration is applied, through
-> `0029`. 137 commits. To start a new session, paste everything below the line
+> `0029`. 140 commits. To start a new session, paste everything below the line
 > into it.
 
 ---
@@ -109,7 +109,7 @@ already published). And the per-minute schedule ran a full day: **1,440 of
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
-Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 137 commits.
+Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 140 commits.
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -406,6 +406,83 @@ finding already in review still reads "Perth, Wa"** — it is a proposal with it
 evidence anchored to the record it came from, so a reviewer overrides it rather
 than anyone rewriting a stored value.
 
+**Built on 13 September 2026, evening — the brand and interface.** A separate
+session, 143 files, on `main` and deployed. `docs/design/18-brand-guide.md` is
+the record; it extends doc 17 and **reverses its light-first decision**.
+
+- **The product is dark-first**, with the light system kept whole as a second
+  theme and one press away in the rail's foot. The reason is measured, not
+  taste: the brand green passes on black at **9.23:1** and fails on white at
+  **2.27:1**, so on the dark ground green may carry text, lines and focus,
+  where on white it may only fill. Print always renders light.
+- **A left rail**, new UI primitives (`Sidebar`, `Panel`, `PageHeader`, `Orb`,
+  `TierLadder`, `WorkingToggle`) and about 1,700 lines of `globals.css`.
+- **`/styleguide` (Admin)** renders the tokens and components from the build
+  itself, so nothing in it can drift from the product. When you remove a
+  component, remove it there too — the last commit of the evening was exactly
+  that debt being paid.
+- **The dashboard's charts changed shape.** Auditor share is now two donuts,
+  by value and by count, with the research gap drawn as a hatched slice rather
+  than hidden — Deloitte holds 14.6% of the money and 6.6% of the companies.
+  Market penetration is a dot plot, where the rule between two dots is the
+  whitespace. A treemap hero was built and then **withdrawn**: the map is the
+  image the product is remembered by, and two full-width pictures above the
+  fold is one too many. It is at `b435ce4` if that is reopened.
+- **One open decision, recorded rather than worked around.** No fixed set of
+  four competitor colours clears 3:1 on both a white and a black ground once
+  green is reserved for Deloitte, so competitors are steps of grey. Doc 18
+  section 16 also lists every Deloitte brand value still marked *[confirm]*
+  against the brand hub.
+
+**Built and CUT OVER on 14 September 2026 — sign-in is an email address and a
+password.** Applied, deployed, and in use: migrations `0027`–`0029` are on
+Supabase, magic links are deleted, and three of the four people on the roster
+have signed in through it.
+`docs/decisions/S6-PASSWORD-AUTH.md` is the record; doc 11 is amended and keeps
+the sentence it reverses visible.
+
+- **Why:** a mailed link is only as available as the mail behind it, and the
+  pilot's sender reaches one inbox — so the practice's own workbook owner could
+  not sign in. Passwords remove mail from the auth path entirely.
+- **`scrypt` from `node:crypto`, no dependency**, at `ln=15` — deliberately
+  under the published floor, because every concurrent verify allocates its full
+  working set on an unauthenticated endpoint and 128 MB a request is a way to
+  take the whole deployment down. The reasoning is in the decision record; do
+  not raise it without reading that first.
+- **The hash is in `auth_passwords`, not on `app_users`**, under 0010's grants.
+  `must_change_password` is on `app_users`, because a boolean is not a
+  credential.
+- **The gate is thrown by `assertRole`** as a subclass of `Unauthenticated`, so
+  all 16 page catch blocks and the route handlers already render it correctly
+  with no file edited. A redirect could not work: `redirect()` throws
+  `NEXT_REDIRECT` and those same catches would swallow it.
+- **`AppUser.mustChangePassword` is required, not optional**, so the compiler
+  names both construction sites — `resolveUser` and `userForSession`. Optional,
+  a miss reads as `undefined`, which is falsy, and everybody already signed in
+  walks through.
+
+Three things this turned up that were not about passwords at all:
+
+- **`npm run e2e:isolated` could not see a deletion.** It builds a worktree at
+  `HEAD` and rsynced over it **without `--delete`**, so a deleted file survived
+  and kept being served — journey 6 passed against `/auth/verify` after that
+  route was removed. Fixed.
+- **A form field's border was below the non-text floor on dark** (1.54:1
+  against 3), because `check:contrast` was never told to look at one.
+  `--input-border` is `--rule-raised` now and the pair is checked.
+- **`app_users.email` is unique case-sensitively** while every lookup lowercases
+  it, so a case-variant pair is insertable. Harmless with links; with passwords
+  it is two credentials for one person. `0029` closes it — and **can fail on
+  real data**, so run the duplicate check in the cutover first.
+
+**The cutover ran in that order and worked**: duplicate-address check (none),
+migrate, seed both admins while the OLD sign-in still worked, then deploy. The
+one thing that did NOT happen is a sign-in through the password form before the
+deploy — the first admin was still on a pre-cutover magic-link session, which
+stayed valid. Nothing was dropped and no variable removed, so a rollback is
+still a redeploy; `auth_magic_links` is unreferenced but present, and is safe to
+drop in a later migration once nobody wants that escape.
+
 **Built on 14 September 2026, after the cutover — five things, all reported by
 somebody looking at a screen.** Worth reading as a group: not one was caught by
 a check, because in every case the markup was right and what was wrong was
@@ -453,82 +530,6 @@ most of what was just deleted; and a new sending domain mailing `@deloitte.ca`
 may be quarantined by Deloitte's gateway, which is a risk worth one test message
 before any work. If it comes back, `auth_magic_links` is still in the database
 and the machinery is in git at `fc00769^`.
-
-**Built and CUT OVER on 14 September 2026 — sign-in is an email address and a
-password.** Applied, deployed, and in use: migrations `0027`–`0029` are on
-Supabase, magic links are deleted, and four people have signed in through it.
-`docs/decisions/S6-PASSWORD-AUTH.md` is the record; doc 11 is amended and keeps
-the sentence it reverses visible.
-
-- **Why:** a mailed link is only as available as the mail behind it, and the
-  pilot's sender reaches one inbox — so the practice's own workbook owner could
-  not sign in. Passwords remove mail from the auth path entirely.
-- **`scrypt` from `node:crypto`, no dependency**, at `ln=15` — deliberately
-  under the published floor, because every concurrent verify allocates its full
-  working set on an unauthenticated endpoint and 128 MB a request is a way to
-  take the whole deployment down. The reasoning is in the decision record; do
-  not raise it without reading that first.
-- **The hash is in `auth_passwords`, not on `app_users`**, under 0010's grants.
-  `must_change_password` is on `app_users`, because a boolean is not a
-  credential.
-- **The gate is thrown by `assertRole`** as a subclass of `Unauthenticated`, so
-  all 16 page catch blocks and the route handlers already render it correctly
-  with no file edited. A redirect could not work: `redirect()` throws
-  `NEXT_REDIRECT` and those same catches would swallow it.
-- **`AppUser.mustChangePassword` is required, not optional**, so the compiler
-  names both construction sites — `resolveUser` and `userForSession`. Optional,
-  a miss reads as `undefined`, which is falsy, and everybody already signed in
-  walks through.
-
-Three things this turned up that were not about passwords at all:
-
-- **`npm run e2e:isolated` could not see a deletion.** It builds a worktree at
-  `HEAD` and rsynced over it **without `--delete`**, so a deleted file survived
-  and kept being served — journey 6 passed against `/auth/verify` after that
-  route was removed. Fixed.
-- **A form field's border was below the non-text floor on dark** (1.54:1
-  against 3), because `check:contrast` was never told to look at one.
-  `--input-border` is `--rule-raised` now and the pair is checked.
-- **`app_users.email` is unique case-sensitively** while every lookup lowercases
-  it, so a case-variant pair is insertable. Harmless with links; with passwords
-  it is two credentials for one person. `0029` closes it — and **can fail on
-  real data**, so run the duplicate check in the cutover first.
-
-**The cutover ran in that order and worked**: duplicate-address check (none),
-migrate, seed both admins while the OLD sign-in still worked, then deploy. The
-one thing that did NOT happen is a sign-in through the password form before the
-deploy — the first admin was still on a pre-cutover magic-link session, which
-stayed valid. Nothing was dropped and no variable removed, so a rollback is
-still a redeploy; `auth_magic_links` is unreferenced but present, and is safe to
-drop in a later migration once nobody wants that escape.
-
-**Built on 13 September 2026, evening — the brand and interface.** A separate
-session, 143 files, on `main` and deployed. `docs/design/18-brand-guide.md` is
-the record; it extends doc 17 and **reverses its light-first decision**.
-
-- **The product is dark-first**, with the light system kept whole as a second
-  theme and one press away in the rail's foot. The reason is measured, not
-  taste: the brand green passes on black at **9.23:1** and fails on white at
-  **2.27:1**, so on the dark ground green may carry text, lines and focus,
-  where on white it may only fill. Print always renders light.
-- **A left rail**, new UI primitives (`Sidebar`, `Panel`, `PageHeader`, `Orb`,
-  `TierLadder`, `WorkingToggle`) and about 1,700 lines of `globals.css`.
-- **`/styleguide` (Admin)** renders the tokens and components from the build
-  itself, so nothing in it can drift from the product. When you remove a
-  component, remove it there too — the last commit of the evening was exactly
-  that debt being paid.
-- **The dashboard's charts changed shape.** Auditor share is now two donuts,
-  by value and by count, with the research gap drawn as a hatched slice rather
-  than hidden — Deloitte holds 14.6% of the money and 6.6% of the companies.
-  Market penetration is a dot plot, where the rule between two dots is the
-  whitespace. A treemap hero was built and then **withdrawn**: the map is the
-  image the product is remembered by, and two full-width pictures above the
-  fold is one too many. It is at `b435ce4` if that is reopened.
-- **One open decision, recorded rather than worked around.** No fixed set of
-  four competitor colours clears 3:1 on both a white and a black ground once
-  green is reserved for Deloitte, so competitors are steps of grey. Doc 18
-  section 16 also lists every Deloitte brand value still marked *[confirm]*
-  against the brand hub.
 
 ## Production settings
 
@@ -777,6 +778,21 @@ up; prefer it to `npm run e2e`.
 it. Never run `git add -A` outside this project's folder.
 
 ## What is left, in order
+
+**Five things are live; items 1, 2 and 8 are struck through and done.** In the
+order they are worth doing:
+
+| | | Whose |
+|---|---|---|
+| **3** | **Run 3** — the remaining 229 companies, US$41.22 batched. The biggest single thing left, and nothing blocks it | Samuel starts it on `/runs` |
+| **5** | **Schedule retention.** The job runs; nothing calls it, so production sweeps nothing | a decision about deleting production data automatically |
+| **6** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
+| **4** | **Rotate the Resend key**, which was pasted into a chat once. Blocking nothing, true anyway | Samuel |
+| **7** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
+
+**And the work nobody has done that is not on this list:** fifteen findings from
+the batched runs are unreviewed, two findings are flagged for a judgement, and
+**Kay has an account but has never signed in**. See "What is waiting on Samuel".
 
 1. ~~Confirm the live upload~~, ~~read a day of ticks~~ (1,440 of 1,440),
    ~~Run 1~~, ~~the Excel export~~, ~~Run 2~~, ~~publish revision 7~~,
