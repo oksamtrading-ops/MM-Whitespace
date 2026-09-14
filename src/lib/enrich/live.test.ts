@@ -10,11 +10,11 @@ import { drain, settleReady } from "./drain.ts";
 import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
-  BATCH_DISCOUNT, WEB_SEARCH_USD,
+  BATCH_DISCOUNT, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
   canonicalAuditor, collectSearchUrls, kindFromUrl, linkedFilings, Meter, toFinding, windowsOf,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
-import { EgressViolation } from "./prompt.ts";
+import { EgressViolation, PROMPT_VERSION } from "./prompt.ts";
 import { extractPdf } from "./pdf.ts";
 import { createRun, JobFailed, loadDocuments, processJob, storeDocument } from "./worker.ts";
 import { seedFixtureDatabase, PERIOD_AS_OF } from "../../../tests/cassettes/build_cassettes.mjs";
@@ -384,6 +384,24 @@ test("cost counts tokens at each model's price and every search at a cent", () =
   assert.equal(m.usage.requests, 2);
 });
 
+test("a finding records the prompt that was actually put to the model", () => {
+  // The live prompt is two halves -- prompt.ts's stable prefix and this
+  // module's rules -- and only the prefix was ever versioned. Every live
+  // finding in production recorded "2026-09-04.1", the prefix's version,
+  // which describes a prompt none of them were asked with. Editing the rules
+  // moved no version anywhere, so the record could not date a change.
+  assert.equal(promptVersionFor("replay"), PROMPT_VERSION,
+               "replay is the prefix alone, and must not move");
+  assert.equal(promptVersionFor(undefined), PROMPT_VERSION, "no mode is replay");
+
+  const live = promptVersionFor("live");
+  assert.notEqual(live, PROMPT_VERSION, "live must not answer the prefix's version");
+  assert.ok(live.includes(PROMPT_VERSION),
+            "a change to the shared prefix has to show on live findings too");
+  assert.ok(live.includes(LIVE_RULES_VERSION), "and so does a change to the rules");
+  assert.equal(live, `${PROMPT_VERSION}+live.${LIVE_RULES_VERSION}`);
+});
+
 test("the batch discount halves the tokens and leaves the searches alone", () => {
   // "Web search tool calls through the Messages Batches API are priced the
   // same as those in regular Messages API requests" -- the web search tool's
@@ -554,6 +572,34 @@ test("BATCH: an expired request goes back to the queue and is charged no attempt
   assert.equal(
     (await db.get("select state from enrichment_jobs where run_id = ?", runId) as { state: string }).state,
     "awaiting_batch", "it is asked again");
+});
+
+test("a live run stamps both halves on the run AND on every finding it makes", async () => {
+  // The unit above proves the composer; this proves the wiring, which is the
+  // half that was actually wrong. worker.ts recorded prompt.ts's constant at
+  // both sites regardless of mode, so 462 live findings in production carry a
+  // version describing a prompt they were never asked with.
+  const { db, periodId, northco } = await seeded();
+  const { v } = vendor();
+  const { fetchDeps } = world();
+  const { runId } = await createRun(db, periodId, [northco.id],
+    { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+  await ensureSlots(db, 1);
+  const [job] = await claimJobs(db, runId, `w-${Math.random()}`, 1);
+  await processJob(db, runId, job, PERIOD_AS_OF,
+    { mode: "live", cassetteDir: CASSETTE_DIR, live: deps(db, v, fetchDeps) });
+
+  const expected = `${PROMPT_VERSION}+live.${LIVE_RULES_VERSION}`;
+  const run = await db.get(
+    "select prompt_version from enrichment_runs where id = ?", runId) as { prompt_version: string };
+  assert.equal(run.prompt_version, expected, "the run says which prompt it will use");
+
+  const rows = await db.all(
+    "select distinct prompt_version from enrichment_findings where run_id = ?", runId) as
+      Array<{ prompt_version: string }>;
+  assert.ok(rows.length > 0, "the fixture must produce findings, or this proves nothing");
+  assert.deepEqual(rows.map((r) => r.prompt_version), [expected],
+                   "and every finding says which prompt made it");
 });
 
 test("BATCH: the discount is in the ledger, and it stops at the searches", async () => {

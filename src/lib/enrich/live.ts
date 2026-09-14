@@ -23,10 +23,11 @@
  */
 import { detectScale } from "./anchor.ts";
 import { currencyCode } from "../format/fields.ts";
+import type { Mode } from "./cassette.ts";
 import { ROUTE_CONFIG } from "./client.ts";
 import { asStored, edgarFindings, edgarIndexDocuments, lookupEdgar, normalizeName, SEC_HOST } from "./edgar.ts";
 import { fetchDocument, type FetchDeps, type FetchedDocument } from "./fetch.ts";
-import { buildPrompt, egressScan, type PublicCompanyRow, type RestrictionSet } from "./prompt.ts";
+import { buildPrompt, egressScan, PROMPT_VERSION, type PublicCompanyRow, type RestrictionSet } from "./prompt.ts";
 import type { Pass } from "./scope.ts";
 import type { CassetteBody, ProposedFinding } from "./worker.ts";
 
@@ -222,6 +223,33 @@ const REPORT_TOOL = {
     additionalProperties: false,
   },
 };
+
+/**
+ * The version of the live pipeline's OWN half of the prompt.
+ *
+ * A live request is two halves: prompt.ts's stable prefix, versioned by
+ * PROMPT_VERSION, and the rules below, which until now were versioned by
+ * nothing at all. Every finding the live pipeline made recorded the prefix's
+ * version alone -- all 462 of them in production read "2026-09-04.1", a
+ * number that describes a prompt none of them were asked with. Editing
+ * DISCOVERY_RULES or EXTRACTION_RULES moved no version anywhere, so the record
+ * could not tell a finding made before the edit from one made after.
+ *
+ * Raise this whenever either rules block changes. promptVersionFor() composes
+ * it with the prefix's version, so a stored value names both halves.
+ */
+export const LIVE_RULES_VERSION = "2026-09-13.1";
+
+/**
+ * What produced a finding, for the record: the prefix's version alone in
+ * replay, and both halves in live.
+ *
+ * Composed rather than replaced, because a live finding really is subject to
+ * both -- a change to the shared prefix has to show on live findings too.
+ */
+export function promptVersionFor(mode: Mode | undefined): string {
+  return mode === "live" ? `${PROMPT_VERSION}+live.${LIVE_RULES_VERSION}` : PROMPT_VERSION;
+}
 
 const DISCOVERY_RULES = `
 Find, for the company named in the message:

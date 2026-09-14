@@ -661,10 +661,29 @@ it. Never run `git add -A` outside this project's folder.
    `decisionStamp()` carries the order); the domain allowlist as a database
    trigger (doc 11; enforced in code because the portable migrations forbid
    triggers); Deloitte SSO and `MM_ALLOWED_DOMAINS=deloitte.ca` when the
-   pilot moves to Deloitte addresses. The live pipeline also records the
-   replay pipeline's `PROMPT_VERSION` rather than its own.
+   pilot moves to Deloitte addresses.
 
-8. **Tidy-ups:** an empty tracked file named `--` at the repository root.
+   ~~The live pipeline records the replay pipeline's `PROMPT_VERSION`.~~
+   **Fixed 13 September 2026.** A live prompt is two halves — prompt.ts's
+   stable prefix and live.ts's `DISCOVERY_RULES` / `EXTRACTION_RULES` — and
+   only the prefix was versioned, so editing the rules moved no version
+   anywhere and the record could not date a change. `LIVE_RULES_VERSION` now
+   sits beside the rules it describes and `promptVersionFor(mode)` composes
+   the two, so a live finding records `2026-09-04.1+live.2026-09-13.1` and a
+   replay finding is untouched. Two tests hold it, both watched failing: one
+   on the composer, one on the wiring in `worker.ts`, which was the half that
+   was actually wrong.
+
+   **The 462 findings already in production still read `2026-09-04.1`.** They
+   are not wrong about the rules — those have not changed since — but they are
+   silent about them. Backfilling the composite would be accurate today and is
+   a one-statement update; it is left as Samuel's call, like the spend ledger,
+   because it rewrites a provenance record. **Do it before Run 3 or not at
+   all**, so the period is not split between two conventions.
+
+8. ~~**Tidy-ups:** an empty tracked file named `--` at the repository root.~~
+   **Done** — removed 13 September 2026. Zero bytes, referenced by nothing,
+   committed by accident in `ec8092c`.
 
 ## Working conventions
 

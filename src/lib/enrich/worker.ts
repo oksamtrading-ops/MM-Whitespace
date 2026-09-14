@@ -19,12 +19,12 @@ import {
   WORKER_SLOTS, type ClaimedJob,
 } from "./ledger.ts";
 import {
-  buildPrompt, egressScan, restrictionsFromCatalog, PROMPT_VERSION,
+  buildPrompt, egressScan, restrictionsFromCatalog,
   type PublicCompanyRow, type Route,
 } from "./prompt.ts";
 import { buildAllowlist, type FetchedDocument } from "./fetch.ts";
 import {
-  BATCH_DISCOUNT, Meter, preparePass, researchLive, resumePass, sdkVendor,
+  BATCH_DISCOUNT, Meter, preparePass, promptVersionFor, researchLive, resumePass, sdkVendor,
   type CandidateDoc, type LiveBody, type LiveDeps, type LiveJob, type Pass,
   type PassContext, type Prepared,
 } from "./live.ts";
@@ -154,7 +154,7 @@ export async function createRun(
   const run = await db.get(
     `insert into enrichment_runs (period_id, budget_usd, model, prompt_version, mode, created_by)
      values (?, ?, ?, ?, ?, ?) returning id`,
-    periodId, budget, opts.model ?? DEFAULT_MODEL, PROMPT_VERSION,
+    periodId, budget, opts.model ?? DEFAULT_MODEL, promptVersionFor(opts.mode ?? "replay"),
     opts.mode ?? "replay", opts.createdBy ?? null) as { id: string };
 
   const ins = `insert into enrichment_jobs (run_id, company_id, field_group)
@@ -527,7 +527,7 @@ async function persist(
           verdict.anchor.start, verdict.anchor.end, verdict.anchor.documentHash,
           f.evidence_excerpt ?? null, f.numeric?.scale ?? null,
           Boolean(f.abstained), f.abstention_reason ?? null,
-          verdict.state, model, PROMPT_VERSION) as { id: string };
+          verdict.state, model, promptVersionFor(opts.mode)) as { id: string };
     if (f.source_url) {
       await db.run(`insert into finding_sources (finding_id, url, content_hash, source_tier, doc_type)
          values (?, ?, ?, ?, ?) on conflict do nothing`, finding.id, f.source_url, verdict.anchor.documentHash,
