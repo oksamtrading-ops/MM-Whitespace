@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 warnings.filterwarnings("ignore")
 import openpyxl  # noqa: E402
 
-from .aliases import (ABROAD_COLUMNS, COMMODITY_FLAGS, UNNAMED_OTHER,
+from .aliases import (ABROAD_COLUMNS, COMMODITY_FLAGS, UNNAMED_OTHER, normalise_head_office,
                       canonical_firm)
 from .safety import Finding, inspect_package, scan_for_person_data
 from .sentinels import resolve
@@ -135,6 +135,10 @@ def parse_consolidated(ws, header_row, findings):
     last = last_data_row(ws, ticker_col.index, header_row + 1)
     counter_col = _counter_column(ws, cols, "ticker", header_row, last, findings, "consolidated")
     region_cols = {label: cols.get(slug) for slug, label in REGION_HEADERS.items()}
+    # Head office: a code or a country, and the region that says how to read
+    # it. Both or neither -- a location with no region cannot be read safely.
+    ho_location_col, ho_region_col = cols.get("ho location"), cols.get("ho region")
+    ho_present = ho_location_col is not None and ho_region_col is not None
 
     rows = {}
     for r in range(header_row + 1, last + 1):
@@ -159,6 +163,9 @@ def parse_consolidated(ws, header_row, findings):
             "market_cap": parse_money(cell(ws, r, cols.get("market cap (cad)"))),
             "regions": regions, "region_present": region_present,
             "royalty_flag": parse_marker(cell(ws, r, cols.get("royalty streaming"))),
+            "ho_present": ho_present,
+            "ho_location": cell(ws, r, ho_location_col).value if ho_present else None,
+            "ho_region": cell(ws, r, ho_region_col).value if ho_present else None,
         }
     return rows
 
@@ -262,6 +269,7 @@ def parse_matrix(ws, header_row, findings):
             "dtt_market": cell(ws, r, cols.get("dtt market")),
             "auditor_big4": big4, "auditor_other": others,
             "website": cell(ws, r, cols.get("companys website")),
+            "head_office": cell(ws, r, cols.get("head office")).value,
         }
     return rows
 
@@ -414,6 +422,26 @@ def ingest(path):
                                         "%s: website value is a page title, not a URL"
                                         % cons["name"]))
 
+        # Head office, from the consolidated tab's HO Location read against its
+        # HO Region, cross-checked with the matrix's own Head Office column.
+        # Two tabs that disagree, or a code its region does not explain, give
+        # no value and a named warning: research can find a head office, but
+        # nothing downstream can tell a wrong one from a right one.
+        head_office = None
+        if cons.get("ho_present"):
+            head_office, problem = normalise_head_office(cons["ho_location"], cons["ho_region"])
+            matrix_ho = mrow.get("head_office")
+            if problem:
+                findings.append(Finding("warning", "head_office_ambiguous",
+                                        "%s (%s): %s" % (cons["name"], cons["ticker"], problem)))
+            elif head_office and matrix_ho not in (None, "") and \
+                    str(matrix_ho).strip().upper() != str(cons["ho_location"]).strip().upper():
+                findings.append(Finding(
+                    "warning", "head_office_disagrees",
+                    "%s (%s): the consolidated tab says %r and the matrix says %r; neither is used"
+                    % (cons["name"], cons["ticker"], cons["ho_location"], matrix_ho)))
+                head_office = None
+
         has_props = any(regions[l] for l in REGION_HEADERS.values())
         if not has_props:
             findings.append(Finding("warning", "no_properties",
@@ -437,6 +465,10 @@ def ingest(path):
             "tier_workbook": mrow["tier_workbook"],
             "footprint_workbook": mrow["footprint_workbook"],
         }
+        # Only when the tab carries the columns: an absent key tells the commit
+        # step the file said nothing, which must leave a prior value standing.
+        if cons.get("ho_present"):
+            companies[key]["head_office_region"] = head_office
 
     # --- auditor tab join -------------------------------------------------
     # The entity identifier exists only on this tab, so there is nothing to join

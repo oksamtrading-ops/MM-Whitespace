@@ -23,6 +23,13 @@ export type ParsedCompany = {
   auditor: string | null; auditor_class: string | null;
   website?: string | null;
   dtt_market?: string | null;
+  /**
+   * "Ontario, Canada", "Chile" -- the workbook's head office, read against its
+   * region. ABSENT (not null) when the file carries no head-office columns,
+   * which leaves whatever is already standing; null means the file's own
+   * value could not be read safely.
+   */
+  head_office_region?: string | null;
   entity_id?: string | null;
   tier_workbook: number | null; footprint_workbook: string | null;
 };
@@ -36,7 +43,7 @@ export type CommitResult = {
   graduations: number; preserved: number;
 };
 
-function normName(name: string): string {
+export function normName(name: string): string {
   let t = (name ?? "").normalize("NFKC").toLowerCase().replace(/&/g, " and ");
   for (const s of [" corporation", " corp", " incorporated", " inc", " limited",
                    " ltd", " plc", " company", " co", " nl", " sa", " ag"]) {
@@ -182,6 +189,10 @@ export async function commitPeriod(
       await fact("commodities", c.commodities.join(", "), c.commodities, "asserted");
       await fact("venture_graduate", c.venture_graduate, c.venture_graduate, "asserted");
       await fact("auditor", c.auditor, c.auditor, c.auditor === null ? "absent_sentinel" : "asserted");
+      if ("head_office_region" in c) {
+        await fact("head_office_region", c.head_office_region ?? null, c.head_office_region ?? null,
+             c.head_office_region ? "asserted" : "absent_blank");
+      }
 
       // Region provenance decides the assertion, and the assertion is what
       // makes a safe re-upload possible.
@@ -206,6 +217,12 @@ export async function commitPeriod(
       await value("property_regions", c.regions, "extract",
             c.property_evidence === "none" ? "absent_confirmed" : "asserted");
       await value("auditor", c.auditor, "extract", c.auditor === null ? "unknown" : "asserted");
+      // Research and review may already hold a head office; upsertValue only
+      // ever overwrites another extract value, so the workbook never beats them.
+      if ("head_office_region" in c) {
+        await value("head_office_region", c.head_office_region ?? null, "extract",
+              c.head_office_region ? "asserted" : "unknown");
+      }
       // Null where the source held a page title rather than a URL: that is an
       // enrichment target, not a website.
       await value("website", c.website ?? null, "extract",

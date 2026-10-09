@@ -203,3 +203,28 @@ class FixtureEndToEnd(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class HeadOffice(unittest.TestCase):
+    """The workbook's head office, read against its region -- never the code alone."""
+
+    def test_a_code_is_read_in_its_region(self):
+        from mmparser.aliases import normalise_head_office as n
+        self.assertEqual(n("ON", "Canada"), ("Ontario, Canada", None))
+        self.assertEqual(n("NL", "Canada"), ("Newfoundland and Labrador, Canada", None))
+        self.assertEqual(n("WA", "USA"), ("Washington, United States", None))
+        self.assertEqual(n("CO", "USA"), ("Colorado, United States", None))
+
+    def test_a_country_is_its_own_head_office(self):
+        from mmparser.aliases import normalise_head_office as n
+        self.assertEqual(n("Chile", "Latin America"), ("Chile", None))
+        self.assertEqual(n("UK", "UK/Europe"), ("United Kingdom", None))
+        self.assertEqual(n("Hong Kong", "Asia"), ("Hong Kong", None))
+
+    def test_a_code_its_region_does_not_explain_is_no_value_and_says_why(self):
+        from mmparser.aliases import normalise_head_office as n
+        for location, region in (("ON", "USA"), ("TX", "Canada"), ("WA", "Australia/NZ/PNG")):
+            value, problem = n(location, region)
+            self.assertIsNone(value, "%s under %s must not be guessed" % (location, region))
+            self.assertTrue(problem)
+        self.assertEqual(n(None, "Canada"), (None, None), "blank is blank, not a problem")

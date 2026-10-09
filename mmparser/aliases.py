@@ -98,6 +98,72 @@ US_STATES = {
     "WV", "WY",
 }
 
+# US states by code, spelled exactly as src/lib/publish/jurisdictions.ts
+# spells them -- the copy EDGAR's head-office reading and the companies table
+# both use. jurisdictions.test.ts reads this file and fails if they drift: a
+# workbook head office spelled one way and a researched one another would be a
+# false conflict on every US company.
+US_STATE_NAMES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+    "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia",
+    "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois",
+    "IN": "Indiana", "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana",
+    "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota",
+    "MS": "Mississippi", "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma", "OR": "Oregon",
+    "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina", "SD": "South Dakota",
+    "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia",
+    "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+}
+
+# A head office's country, where the workbook abbreviates it.
+COUNTRY_NAMES = {"UK": "United Kingdom", "USA": "United States", "US": "United States"}
+
+# The workbook's "HO Region" groups, and the country a subdivision code in
+# each group belongs to. A code is read only against its region: WA is
+# Washington under "USA" and would be Western Australia under
+# "Australia/NZ/PNG", and nothing about the two letters says which.
+_REGION_COUNTRY = {"canada": "Canada", "usa": "United States"}
+
+
+def normalise_head_office(location, region):
+    """The workbook's head office as head_office_region writes it.
+
+    "ON" + "Canada" -> "Ontario, Canada"; "CO" + "USA" -> "Colorado, United
+    States"; "Chile" + "Latin America" -> "Chile"; "UK" -> "United Kingdom".
+    The same form EDGAR and research produce, so the workbook value and a
+    researched one compare as equals in review.
+
+    Returns (value, problem). A code its region does not explain is a problem
+    and no value: a head office guessed wrong is worse than one left for
+    research to find.
+    """
+    loc = (location or "").strip() if isinstance(location, str) else location
+    reg = (region or "").strip().lower() if isinstance(region, str) else ""
+    if loc in (None, ""):
+        return None, None
+    loc = str(loc).strip()
+    country = _REGION_COUNTRY.get(reg)
+    code = loc.upper()
+    if country == "Canada":
+        if code in CANADA_SUBDIVISIONS:
+            return "%s, Canada" % CANADA_SUBDIVISIONS[code], None
+        alias = CANADA_ALIASES.get(loc.lower())
+        if alias:
+            return "%s, Canada" % CANADA_SUBDIVISIONS[alias], None
+        return None, "%r is not a Canadian province or territory, but its region says Canada" % loc
+    if country == "United States":
+        if code in US_STATE_NAMES:
+            return "%s, United States" % US_STATE_NAMES[code], None
+        return None, "%r is not a US state, but its region says USA" % loc
+    # Outside Canada and the US the workbook names the country itself. A bare
+    # two-letter code here is a subdivision with no country to read it against.
+    if len(loc) <= 3 and code not in COUNTRY_NAMES:
+        return None, "%r looks like a subdivision code, but its region (%s) names no country to read it in" % (loc, region)
+    return COUNTRY_NAMES.get(code, loc), None
+
+
 # Codes meaning different jurisdictions depending on the region column they
 # sit in. Resolve using location AND region together, never the code alone.
 AMBIGUOUS_CODES = {"ON", "NB", "NS", "MB", "SK", "NT", "NU", "AB", "BC", "QC",
