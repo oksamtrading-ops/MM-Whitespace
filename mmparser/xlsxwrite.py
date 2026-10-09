@@ -74,6 +74,12 @@ def put(ws, row: int, column: int, value: Any, *,
         # told to treat it as text. Prefixing an apostrophe into the value
         # itself would corrupt the legitimate @-prefixed date labels.
         cell.quotePrefix = True
+        # AND the cell is typed as a string. openpyxl decides a value is a
+        # formula from its first "=" and writes <f>...</f> whatever the style
+        # says, so until 9 October 2026 a data value like =HYPERLINK(...) left
+        # the file as a live formula with only the flag set. Found by the table
+        # export's test; the flag-only test had passed throughout.
+        cell.data_type = "s"
     if number_format:
         cell.number_format = number_format
     if comment:

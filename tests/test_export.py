@@ -66,6 +66,23 @@ class InjectionGuard(unittest.TestCase):
         with self.assertRaises(ValueError):
             put(self.ws, 1, 1, "not a formula", formula=True)
 
+    def test_a_data_value_that_starts_with_equals_is_saved_as_text_not_a_formula(self):
+        # The quote-prefix flag is a style. openpyxl decides a cell is a
+        # formula from its first character and writes <f>...</f> regardless,
+        # so a flagged "=HYPERLINK(...)" left the file as a live formula. The
+        # flag-only test above passed the whole time; this reads the saved XML.
+        import io
+        import zipfile
+        put(self.ws, 1, 1, '=HYPERLINK("http://evil.example","open me")')
+        put(self.ws, 2, 1, "=1+1")
+        put(self.ws, 3, 1, "=COUNTA(A1:A2)", formula=True)
+        buf = io.BytesIO()
+        self.wb.save(buf)
+        xml = zipfile.ZipFile(io.BytesIO(buf.getvalue())).read("xl/worksheets/sheet1.xml").decode()
+        self.assertEqual(xml.count("<f>"), 1, "only the formula the application wrote may be a formula")
+        self.assertIn("COUNTA(A1:A2)</f>", xml)
+        self.assertIn('=HYPERLINK("http://evil.example","open me")', xml, "and the text is kept, losslessly")
+
     def test_control_characters_are_stripped_and_length_capped(self):
         self.assertEqual(sanitize("a\x00b\x07c"), "abc")
         long = "x" * (MAX_STRING + 500)
