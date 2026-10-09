@@ -22,7 +22,7 @@
  * and never on any allowlist.
  */
 import { detectScale } from "./anchor.ts";
-import { currencyCode } from "../format/fields.ts";
+import { canonicalErp, currencyCode, namesSystem } from "../format/fields.ts";
 import type { Mode } from "./cassette.ts";
 import { ROUTE_CONFIG } from "./client.ts";
 import { asStored, edgarFindings, edgarIndexDocuments, lookupEdgar, normalizeName, SEC_HOST } from "./edgar.ts";
@@ -238,7 +238,7 @@ const REPORT_TOOL = {
  * Raise this whenever either rules block changes. promptVersionFor() composes
  * it with the prefix's version, so a stored value names both halves.
  */
-export const LIVE_RULES_VERSION = "2026-09-13.1";
+export const LIVE_RULES_VERSION = "2026-10-09.1";
 
 /**
  * What produced a finding, for the record: the prefix's version alone in
@@ -524,7 +524,24 @@ const WINDOW_PATTERNS: RegExp[] = [
   /change of auditor|reporting package|successor auditor|former auditor|resign(ed|ation) as auditor/gi,
 ];
 
-/** The cover and every window that matters, verbatim, merged and capped. */
+/**
+ * Where a company names its ERP: mostly the internal-control section, when the
+ * system changes, which is early in an MD&A. Kept apart from WINDOW_PATTERNS
+ * on purpose -- see windowsOf.
+ */
+const ERP_PATTERN = /enterprise resource planning|\bERP\b|S\s*\/\s*4\s*HANA|\bSAP\b|JD Edwards|NetSuite|Dynamics 365|Oracle (?:E-Business|Fusion|Cloud)|Sage (?:Intacct|X3)|Pronto Xi|Epicor/gi;
+const ERP_HITS = 2;
+
+/**
+ * The cover and every window that matters, verbatim, merged and capped.
+ *
+ * The ERP windows are placed LAST, in whatever budget the other fields left.
+ * The cap stops at the first window that will not fit, in document order, and
+ * fee tables come late in a circular: an early internal-controls passage about
+ * an ERP would otherwise push a fee out of the text the model sees. So adding
+ * the field cannot take evidence from any other -- and a document that names
+ * no ERP reads exactly as it did before the field existed.
+ */
 export function windowsOf(text: string): string {
   const spans: Array<[number, number]> = [[0, Math.min(text.length, 3000)]];
   for (const re of WINDOW_PATTERNS) {
@@ -542,17 +559,30 @@ export function windowsOf(text: string): string {
     else merged.push([...s]);
   }
   let out = "";
+  const kept: Array<[number, number]> = [];
   for (const [a, b] of merged) {
     const piece = text.slice(a, b);
     if (out.length + piece.length > MAX_CHARS_PER_DOCUMENT) break;
     out += (out ? "\n[...]\n" : "") + piece;
+    kept.push([a, b]);
+  }
+  let erp = 0;
+  for (const m of text.matchAll(ERP_PATTERN)) {
+    if (erp >= ERP_HITS) break;
+    if (kept.some(([a, b]) => m.index! >= a && m.index! < b)) { erp++; continue; }   // already in view
+    const span: [number, number] = [Math.max(0, m.index! - WINDOW_CHARS), Math.min(text.length, m.index! + WINDOW_CHARS)];
+    const piece = text.slice(span[0], span[1]);
+    if (out.length + piece.length + 7 > MAX_CHARS_PER_DOCUMENT) break;
+    out += (out ? "\n[...]\n" : "") + piece;
+    kept.push(span);
+    erp++;
   }
   return out;
 }
 
 export const EXTRACTED_FIELDS = [
   "stage_evidence_state", "auditor", "auditor_since", "auditor_change", "fiscal_year_end",
-  "head_office_location", "head_office_region", "audit_fee", "tax_fee",
+  "head_office_location", "head_office_region", "audit_fee", "tax_fee", "incumbent_erp",
 ] as const;
 
 const EXTRACTION_SCHEMA = {
@@ -633,6 +663,11 @@ Return one finding for EVERY field listed, in this form:
   GBP, EUR) the amount is in: from its own symbol (C$, US$), the table heading, or the document's
   statement of reporting currency. A Canadian issuer's plain "$" with no other currency stated is
   CAD. null only if nothing in the documents says.
+- incumbent_erp: text_value, the enterprise resource planning (ERP) system the COMPANY ITSELF runs
+  for its own finance and operations, named as the document names it (SAP S/4HANA, Oracle JD
+  Edwards, Microsoft Dynamics 365, Pronto Xi...). The excerpt must name the system. A system the
+  company sells, implements for others, or mentions as a supplier's or customer's does not count;
+  "a new ERP system" with no name is not a value. Abstain unless a document names the company's own.
 
 evidence_excerpt must be copied character for character from the document it cites, at most 300
 characters, and document_index must name that document. If the documents do not state a value,
@@ -699,6 +734,19 @@ export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFind
       return e.text_value && /^\d{2}-\d{2}$/.test(e.text_value) ? { ...base, value: e.text_value } : null;
     case "head_office_location": case "head_office_region":
       return e.text_value ? { ...base, value: e.text_value.trim() } : null;
+    case "incumbent_erp": {
+      if (!e.text_value) return null;
+      const system = canonicalErp(e.text_value);
+      // The anchoring gate proves the quote is in the document; it cannot see
+      // whether the quote names THIS system. "We implemented a new ERP" is
+      // real text and no evidence of which -- so it is an abstention, kept
+      // and visible, not a value.
+      if (!e.evidence_excerpt || !namesSystem(e.evidence_excerpt, system)) {
+        return { ...base, abstained: true,
+                 abstention_reason: `The passage cited does not name the system ("${system}").` };
+      }
+      return { ...base, value: system };
+    }
     case "audit_fee": case "tax_fee": {
       if (!e.fee) return null;
       const units = e.fee.amount * SCALE[e.fee.scale];

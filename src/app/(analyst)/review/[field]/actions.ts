@@ -12,9 +12,9 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import {
   extractedFact,
-  bulkConfirmation, partitionForBulkAccept, recordDecision, undoLast,
+  bulkConfirmation, partitionForBulkAccept, recordDecision, SOURCED_OVERRIDES, undoLast,
 } from "../../../../lib/review/decide.ts";
-import { parseFieldInput } from "../../../../lib/format/fields.ts";
+import { parseFieldInput, sourceUrlIn } from "../../../../lib/format/fields.ts";
 import { fieldRows } from "../../../../lib/review/queue.ts";
 
 export type ActionResult = { ok: boolean; message: string };
@@ -38,6 +38,7 @@ export async function decide(form: FormData): Promise<ActionResult> {
     ? Number(form.get("findingAttempt")) : null;
 
   let overrideValue: unknown = undefined;
+  let sourcedReason: string | null = null;
   if (decision === "override") {
     if (fromExtract) {
       const fact = await extractedFact(db, periodId, companyId, fieldKey);
@@ -52,13 +53,18 @@ export async function decide(form: FormData): Promise<ActionResult> {
       const parsed = parseFieldInput(fieldKey, String(rawOverride));
       if (!parsed.ok) return { ok: false, message: parsed.message };
       overrideValue = parsed.value;
+      // A field that must cite its public source is typed with the address
+      // after the value; the address is the decision's reason, which the
+      // company page shows as the citation.
+      const url = SOURCED_OVERRIDES.has(fieldKey) ? sourceUrlIn(String(rawOverride)) : null;
+      if (url && !reason) sourcedReason = `Public source: ${url}`;
     }
   }
 
   try {
     await recordDecision(db, {
       periodId, companyId, fieldKey, decision, overrideValue,
-      reason, findingId, findingAttempt, actorId: user.id,
+      reason: reason ?? sourcedReason, findingId, findingAttempt, actorId: user.id,
     });
   } catch (err) {
     return { ok: false, message: (err as Error).message };

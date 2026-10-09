@@ -734,3 +734,50 @@ test("EDGAR shouts, and a subdivision code cased down is not a word", async () =
   assert.equal(regionFrom(null, "NEW SOUTH WALES, AU"), "New South Wales, AU");
   assert.equal(regionFrom("CO", "CO"), "Colorado, United States");
 });
+
+/* ---------------------------------------------------- incumbent ERP */
+
+const erpBase = { document_index: null, abstained: false, abstention_reason: null, self_confidence: 0.6,
+                  year_value: null, stage: null, auditor_change: null, fee: null };
+
+test("an ERP is proposed only from a passage that names the company's own system", () => {
+  const named = toFinding({ ...erpBase, field_key: "incumbent_erp", text_value: "S/4 HANA",
+    evidence_excerpt: "During the year the Company completed its migration to SAP S/4HANA." }, [])!;
+  assert.equal(named.value, "SAP S/4HANA", "one spelling per system");
+  assert.equal(named.abstained, false);
+
+  const unnamed = toFinding({ ...erpBase, field_key: "incumbent_erp", text_value: "SAP",
+    evidence_excerpt: "The Company implemented a new enterprise resource planning system." }, [])!;
+  assert.equal(unnamed.abstained, true, "a quote that names no system is no evidence of which");
+  assert.equal(unnamed.value, null);
+  assert.match(unnamed.abstention_reason ?? "", /does not name the system/);
+});
+
+test("the ERP windows never take the budget a fee needs", () => {
+  // A circular's order: two ERP passages early, then enough auditor and stage
+  // evidence to bring the text to just under the 30,000-character cap, and the
+  // fee table last. Were the ERP windows placed in document order with the
+  // rest, they would spend ~4,800 characters before the fee was reached and
+  // the cap would cut it. (Watched failing that way.)
+  const gap = "x ".repeat(1500);
+  const parts = [`Cover page of Northco. ${gap}`,
+                 `${gap} migrated to SAP S/4HANA ${gap}`, `${gap} JD Edwards retired ${gap}`];
+  for (let i = 0; i < 6; i++) parts.push(`${gap} independent auditor ${i} ${gap}`);
+  for (let i = 0; i < 4; i++) parts.push(`${gap} exploration-stage property ${i} ${gap}`);
+  parts.push(`${gap} Audit fees 412,000 ${gap}`);
+  const w = windowsOf(parts.join(""));
+  assert.ok(w.includes("Audit fees 412,000"), "the fee survives");
+  assert.ok(!w.includes("JD Edwards"), "and the ERP got only what the other fields left: here, nothing");
+  assert.ok(w.length <= 30_000);
+
+  // A document that names no ERP reads exactly as it did before the field.
+  const plain = `Cover page of Southco. ${"x ".repeat(10_000)} Audit fees 99 ${"x ".repeat(10_000)}`;
+  assert.ok(windowsOf(plain).includes("Audit fees 99"));
+  assert.doesNotMatch(windowsOf(plain), /ERP|SAP/);
+});
+
+test("an ERP named far from every other window is still read, when there is room", () => {
+  const filler = "x ".repeat(5000);
+  const text = `Cover page of Westco. ${filler} The Corporation operates Pronto Xi for finance. ${filler}`;
+  assert.ok(windowsOf(text).includes("Pronto Xi"));
+});

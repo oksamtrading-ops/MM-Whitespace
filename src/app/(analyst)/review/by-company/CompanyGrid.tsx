@@ -345,7 +345,10 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                              setEditing(false);
                            }
                          }} />
-                  <p className="hint">Enter commits · Esc returns to the cell</p>
+                  <p className="hint">
+                    {fields[column].fieldKey === "incumbent_erp" && <>Name the system, then the public page that says so: SAP S/4HANA https://… · </>}
+                    Enter commits · Esc returns to the cell
+                  </p>
                 </div>
               )}
 

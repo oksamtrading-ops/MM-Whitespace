@@ -188,6 +188,50 @@ export function parseStages(text: string): Parsed {
   return { ok: true, value: out };
 }
 
+/* ------------------------------------------------- incumbent systems */
+
+/**
+ * An ERP, as the table and the filter read it: one spelling per product, so
+ * "S/4 HANA", "SAP S4HANA" and "S/4HANA" are one system. Most specific first.
+ * A system not on the list is kept as written rather than refused -- the list
+ * names what mining companies are known to run, not all there is.
+ */
+const ERP_NAMES: Array<[RegExp, string]> = [
+  [/s\s*\/?\s*4\s*hana/i, "SAP S/4HANA"], [/\bsap\b.{0,20}\becc\b|\becc\s*6/i, "SAP ECC"],
+  [/sap\s*business\s*one/i, "SAP Business One"], [/bydesign/i, "SAP Business ByDesign"], [/\bsap\b/i, "SAP"],
+  [/jd\s*edwards|\bjde\b/i, "Oracle JD Edwards"], [/netsuite/i, "Oracle NetSuite"],
+  [/e-?business\s*suite/i, "Oracle E-Business Suite"], [/oracle\s*(?:fusion|cloud\s*erp)/i, "Oracle Fusion Cloud ERP"],
+  [/\boracle\b/i, "Oracle"],
+  [/dynamics\s*365/i, "Microsoft Dynamics 365"], [/dynamics\s*ax\b/i, "Microsoft Dynamics AX"],
+  [/dynamics\s*nav\b|navision/i, "Microsoft Dynamics NAV"], [/dynamics\s*gp\b|great\s*plains/i, "Microsoft Dynamics GP"],
+  [/microsoft\s*dynamics|\bdynamics\b/i, "Microsoft Dynamics"],
+  [/sage\s*intacct/i, "Sage Intacct"], [/sage\s*x3/i, "Sage X3"], [/\bsage\b/i, "Sage"],
+  [/pronto/i, "Pronto Xi"], [/\bifs\b/i, "IFS"], [/epicor/i, "Epicor"], [/\binfor\b/i, "Infor"],
+  [/workday/i, "Workday"], [/unit\s*4/i, "Unit4"], [/acumatica/i, "Acumatica"], [/\bqad\b/i, "QAD"],
+];
+
+/** "S/4 HANA" -> "SAP S/4HANA"; an unknown system comes back as written. */
+export function canonicalErp(name: string): string {
+  const t = name.trim().replace(/\s+/g, " ");
+  return ERP_NAMES.find(([re]) => re.test(t))?.[1] ?? t;
+}
+
+/**
+ * Does a passage name this system? A quote about "a new ERP" is evidence that
+ * a company has an ERP, not which one -- so it is no evidence for the value.
+ */
+export function namesSystem(excerpt: string, system: string): boolean {
+  const known = ERP_NAMES.find(([, canonical]) => canonical === canonicalErp(system));
+  if (known) return known[0].test(excerpt);
+  return excerpt.toLowerCase().includes(system.trim().toLowerCase());
+}
+
+/** The first web address in some text, for an override that must cite its public source. */
+export function sourceUrlIn(text: string): string | null {
+  const m = text.match(/https?:\/\/[^\s<>"')\]]+/i);
+  return m ? m[0].replace(/[.,;:]+$/, "") : null;
+}
+
 /* ------------------------------------------------------- everything else */
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
@@ -340,6 +384,14 @@ export function parseFieldInput(fieldKey: string, text: string): Parsed {
       return /^(?:yes|true)$/i.test(t) ? { ok: true, value: true }
         : /^(?:no|false)$/i.test(t) ? { ok: true, value: false }
         : { ok: false, message: "Yes or No." };
+    case "incumbent_erp": {
+      // The system, then the public page that names it: "SAP S/4HANA
+      // https://...". The address is the citation (the review action carries it
+      // as the decision's reason); only the system is the value.
+      const system = t.replace(/https?:\/\/\S+/gi, "").replace(/[\s,;:—–-]+$/, "").trim();
+      if (!system) return { ok: false, message: "Name the system, then the public page that says so: SAP S/4HANA https://…" };
+      return { ok: true, value: canonicalErp(system) };
+    }
     case "website": {
       if (!t) return { ok: false, message: "Enter the address." };
       const url = /^https?:\/\//i.test(t) ? t : `https://${t}`;

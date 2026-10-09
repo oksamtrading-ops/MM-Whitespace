@@ -110,3 +110,17 @@ test("dates, years and addresses are written the way people write them", () => {
   assert.equal(parseFieldInput("market_cap_cad", "US$1,000").ok, false, "market cap is Canadian dollars");
   assert.equal(formatFieldValue("market_cap_cad", 1_060_201_462), "C$1,060,201,462");
 });
+
+test("an ERP reads one way, and an override keeps the system and drops the address", async () => {
+  const { canonicalErp, namesSystem, parseFieldInput, sourceUrlIn } = await import("./fields.ts");
+  assert.equal(canonicalErp("SAP S4HANA"), "SAP S/4HANA");
+  assert.equal(canonicalErp("jd edwards enterpriseone"), "Oracle JD Edwards");
+  assert.equal(canonicalErp("Dynamics 365 Finance"), "Microsoft Dynamics 365");
+  assert.equal(canonicalErp("MineSuite"), "MineSuite", "a system off the list is kept as written");
+  assert.ok(namesSystem("we run JDE across all sites", "Oracle JD Edwards"));
+  assert.ok(!namesSystem("we implemented a new ERP", "SAP S/4HANA"));
+  const typed = parseFieldInput("incumbent_erp", "SAP S/4HANA https://northco.example/aif-2025.pdf");
+  assert.deepEqual(typed, { ok: true, value: "SAP S/4HANA" });
+  assert.equal(sourceUrlIn("SAP S/4HANA https://northco.example/aif-2025.pdf."), "https://northco.example/aif-2025.pdf");
+  assert.equal(parseFieldInput("incumbent_erp", "https://only.example").ok, false);
+});

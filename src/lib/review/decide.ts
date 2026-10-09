@@ -8,6 +8,7 @@
  *
  * See docs/design/08-review-workspace.md.
  */
+import { sourceUrlIn } from "../format/fields.ts";
 import { decisionStamp } from "../db/stamp.ts";
 import type { Sql } from "../db/sql.ts";
 import { preserveExtract, resolveAfterDecision } from "./resolve.ts";
@@ -166,9 +167,21 @@ export type RecordOptions = {
   undoesId?: string | null;
 };
 
+/**
+ * Fields whose override must name the public page it came from. An Analyst may
+ * know a company's ERP from an engagement, and that is Deloitte client
+ * information, which this build does not store -- so an override is only ever
+ * what a public source says, and the source becomes its citation.
+ */
+export const SOURCED_OVERRIDES = new Set(["incumbent_erp"]);
+
 export async function recordDecision(db: Sql, opts: RecordOptions): Promise<string> {
   if (opts.decision === "flag" && !opts.reason?.trim()) {
     throw new Error("a flag requires a one-line reason");
+  }
+  if (opts.decision === "override" && SOURCED_OVERRIDES.has(opts.fieldKey) && !sourceUrlIn(opts.reason ?? "")) {
+    throw new Error("Name the public page that says so: type the system, then its address " +
+                    "(SAP S/4HANA https://…). What is known only from an engagement is client information.");
   }
   if (opts.decision === "override" && opts.overrideValue === undefined) {
     throw new Error("an override requires a value");

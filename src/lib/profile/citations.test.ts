@@ -184,3 +184,19 @@ test("a revision published before stage rows existed says so, rather than showin
   assert.equal(page!.stages, null);
   assert.equal(page!.values.find((v) => v.fieldKey === "market_cap_cad")!.citation, null);
 });
+
+test("an ERP override must name its public source, and that source is its citation", async () => {
+  const { db, periodId, companyId } = await committed();
+  await assert.rejects(
+    recordDecision(db, { periodId, companyId, fieldKey: "incumbent_erp", decision: "override",
+                         overrideValue: "SAP S/4HANA", reason: "I know it from the audit" }),
+    /public page/, "known only from an engagement is client information, and is refused");
+  await recordDecision(db, { periodId, companyId, fieldKey: "incumbent_erp", decision: "override",
+                             overrideValue: "SAP S/4HANA", reason: "Public source: https://northco.example/aif-2025.pdf" });
+  const c = (await citationsForPeriod(db, periodId)).get(citeKey(companyId, "incumbent_erp"))!;
+  assert.equal(c.citation.kind, "review");
+  assert.equal(c.citation.kind === "review" && c.citation.url, "https://northco.example/aif-2025.pdf");
+  const [row] = await listCompanies(db, { allowDraft: true });
+  assert.equal(row.erp, "SAP S/4HANA");
+  assert.equal(row.sources.incumbent_erp, "manual_override");
+});
