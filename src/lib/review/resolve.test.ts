@@ -36,10 +36,14 @@ async function finding(db: Sql, periodId: string, companyId: string, fieldKey: s
       values (?, 5, 'test', 'test', 'replay') returning id`, periodId) as { id: string };
   const job = await db.get(`insert into enrichment_jobs (run_id, company_id, field_group, state)
       values (?, ?, 'general', 'completed') returning id`, run.id, companyId) as { id: string };
+  // An anchored finding always carries the passage it was anchored to: the
+  // worker never writes one without, and publish refuses a researched value
+  // that cites neither a document nor a quote.
   return (await db.get(`insert into enrichment_findings
        (run_id, job_id, attempt, company_id, field_key, proposed_value, evidence_strength,
-        anchor_mode, state, model, prompt_version)
-     values (?, ?, 1, ?, ?, ?, 0.9, 'exact_normalized', 'proposed', 'test', 'test') returning id`,
+        anchor_mode, evidence_excerpt, state, model, prompt_version)
+     values (?, ?, 1, ?, ?, ?, 0.9, 'exact_normalized', 'the passage the value was read from',
+             'proposed', 'test', 'test') returning id`,
     run.id, job.id, companyId, fieldKey, JSON.stringify(value)) as { id: string }).id;
 }
 

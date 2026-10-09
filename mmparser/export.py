@@ -838,6 +838,183 @@ def _provenance(wb, data):
     put(ws, r, 2, VENDOR_NOTICE)
 
 
+# ------------------------------------------------------------ table export
+
+#: Where the source workbook marks a stage nobody has researched: its own yellow.
+UNRESEARCHED_FILL = PatternFill("solid", fgColor="FFF2A8")
+NOT_RECORDED_FILL = PatternFill("solid", fgColor="EDEDEB")
+STAGE_MARK = {"yes": "X", "blank": None, "unknown": "?", "not_researched": None, "not_recorded": None}
+TABLE_TITLE = "Market Assessment Tool \u2014 Companies"
+
+
+def _table_columns(columns):
+    """Each payload column as the sheet columns it occupies.
+
+    A fee is three columns -- currency, amount, fiscal year -- so the amount
+    stays a number somebody can sum within one currency, which is the point of
+    exporting for post-processing.
+    """
+    out = []
+    for c in columns:
+        if c.get("kind") == "fee":
+            out.append((c, "currency", "%s \u2014 currency" % c["label"]))
+            out.append((c, "amount", "%s \u2014 amount" % c["label"]))
+            out.append((c, "year", "%s \u2014 fiscal year" % c["label"]))
+        else:
+            out.append((c, None, c["label"]))
+    return out
+
+
+def build_table_workbook(data: Dict[str, Any]) -> Workbook:
+    """The companies table as filtered on screen, and the sources behind it.
+
+    Not the period workbook: that carries the WORKING period for an Analyst.
+    This carries what the screen showed -- the published snapshot, unless an
+    Analyst was looking at a draft, which the header then says -- narrowed by
+    the filter the header names. A researched value is linked to its source,
+    and the Sources sheet quotes it.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Companies"
+    period = data["period"]
+
+    title = put(ws, 2, 2, TABLE_TITLE)
+    title.font = Font(bold=True, size=14)
+    rows = [
+        ("Period", period.get("label") or ""),
+        ("Basis", period.get("basis") or ""),
+        ("Filter", data.get("filter") or "Every company in the period"),
+        ("Rows", "%d of %d" % (data.get("count", len(data["rows"])), data.get("total", len(data["rows"])))),
+    ]
+    r = 4
+    for label, value in rows:
+        _header(ws, r, 2, label)
+        put(ws, r, 3, value)
+        r += 1
+    r += 1
+    for notice in (INTERNAL_USE, EXCHANGE_NOTICE, VENDOR_NOTICE, AI_NOTICE):
+        cell = put(ws, r, 2, notice)
+        if notice is INTERNAL_USE:
+            cell.font = BOLD
+        r += 1
+    r += 1
+
+    header_row = r
+    sheet_cols = _table_columns(data["columns"])
+    for i, (_, _, label) in enumerate(sheet_cols):
+        _header(ws, header_row, 2 + i, label)
+
+    # Fills that carry meaning are laid on after finish_sheet, which bands
+    # every other row and would otherwise paint over them: a stage nobody
+    # researched must stay marked on every row, not on alternate ones.
+    marked = []
+    for n, row in enumerate(data["rows"]):
+        at = header_row + 1 + n
+        links = row.get("links") or {}
+        i = 0
+        while i < len(sheet_cols):
+            col, part, _ = sheet_cols[i]
+            key, kind = col["key"], col.get("kind", "text")
+            value = row.get(key)
+            column = 2 + i
+            if kind == "fee":
+                put_fee(ws, at, (column, column + 1, None, column + 2), value)
+                url = links.get(col.get("field") or "")
+                if url and money(value) is not None:
+                    ws.cell(row=at, column=column + 1).hyperlink = url
+                i += 3
+                continue
+            if kind == "stage":
+                cell = put(ws, at, column, STAGE_MARK.get(value))
+                if value == "not_researched":
+                    marked.append((cell, UNRESEARCHED_FILL))
+                elif value == "not_recorded":
+                    marked.append((cell, NOT_RECORDED_FILL))
+            elif kind == "money":
+                cell = put(ws, at, column, value if isinstance(value, (int, float)) else None,
+                           number_format=CURRENCY_FORMATS["CAD"])
+            else:
+                cell = put(ws, at, column, value)
+            url = links.get(col.get("field") or "")
+            if url and value not in (None, ""):
+                cell.hyperlink = url
+            i += 1
+
+    last_row = header_row + len(data["rows"])
+    last_col = 1 + len(sheet_cols)
+    widths = {2: 34}
+    for i, (col, part, _) in enumerate(sheet_cols):
+        if i == 0:
+            continue
+        widths[2 + i] = 6 if col.get("kind") == "stage" else 14 if part else 18
+    finish_sheet(ws, header_row=header_row, first_data_row=header_row + 1, last_data_row=last_row,
+                 last_column=last_col, widths=widths, freeze_column=3, tab_color="86BC25")
+    for cell, fill in marked:
+        cell.fill = fill
+    ws.column_dimensions["C"].width = max(ws.column_dimensions["C"].width or 0, 12)
+
+    _table_sources(wb, data)
+    return wb
+
+
+SOURCE_COLUMNS = ["Company", "Field", "Value", "Source", "Document", "Link", "Retrieved", "Quote"]
+
+
+def _table_sources(wb, data):
+    """One row per cited value: what it says, where it came from, the words."""
+    ws = wb.create_sheet("Sources")
+    put(ws, 2, 2, "Sources").font = Font(bold=True, size=14)
+    put(ws, 3, 2, "Every researched or reviewed value in the Companies sheet, with the "
+                  "document it was read from and the passage that says it.")
+    header_row = 5
+    for i, label in enumerate(SOURCE_COLUMNS):
+        _header(ws, header_row, 2 + i, label)
+    sources = data.get("sources") or []
+    for n, s in enumerate(sources):
+        at = header_row + 1 + n
+        values = [s.get("company"), s.get("field"), s.get("value"), s.get("kind"),
+                  s.get("title"), s.get("url"), s.get("retrieved"), s.get("quote")]
+        for i, v in enumerate(values):
+            cell = put(ws, at, 2 + i, v)
+            if i == 5 and isinstance(v, str) and v.startswith(("https://", "http://")):
+                cell.hyperlink = v
+            if i == 7:
+                cell.alignment = WRAP
+    finish_sheet(ws, header_row=header_row, first_data_row=header_row + 1,
+                 last_data_row=header_row + len(sources), last_column=1 + len(SOURCE_COLUMNS),
+                 widths={2: 30, 3: 18, 4: 22, 5: 16, 6: 30, 7: 40, 8: 12, 9: 70}, freeze_column=3)
+
+
+def table_flat_rows(data: Dict[str, Any]):
+    """The same rows as one CSV table: fees in three columns, then each cited value's link."""
+    sheet_cols = _table_columns(data["columns"])
+    cited = [c for c in data["columns"] if c.get("field")]
+    header = [label for (_, _, label) in sheet_cols] + ["%s \u2014 source" % c["label"] for c in cited]
+    out = []
+    for row in data["rows"]:
+        line = []
+        for col, part, _ in sheet_cols:
+            value = row.get(col["key"])
+            if part == "currency":
+                line.append(currency_of(value))
+            elif part == "amount":
+                line.append(money(value))
+            elif part == "year":
+                line.append(fiscal_year_of(value))
+            elif col.get("kind") == "stage":
+                # A CSV has no fill to say it, so the words do: blank is "no"
+                # only where the evidence is complete.
+                line.append(STAGE_MARK.get(value) or {"not_researched": "not researched",
+                                                      "not_recorded": "not recorded"}.get(value, ""))
+            else:
+                line.append(value)
+        links = row.get("links") or {}
+        line += [links.get(c["field"]) for c in cited]
+        out.append(line)
+    return header, out
+
+
 # -------------------------------------------------------------- flat export
 
 FLAT_COLUMNS = [

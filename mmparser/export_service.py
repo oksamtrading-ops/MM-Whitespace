@@ -20,7 +20,7 @@ import io
 import json
 import sys
 
-from .export import build_workbook, flat_rows, FLAT_COLUMNS
+from .export import build_table_workbook, build_workbook, flat_rows, FLAT_COLUMNS, table_flat_rows
 from .service import Refused
 
 #: A period is 259 companies. This is the point at which the request is a
@@ -110,17 +110,93 @@ def flat_csv_text(data):
     return out.getvalue()
 
 
+TABLE_KINDS = {"text", "fee", "stage", "money"}
+
+
+def normalise_table(data):
+    """The companies-table payload, checked as strictly as a period is.
+
+    A sibling of normalise, not a second shape for it: the period contract's
+    refusals stay exactly as strict, and this one names its own.
+    """
+    if not isinstance(data, dict):
+        raise Refused(400, "The export payload must be an object.")
+    columns, rows = data.get("columns"), data.get("rows")
+    if not isinstance(columns, list) or not columns or not isinstance(rows, list):
+        raise Refused(400, "The table export needs its columns and its rows.")
+    if len(rows) > MAX_COMPANIES:
+        raise Refused(413, "That is more companies than a period can hold.")
+    cols = []
+    for c in columns:
+        if not isinstance(c, dict) or not c.get("key") or not c.get("label"):
+            raise Refused(400, "Every column needs a key and a label.")
+        kind = c.get("kind") or "text"
+        if kind not in TABLE_KINDS:
+            raise Refused(400, "A column cannot be of kind %r." % kind)
+        cols.append({"key": str(c["key"]), "label": str(c["label"]), "kind": kind,
+                     "field": c.get("field") or None})
+    period = dict(data.get("period") or {})
+    period.setdefault("label", "")
+    period.setdefault("basis", "")
+    sources = [s for s in (data.get("sources") or []) if isinstance(s, dict)]
+    return {
+        "period": period, "columns": cols,
+        "rows": [dict(r or {}) for r in rows],
+        "sources": sources,
+        "filter": str(data.get("filter") or ""),
+        "count": int(data.get("count") or len(rows)),
+        "total": int(data.get("total") or len(rows)),
+    }
+
+
+def table_bytes(data):
+    """The filtered companies table as .xlsx bytes."""
+    wb = build_table_workbook(normalise_table(data))
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def table_csv_text(data):
+    """The filtered companies table as CSV: notices and the filter first, then one table."""
+    import csv
+
+    from .export import AI_NOTICE, EXCHANGE_NOTICE, INTERNAL_USE, VENDOR_NOTICE
+    from .xlsxwrite import needs_quote_prefix, sanitize
+
+    t = normalise_table(data)
+    out = io.StringIO()
+    for line in (INTERNAL_USE, EXCHANGE_NOTICE, VENDOR_NOTICE, AI_NOTICE,
+                 "Basis: %s" % t["period"].get("basis", ""),
+                 "Filter: %s" % (t["filter"] or "Every company in the period"),
+                 "Rows: %d of %d" % (t["count"], t["total"])):
+        out.write("# %s\n" % sanitize(line))
+    header, rows = table_flat_rows(t)
+    writer = csv.writer(out)
+    writer.writerow(header)
+    for row in rows:
+        safe = []
+        for value in row:
+            value = sanitize(value)
+            if needs_quote_prefix(value):
+                value = "'" + value
+            safe.append(value)
+        writer.writerow(safe)
+    return out.getvalue()
+
+
 def main(argv=None):
     """JSON payload on stdin, workbook bytes on stdout. The local path.
 
-    `python3 -m mmparser.export_service [--csv] < payload.json > out.xlsx`
+    `python3 -m mmparser.export_service [--table] [--csv] < payload.json > out.xlsx`
     """
     argv = sys.argv[1:] if argv is None else argv
     data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+    table = "--table" in argv
     if "--csv" in argv:
-        sys.stdout.write(flat_csv_text(data))
+        sys.stdout.write(table_csv_text(data) if table else flat_csv_text(data))
     else:
-        sys.stdout.buffer.write(workbook_bytes(data))
+        sys.stdout.buffer.write(table_bytes(data) if table else workbook_bytes(data))
     return 0
 
 

@@ -7,6 +7,9 @@ import {
   readCompanyProfile, SOURCE_LABEL, unpublishedChanges, type ProfileValue,
 } from "../../../../lib/profile/company.ts";
 import { evidenceBand } from "../../../../lib/review/decide.ts";
+import type { Citation } from "../../../../lib/profile/citations.ts";
+import { STAGE_LABEL, type StageEvidence } from "../../../../lib/profile/roster.ts";
+import type { Stage } from "../../../../lib/format/fields.ts";
 import Facts from "../../../_ui/Facts.tsx";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Section from "../../../_ui/Section.tsx";
@@ -183,14 +186,14 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
         </Section>
 
         <Section id="values" title="Every value, and where it came from" index={3} icon="scroll-text"
-                 caption="Nothing here is presented without its provenance. A researched value carries the evidence that produced it.">
+                 caption="Nothing here is presented without its source. A researched value names the filing it was read from and the passage that says it.">
           <table className="provenance">
             <thead>
               <tr><th scope="col">Field</th><th scope="col">Value</th>
                   <th scope="col">Source</th><th scope="col">Evidence</th></tr>
             </thead>
             <tbody>
-              {p.values.map((v) => <ValueRow key={v.fieldKey} v={v} />)}
+              {p.values.map((v) => <ValueRow key={v.fieldKey} v={v} showReasons={canReview} />)}
             </tbody>
           </table>
           {researched.length === 0 && (
@@ -218,8 +221,9 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
         <p className="k">This company</p>
         <Facts items={[
           ...(p.ticker ? [{ label: "Ticker", value: `${p.ticker}${p.exchange ? ` · ${p.exchange}` : ""}`, figure: true }] : []),
-          ...p.values.filter((v) => ["market_cap_cad", "head_office_location", "dtt_market"].includes(v.fieldKey))
+          ...p.values.filter((v) => ["market_cap_cad", "head_office_location", "head_office_region", "dtt_market"].includes(v.fieldKey))
             .map((v) => ({ label: v.label, value: v.display, figure: v.fieldKey === "market_cap_cad" })),
+          { label: "Stage of operations", value: stageWords(p.stages, p.stageEvidence) },
           { label: "Period", value: periodName(p.period.label).name },
           { label: p.publication ? "Published" : "Status",
             value: p.publication
@@ -279,10 +283,10 @@ function tierWords(t: { tier: number | null; status: string }): string {
   return t.tier === null ? (UNCLASSIFIED[t.status] ?? "Unclassified") : `Tier ${t.tier}`;
 }
 
-function ValueRow({ v }: { v: ProfileValue }) {
+function ValueRow({ v, showReasons }: { v: ProfileValue; showReasons: boolean }) {
   const band = v.strength === null ? null : evidenceBand(v.strength);
   return (
-    <tr>
+    <tr id={`v-${v.fieldKey}`}>
       <th scope="row">{v.label}</th>
       <td className="wrap">
         {v.display}
@@ -293,21 +297,15 @@ function ValueRow({ v }: { v: ProfileValue }) {
         )}
         {v.excerpt && (
           <details className="excerpt">
-            <summary>Evidence</summary>
+            <summary>The passage</summary>
             <blockquote>{v.excerpt}</blockquote>
-            {v.sources.length > 0 && (
-              <p className="meta">
-                {v.sources.map((s, i) => (
-                  <a key={i} href={s} target="_blank" rel="noopener noreferrer">
-                    source {i + 1}<Icon name="external-link" size={12} />
-                  </a>
-                ))}
-              </p>
-            )}
           </details>
         )}
       </td>
-      <td className="meta wrap">{SOURCE_LABEL[v.source] ?? v.source}</td>
+      <td className="meta wrap">
+        {SOURCE_LABEL[v.source] ?? v.source}
+        <CitationLine citation={v.citation} showReasons={showReasons} />
+      </td>
       <td>
         {band === null
           ? <span className="meta">{v.evidenceState === "asserted" ? "—" : v.evidenceState.replace(/_/g, " ")}</span>
@@ -318,4 +316,59 @@ function ValueRow({ v }: { v: ProfileValue }) {
       </td>
     </tr>
   );
+}
+
+/** "complete" + [exploration, production] -> "Exploration, Production". */
+function stageWords(stages: Stage[] | null, evidence: StageEvidence): string {
+  if (evidence === "none") return "Not researched";
+  if (stages === null) return "Not recorded in this revision";
+  const on = stages.map((st) => STAGE_LABEL[st]);
+  const head = on.length ? on.join(", ") : "None";
+  return evidence === "partial" ? `${head} (research incomplete)` : head;
+}
+
+const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } };
+
+/**
+ * Where a value came from, under its provenance word. Every value has one
+ * from revision 9 on; before that, the revision says it recorded none rather
+ * than leave the reader to wonder.
+ */
+function CitationLine({ citation: c, showReasons }: { citation: Citation | null; showReasons: boolean }) {
+  if (!c) return <span className="cite">Sources were not recorded in this revision.</span>;
+  switch (c.kind) {
+    case "document":
+      if (c.documents.length === 0) return <span className="cite">Quoted from the company&rsquo;s filing; the document itself was not recorded.</span>;
+      return (
+        <span className="cite">
+          {c.documents.map((d, i) => (
+            <span key={i} className="citedoc">
+              {d.url
+                ? <a href={d.url} target="_blank" rel="noopener noreferrer">
+                    {d.title || d.docType || host(d.url)}<Icon name="external-link" size={11} />
+                  </a>
+                : (d.title || d.docType || "A filing")}
+              {d.url && <span className="dim">{` · ${host(d.url)}`}</span>}
+              {d.retrievedAt && <span className="dim">{` · read ${fmtDate(d.retrievedAt)}`}</span>}
+            </span>
+          ))}
+        </span>
+      );
+    case "searched":
+      return <span className="cite">Searched the company&rsquo;s filings{c.reason ? <> — {c.reason}</> : null}</span>;
+    case "review":
+      return (
+        <span className="cite">
+          Entered in review{c.decidedAt ? `, ${fmtDate(c.decidedAt)}` : ""}
+          {c.url && <> · <a href={c.url} target="_blank" rel="noopener noreferrer">cited source<Icon name="external-link" size={11} /></a></>}
+          {showReasons && c.reason && <span className="dim"> — {c.reason}</span>}
+        </span>
+      );
+    case "workbook":
+      return <span className="cite">{periodName(c.period).name} source workbook{c.sha256 ? <span className="dim">{` · file ${c.sha256.slice(0, 8)}`}</span> : null}</span>;
+    case "prior_period":
+      return <span className="cite">Carried from {c.period ? periodName(c.period).name : "an earlier period"}</span>;
+    case "rule":
+      return <span className="cite">Rule set {c.ruleSetVersion ?? "—"}</span>;
+  }
 }

@@ -179,9 +179,17 @@ export default async function Dashboard() {
           meta={`${periodTitle} · revision ${snap.publication.revision}${snap.publication.override_reason ? " · through a blocked gate" : ""}`}
           actions={<>
             <WorkingToggle initial={canReview} />
-            <a className="btn sm secondary" href={`/api/export?period=${period.id}` as Route} download>
-              <Icon name="file-spreadsheet" size={13} />Export
-            </a>
+            {/* The period workbook carries the WORKING period, so /api/export
+                refuses a Viewer -- and a button that only ever answers 403 is
+                a broken promise. A Viewer exports from Companies instead,
+                where the table carries only what they may read. */}
+            {canReview
+              ? <a className="btn sm secondary" href={`/api/export?period=${period.id}` as Route} download>
+                  <Icon name="file-spreadsheet" size={13} />Export
+                </a>
+              : <a className="btn sm secondary" href={"/companies" as Route}>
+                  <Icon name="file-spreadsheet" size={13} />Export from Companies
+                </a>}
           </>}>
     <div className="withrail">
       <h1 className="sr-only">{periodTitle} dashboard</h1>

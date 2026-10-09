@@ -555,6 +555,52 @@ async function journeys(dbPath) {
   check("a company that is not in the population is refused plainly",
         missing.html.includes("No such company"));
 
+  // Every value cites its source, frozen with the revision, and each row is
+  // an anchor the companies table can link to.
+  check("a published value cites where it came from",
+        /source workbook/.test(profile.html) && profile.html.includes("Rule set"),
+        "no citation line on the published profile");
+  check("and its row is an anchor the table links to", /id="v-market_cap_cad"/.test(profile.html));
+  check("the stage of operations is stated on the profile", profile.html.includes("Stage of operations"));
+
+  // The companies table, narrowed by the URL: the server's HTML is already
+  // narrowed, and the export downloads exactly those rows -- to a Viewer too,
+  // because it carries only the published snapshot.
+  const narrowed = await get("/companies?tier=4", viewer.cookie);
+  const narrowedText = narrowed.html.replace(/<!-- -->/g, "");
+  const counts = narrowedText.match(/(\d+)<\/span> of <span class="fig-sm">(\d+)/);
+  const tableBody = narrowedText.slice(narrowedText.indexOf("<tbody>"), narrowedText.indexOf("</tbody>"));
+  check("a filter in the URL narrows the page the server sends",
+        Boolean(counts) && Number(counts?.[1]) > 0 && Number(counts?.[1]) < Number(counts?.[2]) &&
+        !tableBody.includes("No stage research"),
+        counts ? `${counts[1]} of ${counts[2]}` : "no count");
+  check("the table shows the four stages of operations", narrowedText.includes("Stage of operations") &&
+        narrowedText.includes(">Royalty / streaming</th>"));
+  check("and no Deloitte market column", !narrowedText.includes(">Deloitte market<"));
+
+  const tableCsv = await fetch(`${BASE}/api/companies/export?tier=4&format=csv`, { headers: { cookie: viewer.cookie } });
+  const tableText = await tableCsv.text();
+  const tableRows = tableText.split("\n").filter((l) => l && !l.startsWith("#")).length - 1;
+  check("a Viewer exports the filtered table", tableCsv.status === 200 &&
+        tableText.includes("# Filter: Tier: Tier 4") && tableText.includes("artificial intelligence") &&
+        tableRows === Number(counts?.[1]),
+        `status ${tableCsv.status}, ${tableRows} rows against ${counts?.[1]} on screen`);
+  {
+    const { DatabaseSync } = await import("node:sqlite");
+    const handle = new DatabaseSync(dbPath);
+    const audited = handle.prepare(`select detail from audit_log where event = 'companies_exported'
+        order by created_at desc limit 1`).get();
+    handle.close();
+    const detail = audited ? JSON.parse(audited.detail) : null;
+    check("and the download is in the audit log, with its filter", detail?.params === "tier=4" &&
+          detail?.rows === tableRows, audited ? audited.detail.slice(0, 120) : "no row");
+  }
+  const anonTable = await fetch(`${BASE}/api/companies/export?format=csv`);
+  check("signed out, the table export is refused", anonTable.status === 401);
+  const viewerDash = (await get("/dashboard", viewer.cookie)).html;
+  check("a Viewer is not offered the period export that would refuse them",
+        !viewerDash.includes('href="/api/export') && viewerDash.includes("Export from Companies"));
+
   // Run 1: review changed a company after publication and the profile, which
   // reads the published revision, kept saying the old thing without a word.
   {
@@ -917,6 +963,7 @@ async function journeys(dbPath) {
     ["/publish (admin)", "/publish", admin.cookie],
     ["/publish (viewer, refused)", "/publish", viewer.cookie],
     ["/companies (viewer)", "/companies", viewer.cookie],
+    ["/companies, filtered (viewer)", "/companies?tier=4&stage=royalty_streaming", viewer.cookie],
     ["/runs (analyst)", "/runs", analyst.cookie],
     ["/runs (admin, after a run)", "/runs", admin.cookie],
     ["/settings (admin)", "/settings", admin.cookie],

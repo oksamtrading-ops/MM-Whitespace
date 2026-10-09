@@ -237,3 +237,99 @@ class SummaryPage(unittest.TestCase):
         # And it says where "not audited by Deloitte" comes from, since the
         # firm's own client list is out of scope for this build.
         self.assertIn("not stored in this build", text)
+
+
+TABLE = {
+    "period": {"label": "Q3-2026 (2026-05-31)", "basis": "Published revision 9 of Q3-2026 (2026-05-31)", "revision": 9},
+    "filter": "Tier: Tier 4 · Company HQ: Ontario (ON)", "count": 2, "total": 259,
+    "columns": [
+        {"key": "name", "label": "Company", "kind": "text"},
+        {"key": "exploration", "label": "Exploration", "kind": "stage"},
+        {"key": "production", "label": "Production", "kind": "stage"},
+        {"key": "hq", "label": "Company HQ", "kind": "text", "field": "head_office_region"},
+        {"key": "audit_fee", "label": "Audit fees", "kind": "fee", "field": "audit_fee"},
+        {"key": "market_cap", "label": "Market cap (CAD)", "kind": "money"},
+        {"key": "meta:commodities", "label": "Commodities", "kind": "text"},
+    ],
+    "rows": [
+        {"name": "Northco", "exploration": "yes", "production": "unknown", "hq": "Toronto, ON",
+         "audit_fee": {"amount": 1200000, "currency": "CAD", "fiscal_year": 2025},
+         "market_cap": 5e9, "meta:commodities": "Gold",
+         "links": {"audit_fee": "https://northco.example/circular.pdf"}},
+        {"name": "=HYPERLINK(\"http://evil\")", "exploration": "not_researched", "production": "not_researched",
+         "hq": None, "audit_fee": None, "market_cap": None, "links": {}},
+    ],
+    "sources": [{"company": "Northco", "field": "Audit fees", "value": "CAD 1200000 FY2025",
+                 "kind": "Researched from a filing", "title": "Management Information Circular 2026",
+                 "url": "https://northco.example/circular.pdf", "retrieved": "2026-09-12", "quote": "Audit fees: C$1,200,000"}],
+}
+
+
+class TableExport(unittest.TestCase):
+    """The companies table as filtered on screen: a sibling of the period export."""
+
+    def setUp(self):
+        from mmparser.export_service import table_bytes
+        self.wb = load_workbook(io.BytesIO(table_bytes(json.loads(json.dumps(TABLE)))))
+
+    def test_it_is_the_table_and_its_sources(self):
+        self.assertEqual(self.wb.sheetnames, ["Companies", "Sources"])
+
+    def test_the_header_says_what_was_exported_and_how_it_was_produced(self):
+        from mmparser.export import AI_NOTICE, INTERNAL_USE
+        text = " ".join(str(c.value) for row in self.wb["Companies"].iter_rows(max_row=14) for c in row if c.value)
+        for words in ("Published revision 9", "Tier: Tier 4", "2 of 259", INTERNAL_USE, AI_NOTICE):
+            self.assertIn(words, text)
+
+    def test_a_fee_is_three_columns_and_its_amount_links_to_its_source(self):
+        ws = self.wb["Companies"]
+        header = next(r for r in range(1, 30) if ws.cell(r, 2).value == "Company")
+        labels = [ws.cell(header, c).value for c in range(2, 12)]
+        self.assertIn("Audit fees — amount", labels)
+        amount = ws.cell(header + 1, 2 + labels.index("Audit fees — amount"))
+        self.assertEqual(amount.value, 1200000)
+        self.assertEqual(amount.hyperlink.target, "https://northco.example/circular.pdf")
+
+    def test_stage_marks_are_x_and_question_and_the_unresearched_are_filled_not_blank_noes(self):
+        ws = self.wb["Companies"]
+        header = next(r for r in range(1, 30) if ws.cell(r, 2).value == "Company")
+        self.assertEqual(ws.cell(header + 1, 3).value, "X")
+        self.assertEqual(ws.cell(header + 1, 4).value, "?")
+        self.assertIsNone(ws.cell(header + 2, 3).value)
+        self.assertEqual(ws.cell(header + 2, 3).fill.fgColor.rgb[-6:], "FFF2A8")
+
+    def test_a_formula_typed_as_a_name_stays_text(self):
+        ws = self.wb["Companies"]
+        header = next(r for r in range(1, 30) if ws.cell(r, 2).value == "Company")
+        cell = ws.cell(header + 2, 2)
+        self.assertEqual(cell.data_type, "s", "the injection guard holds in the table export too")
+
+    def test_the_sources_sheet_quotes_the_passage(self):
+        ws = self.wb["Sources"]
+        text = " ".join(str(c.value) for row in ws.iter_rows() for c in row if c.value)
+        self.assertIn("Audit fees: C$1,200,000", text)
+        self.assertIn("Management Information Circular 2026", text)
+
+    def test_the_csv_leads_with_the_notices_and_the_filter_then_links_each_cited_value(self):
+        from mmparser.export_service import table_csv_text
+        text = table_csv_text(json.loads(json.dumps(TABLE)))
+        head = [l for l in text.splitlines() if l.startswith("# ")]
+        self.assertTrue(any("artificial intelligence" in l for l in head))
+        self.assertIn("# Filter: Tier: Tier 4 · Company HQ: Ontario (ON)", head)
+        self.assertIn("Audit fees — source", text)
+        self.assertIn("https://northco.example/circular.pdf", text)
+        self.assertIn("not researched", text, "a CSV has no fill, so the words say it")
+
+    def test_a_payload_that_is_not_a_table_is_refused_by_name(self):
+        from mmparser.export_service import normalise_table
+        with self.assertRaises(Refused) as caught:
+            normalise_table({"rows": []})
+        self.assertIn("columns", caught.exception.message)
+        with self.assertRaises(Refused):
+            normalise_table({"columns": [{"key": "x", "label": "X", "kind": "formula"}], "rows": []})
+
+    def test_the_function_dispatches_on_the_kind_header(self):
+        with open(os.path.join(ROOT, "api", "workbook.py"), encoding="utf-8") as fh:
+            src = fh.read()
+        self.assertIn('self.headers.get("X-MM-Export-Kind") == "table"', src)
+        self.assertIn("table_bytes(data) if table else workbook_bytes(data)", src)

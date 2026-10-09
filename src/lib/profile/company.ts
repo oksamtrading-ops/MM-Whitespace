@@ -10,7 +10,9 @@
  * may look at the draft, and is told that is what they are looking at.
  */
 import type { Sql } from "../db/sql.ts";
-import { formatFieldValue } from "../format/fields.ts";
+import { formatFieldValue, STAGE_ORDER, type Stage } from "../format/fields.ts";
+import { metaFor, type RosterRow, type StageEvidence } from "./roster.ts";
+import { citationsForPeriod, safeHref, type Citation } from "./citations.ts";
 import { resolveCompanyId } from "../identity/merge.ts";
 
 export type Provenance =
@@ -25,7 +27,13 @@ export type ProfileValue = {
   evidenceState: string;
   strength: number | null;
   excerpt: string | null;
+  /** The links among the citation's documents, for anything that only wants addresses. */
   sources: string[];
+  /**
+   * Where the value came from. null only on a revision published before
+   * citations were frozen (1-8), and the page says so rather than guess.
+   */
+  citation: Citation | null;
   /** Set only for an inherited value: which period it came from, and its age. */
   inheritedFrom: { label: string; asOf: string; ageDays: number } | null;
 };
@@ -47,6 +55,9 @@ export type CompanyProfile = {
   /** null when the stored trace no longer produces the tier being shown. */
   trace: TraceStep[] | null;
   values: ProfileValue[];
+  /** The four Stage of operations flags, as frozen; null on a revision that froze none. */
+  stages: Stage[] | null;
+  stageEvidence: StageEvidence;
 };
 
 /** Human labels for the provenance of a value. */
@@ -107,6 +118,11 @@ export async function readCompanyProfile(
                 null as evidence_strength, null as excerpt, null as sources, source_period_id
            from company_period_field_values where period_id = ? and company_id = ?`, period.id, companyId) as RawValue[];
 
+  // A draft has no frozen citations, so they are resolved live -- the same
+  // resolver publish freezes from, so an Analyst sees the source a Viewer
+  // will see once it is published.
+  const liveCites = pub ? null : await citationsForPeriod(db, period.id, { companyId });
+
   const periods = new Map(
     (await db.all("select id, label, market_cap_as_of from periods") as
       Array<{ id: string; label: string; market_cap_as_of: string }>).map((p) => [p.id, p]));
@@ -115,6 +131,9 @@ export async function readCompanyProfile(
     const value = parseJson(r.value);
     const from = r.source === "inherited" && r.source_period_id
       ? periods.get(r.source_period_id) ?? null : null;
+    const resolved = liveCites?.get(`${companyId}|${r.field_key}`) ?? null;
+    const citation = resolved ? resolved.citation : citationOf(parseJson(r.sources));
+    const strength = resolved ? resolved.strength : r.evidence_strength;
     return {
       fieldKey: r.field_key,
       label: catalogue.get(r.field_key) ?? r.field_key,
@@ -122,10 +141,11 @@ export async function readCompanyProfile(
       display: formatProfileValue(r.field_key, value),
       source: r.source,
       evidenceState: r.evidence_state ?? "unknown",
-      strength: r.evidence_strength === null || r.evidence_strength === undefined
-        ? null : Number(r.evidence_strength),
-      excerpt: r.excerpt ?? null,
-      sources: (parseJson(r.sources) as string[] | null) ?? [],
+      strength: strength === null || strength === undefined ? null : Number(strength),
+      excerpt: resolved ? resolved.excerpt : r.excerpt ?? null,
+      sources: citation?.kind === "document"
+        ? citation.documents.map((d) => d.url).filter((u): u is string => Boolean(u)) : [],
+      citation,
       inheritedFrom: from
         ? { label: from.label, asOf: from.market_cap_as_of,
             ageDays: Math.max(0, Math.round(
@@ -175,7 +195,50 @@ export async function readCompanyProfile(
       : null,
     trace,
     values: values.filter((v) => !HEADLINE.has(v.fieldKey)),
+    ...(await stagesOfCompany(db, pub?.id ?? null, period.id, companyId, byKey.get("stage_evidence_state")?.value)),
   };
+}
+
+/** One company's four flags, with the same "froze none" rule as the table. */
+async function stagesOfCompany(db: Sql, publicationId: string | null, periodId: string, companyId: string, evidence: unknown) {
+  const stageEvidence: StageEvidence = evidence === "partial" || evidence === "complete" ? evidence : "none";
+  if (publicationId && !(await carriesStages(db, publicationId))) return { stages: null, stageEvidence };
+  const rows = (publicationId
+    ? await db.all("select stage from published_period_stages where publication_id = ? and company_id = ?", publicationId, companyId)
+    : await db.all("select stage from company_period_stages where period_id = ? and company_id = ?", periodId, companyId)) as
+    Array<{ stage: string }>;
+  const stages = STAGE_ORDER.filter((s) => rows.some((r) => r.stage === s));
+  return { stages, stageEvidence };
+}
+
+/**
+ * A citation as frozen. Revisions 1-8 froze none (null). Anything older than
+ * the citation kinds -- a bare list of addresses -- reads as documents.
+ */
+export function citationOf(raw: unknown): Citation | null {
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && typeof (raw as { kind?: unknown }).kind === "string") {
+    const c = raw as Citation;
+    if (c.kind === "document") {
+      return { kind: "document", documents: (c.documents ?? []).map((d) => ({ ...d, url: safeHref(d.url) })) };
+    }
+    if (c.kind === "review") return { ...c, url: safeHref(c.url) };
+    return c;
+  }
+  if (Array.isArray(raw) && raw.length > 0) {
+    return { kind: "document", documents: raw.map((u) => ({ url: safeHref(u), title: null, docType: null, retrievedAt: null, contentHash: null })) };
+  }
+  return null;
+}
+
+/**
+ * Whether a revision froze stage rows at all. Zero rows cannot say it -- a
+ * period nobody has researched has none either -- so the sign is the citations
+ * published in the same act: every value of a revision published since stage
+ * rows were frozen carries one, and no value of an older revision does.
+ */
+export async function carriesStages(db: Sql, publicationId: string): Promise<boolean> {
+  return Boolean(await db.get(`select 1 as yes from published_period_values
+      where publication_id = ? and sources is not null limit 1`, publicationId));
 }
 
 export type UnpublishedChanges = {
@@ -223,6 +286,16 @@ export async function unpublishedChanges(db: Sql, companyId: string): Promise<Un
   }
   for (const [key, was] of frozen) if (canonical(was.value) !== "null") changed.add(key);
 
+  // The stage rows are frozen beside the values (from the revision that first
+  // froze them), so a stage changed in review is a change the page must name.
+  if (await carriesStages(db, pub.id)) {
+    const rowsOf = async (sql: string, id: string) =>
+      (await db.all(sql, id, companyId) as Array<{ stage: string }>).map((r) => r.stage).sort().join(",");
+    const liveStages = await rowsOf("select stage from company_period_stages where period_id = ? and company_id = ?", period.id);
+    const pubStages = await rowsOf("select stage from published_period_stages where publication_id = ? and company_id = ?", pub.id);
+    if (liveStages !== pubStages) changed.add("stage_evidence_state");
+  }
+
   const tierOf = async (sql: string, id: string) =>
     await db.get(sql, id, companyId) as { tier: number | null; status: string } | undefined;
   const liveTier = await tierOf("select tier, status from tiers where period_id = ? and company_id = ?", period.id);
@@ -264,71 +337,144 @@ type TierRow = {
   prior_tier: number | null; tier_changed: number | null;
 };
 
-/** The published population, for the company index. */
-export type CompanyRow = {
-  companyId: string; name: string; ticker: string | null; exchange: string | null;
-  tier: number | null; status: string; footprint: string; auditor: string | null;
-  market: string | null; marketCap: number | null;
-  /** Canadian subdivision codes the company holds a property in, as recorded. */
-  provinces: string[];
-};
+/** The published population, for the company index. One row per company; see roster.ts. */
+export type CompanyRow = RosterRow;
 
+type ValueRow = { company_id: string; field_key: string; value: unknown; source: string };
+
+/**
+ * The companies table's rows, as the given role may see them.
+ *
+ * The snapshot is read whole and pivoted here, rather than one `max(case ...)`
+ * per field in SQL: the table now carries a dozen fields and searches every
+ * other public one, and a pivot that has to be extended in SQL for each new
+ * column is how a column ends up shown from one source and filtered from
+ * another. Only value, source and evidence are read -- never the quotes,
+ * which the company page loads for one company at a time.
+ *
+ * An internal field (classification deloitte_internal: the Deloitte market) is
+ * dropped here, before anything reaches the browser, not hidden in a cell.
+ */
 export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Promise<CompanyRow[]> {
   const period = await db.get("select id from periods order by market_cap_as_of desc limit 1") as { id: string } | undefined;
   if (!period) return [];
   const pub = await db.get(`select id from period_publications where period_id = ? order by revision desc limit 1`, period.id) as { id: string } | undefined;
   if (!pub && !opts.allowDraft) return [];
 
-  const rows = pub
-    ? await db.all(`select c.id as company_id, c.canonical_name as name,
-                max(case when v.field_key = 'root_ticker' then cast(v.value as text) end) as ticker,
-                max(case when v.field_key = 'exchange' then cast(v.value as text) end) as exchange,
-                max(case when v.field_key = 'auditor' then cast(v.value as text) end) as auditor,
-                max(case when v.field_key = 'dtt_market' then cast(v.value as text) end) as market,
-                max(case when v.field_key = 'market_cap_cad' then cast(v.value as text) end) as market_cap,
-                max(case when v.field_key = 'property_regions' then cast(v.value as text) end) as regions,
-                t.tier as tier, t.status as status, t.footprint as footprint
-           from published_period_tiers t
-           join companies c on c.id = t.company_id
-           left join published_period_values v
-                  on v.publication_id = t.publication_id and v.company_id = t.company_id
-          where t.publication_id = ? and c.status != 'merged'
-          group by c.id, c.canonical_name, t.tier, t.status, t.footprint
-          order by c.canonical_name`, pub.id)
-    : await db.all(`select c.id as company_id, c.canonical_name as name,
-                max(case when v.field_key = 'root_ticker' then cast(v.value as text) end) as ticker,
-                max(case when v.field_key = 'exchange' then cast(v.value as text) end) as exchange,
-                max(case when v.field_key = 'auditor' then cast(v.value as text) end) as auditor,
-                max(case when v.field_key = 'dtt_market' then cast(v.value as text) end) as market,
-                max(case when v.field_key = 'market_cap_cad' then cast(v.value as text) end) as market_cap,
-                max(case when v.field_key = 'property_regions' then cast(v.value as text) end) as regions,
-                t.tier as tier, t.status as status, t.footprint as footprint
-           from tiers t
-           join companies c on c.id = t.company_id
-           left join company_period_field_values v
-                  on v.period_id = t.period_id and v.company_id = t.company_id
-          where t.period_id = ? and c.status != 'merged'
-          group by c.id, c.canonical_name, t.tier, t.status, t.footprint
-          order by c.canonical_name`, period.id);
+  const catalogue = new Map(
+    (await db.all("select key, label, classification from field_catalog") as
+      Array<{ key: string; label: string; classification: string }>).map((f) => [f.key, f]));
 
-  return (rows as Array<Record<string, unknown>>).map((r) => ({
-    companyId: String(r.company_id),
-    name: String(parseJson(r.name) ?? r.name),
-    ticker: (parseJson(r.ticker) as string | null) ?? null,
-    exchange: (parseJson(r.exchange) as string | null) ?? null,
-    tier: r.tier === null ? null : Number(r.tier),
-    status: String(r.status),
-    footprint: String(r.footprint),
-    auditor: (parseJson(r.auditor) as string | null) ?? null,
-    market: (parseJson(r.market) as string | null) ?? null,
-    marketCap: typeof parseJson(r.market_cap) === "number" ? (parseJson(r.market_cap) as number) : null,
-    provinces: canadianRegions(parseJson(r.regions)),
-  }));
+  const base = (pub
+    ? await db.all(`select t.company_id, c.canonical_name as name, t.tier, t.status, t.footprint
+           from published_period_tiers t join companies c on c.id = t.company_id
+          where t.publication_id = ? and c.status != 'merged'
+          order by c.canonical_name`, pub.id)
+    : await db.all(`select t.company_id, c.canonical_name as name, t.tier, t.status, t.footprint
+           from tiers t join companies c on c.id = t.company_id
+          where t.period_id = ? and c.status != 'merged'
+          order by c.canonical_name`, period.id)) as
+    Array<{ company_id: string; name: string; tier: number | null; status: string; footprint: string }>;
+
+  const values = (pub
+    ? await db.all(`select company_id, field_key, value, source from published_period_values
+          where publication_id = ?`, pub.id)
+    : await db.all(`select company_id, field_key, value, source from company_period_field_values
+          where period_id = ?`, period.id)) as ValueRow[];
+
+  const stageRows = await stagesFor(db, pub?.id ?? null, period.id);
+
+  const byCompany = new Map<string, Map<string, { value: unknown; source: string }>>();
+  for (const v of values) {
+    if (catalogue.get(v.field_key)?.classification === "deloitte_internal") continue;
+    const id = String(v.company_id);
+    if (!byCompany.has(id)) byCompany.set(id, new Map());
+    byCompany.get(id)!.set(v.field_key, { value: parseJson(v.value), source: v.source });
+  }
+
+  return base.map((b) => {
+    const id = String(b.company_id);
+    const vals = byCompany.get(id) ?? new Map<string, { value: unknown; source: string }>();
+    const get = (k: string) => vals.get(k)?.value ?? null;
+    const text = (k: string) => { const v = get(k); return typeof v === "string" && v.trim() ? v : null; };
+    const cap = get("market_cap_cad");
+    const evidence = get("stage_evidence_state");
+    return {
+      companyId: id,
+      name: String(parseJson(b.name) ?? b.name),
+      ticker: text("root_ticker"),
+      exchange: text("exchange"),
+      tier: b.tier === null ? null : Number(b.tier),
+      status: String(b.status),
+      footprint: String(b.footprint),
+      auditor: text("auditor"),
+      marketCap: typeof cap === "number" ? cap : null,
+      hqRegion: text("head_office_region"),
+      hqCity: text("head_office_location"),
+      auditFee: get("audit_fee"),
+      erp: text("incumbent_erp"),
+      stages: stageRows === null ? null : stageRows.get(id) ?? [],
+      stageEvidence: evidence === "partial" || evidence === "complete" ? evidence : "none",
+      regions: regionsOf(get("property_regions")),
+      sources: Object.fromEntries([...vals].map(([k, v]) => [k, v.source])),
+      meta: metaFor([...vals].map(([k, v]) => ({ field: k, label: catalogue.get(k)?.label ?? k, value: v.value }))),
+    };
+  });
 }
 
-/** The CANADA group of a property_regions value, or nothing. */
-function canadianRegions(v: unknown): string[] {
-  if (!v || typeof v !== "object") return [];
-  const canada = (v as Record<string, unknown>).CANADA;
-  return Array.isArray(canada) ? canada.map(String) : [];
+/**
+ * The stage rows behind the four Stage of operations columns, by company.
+ *
+ * Draft: the working rows. Published: the rows the revision froze -- and null
+ * when it froze none, because revisions before stage rows were published
+ * cannot be told apart from "no stages" any other way, and the table must say
+ * "not recorded in this revision" rather than show four empty columns.
+ */
+async function stagesFor(db: Sql, publicationId: string | null, periodId: string): Promise<Map<string, Stage[]> | null> {
+  const rows = (publicationId
+    ? await publishedStageRows(db, publicationId)
+    : await db.all("select company_id, stage from company_period_stages where period_id = ?", periodId)) as
+    Array<{ company_id: string; stage: string }> | null;
+  if (rows === null) return null;
+  const out = new Map<string, Stage[]>();
+  for (const r of rows) {
+    const id = String(r.company_id);
+    if (!out.has(id)) out.set(id, []);
+    if ((STAGE_ORDER as readonly string[]).includes(r.stage)) out.get(id)!.push(r.stage as Stage);
+  }
+  for (const list of out.values()) list.sort((a, b) => STAGE_ORDER.indexOf(a) - STAGE_ORDER.indexOf(b));
+  return out;
+}
+
+/** A publication's frozen stage rows, or null for a revision that froze none. */
+async function publishedStageRows(db: Sql, publicationId: string): Promise<Array<{ company_id: string; stage: string }> | null> {
+  if (!(await carriesStages(db, publicationId))) return null;
+  return await db.all("select company_id, stage from published_period_stages where publication_id = ?", publicationId) as
+    Array<{ company_id: string; stage: string }>;
+}
+
+/** property_regions as bucket -> entries, every bucket kept. */
+function regionsOf(v: unknown): Record<string, string[]> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  return Object.fromEntries(Object.entries(v as Record<string, unknown>)
+    .filter(([, list]) => Array.isArray(list) && list.length > 0)
+    .map(([bucket, list]) => [bucket, (list as unknown[]).map(String)]));
+}
+
+/**
+ * Which period and revision the companies table is showing, for the export's
+ * header. The same choice listCompanies makes: the latest period, its latest
+ * revision, or its draft for a role allowed one.
+ */
+export async function rosterBasis(db: Sql, opts: { allowDraft: boolean }): Promise<{
+  periodId: string; label: string; revision: number | null; publishedAt: string | null; publicationId: string | null;
+} | null> {
+  const period = await db.get("select id, label from periods order by market_cap_as_of desc limit 1") as
+    { id: string; label: string } | undefined;
+  if (!period) return null;
+  const pub = await db.get(`select id, revision, published_at from period_publications where period_id = ?
+      order by revision desc limit 1`, period.id) as { id: string; revision: number; published_at: string } | undefined;
+  if (!pub && !opts.allowDraft) return null;
+  return { periodId: period.id, label: period.label, revision: pub ? Number(pub.revision) : null,
+           publishedAt: pub?.published_at ?? null, publicationId: pub?.id ?? null };
 }

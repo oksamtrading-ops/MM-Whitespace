@@ -6,6 +6,7 @@ import { proofLine, type Bar } from "../../../lib/publish/views.ts";
 import Bars from "../../_ui/Bars.tsx";
 import Callout from "../../_ui/Callout.tsx";
 import AiNotice from "../../_ui/AiNotice.tsx";
+import MultiSelect from "../../_ui/MultiSelect.tsx";
 import Composition, { type Part } from "../../_ui/Composition.tsx";
 import Donut, { type Slice } from "../../_ui/Donut.tsx";
 import DotPlot from "../../_ui/DotPlot.tsx";
@@ -355,6 +356,20 @@ export default async function Styleguide() {
             <button type="button" role="tab" aria-selected="false">Since last period</button>
           </div>
           <ol className="breadcrumb"><li><a href="#components">Companies</a></li><li className="sep" aria-hidden="true">/</li><li aria-current="page">Northco Mining Corp.</li></ol>
+          <h3>Multi-select filter</h3>
+          <p className="note" style={{ marginTop: 0 }}>
+            The companies table&rsquo;s filters. Real checkboxes in a <code>&lt;details&gt;</code>, so it
+            works from the keyboard and in a plain GET form; options carry how many rows hold each, and
+            a long list gets a box to narrow it.
+          </p>
+          <div className="filterbar">
+            <MultiSelect name="tier" label="Tier" selected={["2", "3"]} groups={[{ label: "Tier", options: [
+              { value: "1", label: "Tier 1", count: 3 }, { value: "2", label: "Tier 2", count: 9 },
+              { value: "3", label: "Tier 3", count: 14 }, { value: "no_stage", label: "No stage research", count: 219 }] }]} />
+            <MultiSelect name="hq" label="Company HQ" selected={[]} groups={[
+              { label: "Canada", options: [{ value: "CA:BC", label: "British Columbia (BC)", count: 121 }, { value: "CA:ON", label: "Ontario (ON)", count: 61 }] },
+              { label: "Other countries", options: [{ value: "Australia", label: "Australia", count: 10 }] }]} />
+          </div>
           <h3>Menu, tooltip, toast</h3>
           <div className="row" style={{ alignItems: "flex-start", minHeight: 200 }}>
             <div className="menu-wrap">

@@ -966,6 +966,69 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .roster .ev { gap: 6px; justify-content: flex-end; }
 .roster .dim { color: var(--ink-3); }
 
+/* The companies table's added columns (Roster.tsx). The four Stage of
+   operations columns carry a tick in INK, never green: green fails as text on
+   white (2.27:1), and a tick is text. Each mark also carries words for a
+   screen reader, so the glyph is never the only signal. */
+/* Two header rows, both sticky: the second sits below the first, not under it. */
+.roster thead tr.grouphead th { height: 22px; }
+.roster thead tr.colhead th { top: 22px; }
+.roster .grouphead th { padding-top: 4px; padding-bottom: 0; font-size: var(--fs-label);
+  letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+.roster .grouphead th.groupspan { text-align: center; border-bottom: 1px solid var(--rule); }
+.roster td.stagecell { text-align: center; width: 1%; }
+.roster td.stagecell .stage-yes { color: var(--ink); font-weight: 700; }
+.roster td.stagecell .stage-unknown { color: var(--ink-2); }
+.roster td.stage-none { text-align: center; color: var(--ink-3); font-size: var(--fs-body-sm); }
+.roster .matchhint { display: block; font-size: var(--fs-body-sm); font-weight: 400; color: var(--ink-3); margin-top: 1px;
+  white-space: normal; max-width: 280px; }
+.roster .citelink { color: var(--ink); text-decoration: none; font-weight: 400; }
+.roster .citelink:hover { text-decoration: underline; text-decoration-color: var(--green-mark); }
+.roster .notfound { color: var(--ink-3); font-style: italic; }
+.roster-legend { font-size: var(--fs-body-sm); color: var(--ink-3); margin: var(--space-3) 0 0; max-width: 96ch; }
+
+/* The filter bar: one MultiSelect per filter, then the count and the export. */
+.filterbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: 0 0 14px; }
+
+/* MultiSelect (_ui/MultiSelect.tsx). Every class here is the picker's own --
+   a bare rule elsewhere would restyle it silently, which is how .filters,
+   .tag and .role each went wrong. */
+.picker { position: relative; }
+.picker-sum {
+  list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+  height: 36px; padding: 0 11px 0 13px; border: 1px solid var(--rule-raised); border-radius: var(--radius-3);
+  font: 600 var(--fs-body-sm)/1 var(--font-text); color: var(--ink); background: transparent; white-space: nowrap;
+}
+.picker-sum::-webkit-details-marker { display: none; }
+.picker-sum:hover { background: var(--surface-2); border-color: var(--ink-3); }
+.picker-sum:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.picker-k { color: var(--ink-2); font-weight: 600; }
+.picker-v { color: var(--ink); font-weight: 700; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; }
+.picker-set .picker-sum { border-color: var(--ink-2); background: var(--surface-2); }
+.picker[open] .picker-sum svg { transform: rotate(180deg); }
+.picker-pop {
+  position: absolute; z-index: var(--z-tooltip); top: calc(100% + 6px); left: 0; min-width: 240px; max-width: 340px;
+  padding: var(--space-3); background: var(--surface-3); border: 1px solid var(--rule-raised);
+  border-radius: var(--radius); box-shadow: var(--shadow-3);
+}
+.picker-end { left: auto; right: 0; }
+.picker-head { margin: 0 0 var(--space-2); font-size: var(--fs-label); letter-spacing: var(--track-label);
+  text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+.picker-find {
+  font: inherit; font-size: var(--fs-body-sm); width: 100%; min-height: 34px; padding: 0 10px; margin: 0 0 var(--space-2);
+  border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
+}
+.picker-list { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
+.picker-list fieldset { border: 0; margin: 0 0 var(--space-2); padding: 0; min-width: 0; }
+.picker-list legend { font-size: var(--fs-body-sm); font-weight: 700; color: var(--ink-2); padding: 4px 0 2px; }
+.picker-list label { display: flex; align-items: center; gap: 9px; min-height: 30px; padding: 0 4px;
+  font-size: var(--fs-body-sm); color: var(--ink); cursor: pointer; border-radius: 4px; }
+.picker-list label:hover { background: var(--surface-2); }
+.picker-list input[type="checkbox"] { accent-color: var(--focus); width: 15px; height: 15px; margin: 0; flex: 0 0 auto; }
+.picker-list label span:first-of-type { flex: 1; }
+.picker-n { color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: var(--fs-label); }
+.picker-clear { margin-top: var(--space-2); }
+
 /* pills and chips ------------------------------------------------------
    A pill is a state. It carries an icon and a word; the colour is the third
    channel, never the first. */
@@ -1397,6 +1460,14 @@ dialog td:first-child { width: 112px; }
 
 table.provenance td:first-child { white-space: nowrap; }
 table.provenance .pill { margin-left: var(--space-2); }
+/* Every value's citation, under its provenance word (CitationLine). */
+table.provenance .cite { display: block; margin-top: 3px; color: var(--ink-2); }
+table.provenance .citedoc { display: block; }
+table.provenance .cite a { color: var(--ink); }
+table.provenance .cite .dim { color: var(--ink-3); }
+/* Arrived at from the companies table's link: say which row it was. */
+table.provenance tr { scroll-margin-top: 80px; }
+table.provenance tr:target > th, table.provenance tr:target > td { background: var(--surface-2); }
 .excerpt { margin-top: 6px; }
 .excerpt summary { font-size: var(--fs-body-sm); color: var(--green-text); cursor: pointer; min-height: 24px; }
 .excerpt summary:hover { color: var(--ink); }

@@ -148,6 +148,28 @@ export async function exportWorkbook(
 ): Promise<{ filename: string; contentType: string; bytes: Buffer }> {
   const format = opts.format ?? "xlsx";
   const payload = await exportPayload(db, opts.periodId);
+  return {
+    filename: exportFilename(String(payload.period.label ?? "period"), format),
+    contentType: contentTypeOf(format),
+    bytes: await buildFile(payload, { format, kind: "period" }),
+  };
+}
+
+export type ExportKind = "period" | "table";
+
+export function contentTypeOf(format: "xlsx" | "csv"): string {
+  return format === "csv"
+    ? "text/csv; charset=utf-8"
+    : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+}
+
+/**
+ * Payload out, bytes back, for either export: the period workbook or the
+ * companies table. One function on Vercel (api/workbook.py) and one module
+ * locally build both; the kind travels as a header or a flag, so neither
+ * payload contract has to accept the other's shape.
+ */
+export async function buildFile(payload: unknown, opts: { format: "xlsx" | "csv"; kind: ExportKind }): Promise<Buffer> {
   let endpoint;
   try {
     endpoint = pythonEndpoint("export");
@@ -155,21 +177,14 @@ export async function exportWorkbook(
     throw new ExportFailed(err instanceof NotConfigured
       ? "The export builder is not configured on this deployment." : (err as Error).message);
   }
-  const bytes = endpoint
-    ? await buildRemotely(endpoint, payload, format)
-    : await buildLocally(payload, format);
-  return {
-    filename: exportFilename(String(payload.period.label ?? "period"), format),
-    contentType: format === "csv"
-      ? "text/csv; charset=utf-8"
-      : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    bytes,
-  };
+  return endpoint
+    ? await buildRemotely(endpoint, payload, opts.format, opts.kind)
+    : await buildLocally(payload, opts.format, opts.kind);
 }
 
 async function buildRemotely(
   endpoint: { url: string; headers: Record<string, string> },
-  payload: ExportPayload, format: "xlsx" | "csv",
+  payload: unknown, format: "xlsx" | "csv", kind: ExportKind,
 ): Promise<Buffer> {
   const secret = process.env.MM_PARSE_SECRET;
   if (!secret) throw new ExportFailed("The export builder is not configured on this deployment.");
@@ -182,6 +197,7 @@ async function buildRemotely(
         "content-type": "application/json",
         "x-mm-parse-secret": secret,
         ...(format === "csv" ? { "x-mm-export-format": "csv" } : {}),
+        ...(kind === "table" ? { "x-mm-export-kind": "table" } : {}),
       },
       body: JSON.stringify(payload),
     });
@@ -202,9 +218,11 @@ async function buildRemotely(
 }
 
 /** The command-line path, for local work and the test suite. */
-async function buildLocally(payload: ExportPayload, format: "xlsx" | "csv"): Promise<Buffer> {
+async function buildLocally(payload: unknown, format: "xlsx" | "csv", kind: ExportKind): Promise<Buffer> {
   return await new Promise<Buffer>((resolve, reject) => {
-    const child = spawn("python3", ["-m", "mmparser.export_service", ...(format === "csv" ? ["--csv"] : [])],
+    const child = spawn("python3", ["-m", "mmparser.export_service",
+                                    ...(kind === "table" ? ["--table"] : []),
+                                    ...(format === "csv" ? ["--csv"] : [])],
                         { cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"] });
     const out: Buffer[] = [];
     const err: Buffer[] = [];

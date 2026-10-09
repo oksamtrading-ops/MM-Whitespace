@@ -67,13 +67,45 @@ export async function preserveExtract(
 }
 
 /** The accept or override standing for a company and field, ignoring flags and undone rows. */
-async function standingValueDecision(db: Sql, periodId: string, companyId: string, fieldKey: string) {
+export async function standingValueDecision(db: Sql, periodId: string, companyId: string, fieldKey: string) {
   return await db.get(`select d.decision, d.override_value, d.finding_id from review_decisions d
       where d.period_id = ? and d.company_id = ? and d.field_key = ?
         and d.decision in ('accept', 'override')
         and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
       order by d.seq desc limit 1`, periodId, companyId, fieldKey) as
     { decision: "accept" | "override"; override_value: string | null; finding_id: string | null } | undefined;
+}
+
+export type StandingDecision = {
+  id: string; company_id: string; field_key: string; decision: "accept" | "override";
+  override_value: string | null; finding_id: string | null; reason: string | null; decided_at: string;
+};
+
+/**
+ * standingValueDecision for every field of a period at once (or of one
+ * company), for the citation resolver -- which must name, for each value, the
+ * decision that put it there, and cannot afford one query per value.
+ *
+ * The SAME rule as standingValueDecision: the same where clause, then the
+ * highest seq per company and field. resolve.test.ts holds the two to the
+ * same answer, so "which decision stands" is decided in one place.
+ */
+export async function standingValueDecisions(
+  db: Sql, periodId: string, companyId?: string,
+): Promise<Map<string, StandingDecision>> {
+  const rows = await db.all(`select d.id, d.company_id, d.field_key, d.decision, d.override_value,
+             d.finding_id, d.reason, d.decided_at
+        from review_decisions d
+       where d.period_id = ?${companyId ? " and d.company_id = ?" : ""}
+         and d.decision in ('accept', 'override')
+         and not exists (select 1 from review_decisions u where u.undoes_id = d.id)
+       order by d.seq desc`, ...(companyId ? [periodId, companyId] : [periodId])) as StandingDecision[];
+  const out = new Map<string, StandingDecision>();
+  for (const r of rows) {
+    const key = `${r.company_id}|${r.field_key}`;
+    if (!out.has(key)) out.set(key, r);
+  }
+  return out;
 }
 
 async function fact(db: Sql, periodId: string, companyId: string, fieldKey: string) {

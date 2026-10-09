@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler
 # Vercel runs this from the project root; make the package importable either way.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from mmparser.export_service import flat_csv_text, workbook_bytes  # noqa: E402
+from mmparser.export_service import flat_csv_text, table_bytes, table_csv_text, workbook_bytes  # noqa: E402
 from mmparser.service import Refused, authorised  # noqa: E402
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -64,9 +64,14 @@ class handler(BaseHTTPRequestHandler):
         except ValueError:
             return self._send(400, {"error": "The export payload is not JSON."})
         try:
+            # Two exports share this function: the period workbook, and the
+            # companies table as filtered on screen. The kind travels as a
+            # header so the period contract never has to accept a second shape.
+            table = self.headers.get("X-MM-Export-Kind") == "table"
             if self.headers.get("X-MM-Export-Format") == "csv":
-                return self._send(200, flat_csv_text(data).encode("utf-8"), "text/csv; charset=utf-8")
-            return self._send(200, workbook_bytes(data), XLSX)
+                text = table_csv_text(data) if table else flat_csv_text(data)
+                return self._send(200, text.encode("utf-8"), "text/csv; charset=utf-8")
+            return self._send(200, table_bytes(data) if table else workbook_bytes(data), XLSX)
         except Refused as r:
             return self._send(r.status, {"error": r.message})
 

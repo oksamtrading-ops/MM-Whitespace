@@ -4,6 +4,7 @@ import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { findDuplicateCandidates } from "../../../lib/identity/merge.ts";
 import { listCompanies } from "../../../lib/profile/company.ts";
+import { dropUnknown, facetOptions, parseRosterParams } from "../../../lib/profile/roster.ts";
 import Refusal from "../../_ui/Refusal.tsx";
 import Roster from "./Roster.tsx";
 import Callout from "../../_ui/Callout.tsx";
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Companies" };
 
 export default async function Companies(
-  { searchParams }: { searchParams: Promise<{ province?: string }> },
+  { searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> },
 ) {
   let ctx;
   try {
@@ -27,7 +28,7 @@ export default async function Companies(
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
-  const { province } = await searchParams;
+  const params = await searchParams;
   const allowDraft = ctx.user.role !== "viewer";
   const rows = await listCompanies(ctx.db, { allowDraft });
   if (rows.length === 0) {
@@ -56,7 +57,10 @@ export default async function Companies(
           Pairs of rows that look like one company.
         </Callout>
       )}
-      <Roster rows={rows} deloitteAudits={deloitteAudits} province={province ?? null} />
+      {/* The filter is parsed here from the same URL the export reads, so the
+          page arrives already narrowed and a shared link means one thing. */}
+      <Roster rows={rows} deloitteAudits={deloitteAudits}
+              initial={dropUnknown(parseRosterParams(params), facetOptions(rows))} />
     </div>
     </Page>
   );

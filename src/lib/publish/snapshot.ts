@@ -12,6 +12,7 @@
  */
 import { insertMany, type Sql } from "../db/sql.ts";
 import { evaluateGate, overrideBanner, type Blocker, type GateResult } from "./gate.ts";
+import { citationsForPeriod, citeKey, uncited } from "../profile/citations.ts";
 
 export class PublishBlocked extends Error {
   blockers: Blocker[];
@@ -24,6 +25,23 @@ export class PublishBlocked extends Error {
     this.name = "PublishBlocked";
     this.blockers = gate.blockers;
     this.gate = gate;
+  }
+}
+
+/**
+ * A researched value with neither a document nor a quote behind it. Not a gate an Admin may
+ * override: the gate weighs coverage, which is a judgement, while this is a
+ * broken evidence chain -- a value the screen would have to show with no
+ * source -- and every value on every screen cites one.
+ */
+export class PublishUncited extends Error {
+  values: Array<{ company: string; field: string }>;
+  constructor(values: Array<{ company: string; field: string }>) {
+    super("publish refused: these researched values carry neither a source document nor a quote:\n" +
+          values.map((v) => `  - ${v.company}: ${v.field}`).join("\n") +
+          "\n  Re-decide each in review, or undo the accept, then publish.");
+    this.name = "PublishUncited";
+    this.values = values;
   }
 }
 
@@ -40,6 +58,9 @@ export type PublishResult = {
   revision: number;
   companies: number;
   values: number;
+  /** Values frozen with a citation -- every one of them, or publish refused. */
+  cited: number;
+  stages: number;
   aggregates: number;
   unresolvedCount: number;
   overridden: boolean;
@@ -66,7 +87,7 @@ export async function publishPeriod(
     : undefined;
 
   const result: PublishResult = {
-    publicationId: "", periodId, revision: 1, companies: 0, values: 0,
+    publicationId: "", periodId, revision: 1, companies: 0, values: 0, cited: 0, stages: 0,
     aggregates: 0, unresolvedCount:(await gate).unresolvedCount,
     overridden: Boolean(opts.overrideReason), banner: null,
   };
@@ -76,6 +97,19 @@ export async function publishPeriod(
   // on a different connection -- no atomicity, and a connection returned to
   // the pool still inside a transaction. The callback's `db` shadows the outer
   // one on purpose, so nothing in the body can reach past the transaction.
+  // Every value's citation, read once for the period. A researched value with
+  // nothing to cite stops the publish here, before anything is written.
+  const citations = await citationsForPeriod(db, periodId);
+  const broken = uncited(citations);
+  if (broken.length > 0) {
+    const names = new Map((await db.all("select id, canonical_name from companies") as
+      Array<{ id: string; canonical_name: string }>).map((c) => [String(c.id), c.canonical_name]));
+    throw new PublishUncited(broken.map((key) => {
+      const [company, field] = key.split("|");
+      return { company: names.get(company) ?? company, field };
+    }));
+  }
+
   await db.tx(async (db) => {
     // An amendment is a new revision, never a mutation of the last one.
     const last = await db.get("select coalesce(max(revision), 0) r from period_publications where period_id = ?", periodId) as { r: number };
@@ -102,9 +136,28 @@ export async function publishPeriod(
       Array<{ company_id: string; field_key: string; value: string;
               source: string; evidence_state: string }>;
 
+    // With its citation: the document and quote for research, the reason for
+    // an override, the workbook for a value read from it. Until revision 9
+    // these six columns existed and were never written, so no published page
+    // could show where anything came from.
     result.values = await insertMany(db, "published_period_values",
-      ["publication_id", "company_id", "field_key", "value", "source", "evidence_state"],
-      values.map((v) => [pub.id, v.company_id, v.field_key, v.value, v.source, v.evidence_state]));
+      ["publication_id", "company_id", "field_key", "value", "source", "evidence_state",
+       "finding_id", "sources", "excerpt", "model", "prompt_version", "evidence_strength"],
+      values.map((v) => {
+        const c = citations.get(citeKey(String(v.company_id), v.field_key));
+        if (c) result.cited++;
+        return [pub.id, v.company_id, v.field_key, v.value, v.source, v.evidence_state,
+                c?.findingId ?? null, c ? JSON.stringify(c.citation) : null, c?.excerpt ?? null,
+                c?.model ?? null, c?.promptVersion ?? null, c?.strength ?? null];
+      }));
+
+    // --- freeze the stage rows ------------------------------------------
+    // Presence rows, read against stage_evidence_state frozen just above.
+    const stageRows = await db.all(`select company_id, stage from company_period_stages
+         where period_id = ?`, periodId) as Array<{ company_id: string; stage: string }>;
+    result.stages = await insertMany(db, "published_period_stages",
+      ["publication_id", "company_id", "stage"],
+      stageRows.map((r) => [pub.id, r.company_id, r.stage]));
 
     // --- freeze the tiers, with the migration against the prior period ---
     const tiers = await db.all(`select company_id, tier, status, footprint, rule_set_version
