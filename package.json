@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Mining Whitespace Intelligence Tool -- Milestone 1: ingestion, validation, tiering.",
+  "description": "Market Assessment Tool (formerly the Mining Whitespace Intelligence Tool) -- Deloitte Canada Mining & Metals.",
   "scripts": {
     "test": "node --test 'src/**/*.test.ts' && python3 -m unittest discover -s tests && node scripts/check_role_assertions.mjs",
     "test:node": "node --test 'src/**/*.test.ts'",

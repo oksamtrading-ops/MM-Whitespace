@@ -316,6 +316,20 @@ async function journeys(dbPath) {
         "the dashboard rendered without a session");
   const viewer = await signIn("viewer@example.invalid");
   check("a Viewer can sign in", viewer.status === 200 && Boolean(viewer.cookie));
+
+  // The landing page: every sign-in ends at "/", so the AI notice is read by
+  // everybody, and "Continue" goes to the one place that will let them in.
+  const AI_LINE = "researched with the help of artificial intelligence";
+  const landingAnon = await get("/");
+  check("the landing page renders signed out", landingAnon.status === 200 &&
+        landingAnon.html.includes("Market Assessment Tool"), `status ${landingAnon.status}`);
+  check("it states the AI notice", landingAnon.html.includes(AI_LINE));
+  check("signed out, its button is sign-in",
+        /href="\/signin"[^>]*>Sign in</.test(landingAnon.html));
+  const landingViewer = await get("/", viewer.cookie);
+  check("a Viewer is offered the dashboard",
+        /href="\/dashboard"[^>]*>Continue to the dashboard</.test(landingViewer.html));
+  check("and the landing page shows no data", !landingViewer.html.includes("Deloitte audits"));
   const dash = await get("/dashboard", viewer.cookie);
   check("the dashboard renders published figures", dash.html.includes("Deloitte audits"));
   check("the override reason is printed on the header",
@@ -332,6 +346,9 @@ async function journeys(dbPath) {
   console.log("\n3. an Analyst opens the grid");
   const analyst = await signIn("analyst@example.invalid");
   check("an Analyst can sign in", analyst.status === 200);
+  const landingAnalyst = await get("/", analyst.cookie);
+  check("an Analyst is offered the review board",
+        /href="\/review"[^>]*>Continue to the review board</.test(landingAnalyst.html));
   const board = await get("/review", analyst.cookie);
   check("the triage board leads with coverage", board.html.includes("Enrichment coverage"));
   const grid = await get("/review/auditor?bucket=conflict", analyst.cookie);
@@ -503,7 +520,7 @@ async function journeys(dbPath) {
   check("an Analyst downloads the period as a workbook",
         download.status === 200 &&
         /spreadsheetml/.test(download.headers.get("content-type") ?? "") &&
-        /attachment; filename="MM Whitespace .*\.xlsx"/.test(download.headers.get("content-disposition") ?? "") &&
+        /attachment; filename="Market Assessment Tool .*\.xlsx"/.test(download.headers.get("content-disposition") ?? "") &&
         workbook.subarray(0, 2).toString("latin1") === "PK" && workbook.byteLength > 5000,
         `status ${download.status}, ${workbook.byteLength} bytes`);
   const csvDownload = await fetch(`${BASE}/api/export?format=csv`, { headers: { cookie: analyst.cookie } });
@@ -729,6 +746,10 @@ async function journeys(dbPath) {
   // refuse -- only a real request can.
   const tempCookie = signInDirectly(dbPath, "temp@example.invalid", TEMP_PASSWORD);
   check("a temporary password still signs in", Boolean(tempCookie));
+  const gatedLanding = await get("/", tempCookie);
+  check("the landing page sends it to the password screen",
+        /href="\/password"[^>]*>Set a new password to continue</.test(gatedLanding.html) &&
+        !/>Continue to the review board</.test(gatedLanding.html));
 
   const gatedReview = await get("/review", tempCookie);
   check("but it reaches no review board", !gatedReview.html.includes("Your queue"),
@@ -883,6 +904,8 @@ async function journeys(dbPath) {
 
   console.log("\naccessibility obligations on six routes");
   const routes = [
+    ["/ (signed out)", "/", null],
+    ["/ (viewer)", "/", viewer.cookie],
     ["/dashboard (signed out)", "/dashboard", null],
     ["/dashboard (viewer)", "/dashboard", viewer.cookie],
     ["/review (analyst)", "/review", analyst.cookie],

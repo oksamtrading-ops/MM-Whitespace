@@ -41,8 +41,8 @@ export async function generateViewport(): Promise<Viewport> {
 }
 
 export const metadata: Metadata = {
-  title: { default: "Whitespace", template: "%s · Whitespace" },
-  description: "Mining & Metals whitespace analysis",
+  title: { default: "Market Assessment Tool", template: "%s · Market Assessment Tool" },
+  description: "Deloitte Mining & Metals market assessment",
 };
 
 export const dynamic = "force-dynamic";

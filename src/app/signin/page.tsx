@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { authContext } from "../../lib/auth/context.ts";
 import { resolveUser } from "../../lib/auth/session.ts";
+import { HOME_LABEL, homeFor } from "../../lib/auth/home.ts";
 import SignInButtons from "./SignInButtons.tsx";
 import SignInForm from "./SignInForm.tsx";
 import Orb from "../_ui/Orb.tsx";
@@ -36,7 +37,7 @@ export default async function SignIn() {
           placeholder until the brand hub's own Deloitte wordmark asset is
           supplied [confirm]. */}
       <div className="lockup">
-        <h1 translate="no">Whitespace<span className="stop" aria-hidden="true" /></h1>
+        <h1 translate="no">Market Assessment Tool<span className="stop" aria-hidden="true" /></h1>
         <span className="firm" translate="no">Deloitte</span>
       </div>
       <Orb className="orb" />
@@ -49,15 +50,9 @@ export default async function SignIn() {
               this is where the loop has to close. Offering "Continue" would
               send them to a board that refuses them again. */}
           <p className="actions">
-            {user.mustChangePassword ? (
-              <Link className="btn primary" href="/password" prefetch={false}>
-                Set a new password to continue
-              </Link>
-            ) : (
-              <Link className="btn primary" href="/" prefetch={false}>
-                Continue{user.role === "viewer" ? " to the dashboard" : " to the review board"}
-              </Link>
-            )}
+            <Link className="btn primary" href={homeFor(user)} prefetch={false}>
+              {HOME_LABEL[homeFor(user)]}
+            </Link>
           </p>
           <form action={signOut}>
             <button type="submit" className="switch">Sign out</button>

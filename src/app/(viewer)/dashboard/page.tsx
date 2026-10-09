@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata, Route } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden } from "../../../lib/auth/session.ts";
-import { EXCHANGE_NOTICE, INTERNAL_USE, VENDOR_NOTICE } from "../../../lib/publish/notices.ts";
+import { AI_NOTICE, EXCHANGE_NOTICE, INTERNAL_USE, VENDOR_NOTICE } from "../../../lib/publish/notices.ts";
 import { readPublished } from "../../../lib/publish/snapshot.ts";
 import {
   auditorBars, footprintBars, gateChart, JURISDICTION_TITLE, marketBars,
@@ -25,6 +25,7 @@ import Section from "../../_ui/Section.tsx";
 import Callout from "../../_ui/Callout.tsx";
 import Icon from "../../_ui/Icon.tsx";
 import Page from "../../_ui/Page.tsx";
+import AiNotice from "../../_ui/AiNotice.tsx";
 import Panel, { StatRow } from "../../_ui/Panel.tsx";
 import WorkingToggle from "../../_ui/WorkingToggle.tsx";
 import Facts from "../../_ui/Facts.tsx";
@@ -67,7 +68,7 @@ export default async function Dashboard() {
   } catch (err) {
     return err instanceof Forbidden
       ? <Refusal title="Not permitted" body="Your account does not have access to this view." />
-      : <Refusal title="Sign in" body="Whitespace is invite-only. Sign in to see the published dashboard."
+      : <Refusal title="Sign in" body="The Market Assessment Tool is invite-only. Sign in to see the published dashboard."
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
   const canReview = ctx.user.role !== "viewer";
@@ -413,10 +414,12 @@ export default async function Dashboard() {
           </p>
         </Section>
 
+        <AiNotice compact />
         <footer className="notices">
           <p>{INTERNAL_USE}</p>
           <p>{EXCHANGE_NOTICE}</p>
           <p>{VENDOR_NOTICE}</p>
+          <p>{AI_NOTICE}</p>
         </footer>
       </div>
     </div>

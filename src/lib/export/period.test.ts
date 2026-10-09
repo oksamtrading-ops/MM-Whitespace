@@ -93,16 +93,16 @@ test("the payload carries what the template needs, in one pass over the period",
 });
 
 test("the filename names the period, not the file it came from", async () => {
-  assert.equal(exportFilename("Q3-2026 (2026-06-30)", "xlsx"), "MM Whitespace Q3-2026.xlsx");
-  assert.equal(exportFilename("Q3-2026", "csv"), "MM Whitespace Q3-2026.csv");
-  assert.equal(exportFilename('bad"name;', "xlsx"), "MM Whitespace bad-name-.xlsx",
+  assert.equal(exportFilename("Q3-2026 (2026-06-30)", "xlsx"), "Market Assessment Tool Q3-2026.xlsx");
+  assert.equal(exportFilename("Q3-2026", "csv"), "Market Assessment Tool Q3-2026.csv");
+  assert.equal(exportFilename('bad"name;', "xlsx"), "Market Assessment Tool bad-name-.xlsx",
                "nothing that could end the content-disposition header early");
 });
 
 test("the workbook is built, and it is a workbook", { skip: !hasPython }, async () => {
   const { db } = await seeded();
   const file = await exportWorkbook(db);
-  assert.equal(file.filename, "MM Whitespace Q3-2026.xlsx");
+  assert.equal(file.filename, "Market Assessment Tool Q3-2026.xlsx");
   assert.match(file.contentType, /spreadsheetml/);
   assert.equal(file.bytes.subarray(0, 2).toString("latin1"), "PK", "an .xlsx is a zip");
   assert.ok(file.bytes.byteLength > 5_000, `only ${file.bytes.byteLength} bytes`);
@@ -110,7 +110,7 @@ test("the workbook is built, and it is a workbook", { skip: !hasPython }, async 
   // (tests/test_export_service.py); a zip's bytes say nothing from here.
 
   const csv = await exportWorkbook(db, { format: "csv" });
-  assert.equal(csv.filename, "MM Whitespace Q3-2026.csv");
+  assert.equal(csv.filename, "Market Assessment Tool Q3-2026.csv");
   const text = csv.bytes.toString("utf8");
   assert.match(text, /^# .*internal use/im, "the licence notices lead the file");
   assert.match(text, /Northco Mining Corp\./);

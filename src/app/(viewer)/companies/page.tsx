@@ -9,6 +9,7 @@ import Roster from "./Roster.tsx";
 import Callout from "../../_ui/Callout.tsx";
 import Icon from "../../_ui/Icon.tsx";
 import Page from "../../_ui/Page.tsx";
+import AiNotice from "../../_ui/AiNotice.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Companies" };
@@ -46,6 +47,7 @@ export default async function Companies(
         Every company in the published population. Open one before a pursuit conversation:
         its tier, the rule that produced it, and the evidence behind every researched value.
       </p>
+      <AiNotice compact />
       {duplicates > 0 && (
         <Callout tone="warn" title={`${duplicates} possible duplicate${duplicates === 1 ? "" : "s"}`}
                  icon="merge"

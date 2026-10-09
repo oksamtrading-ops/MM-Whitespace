@@ -81,9 +81,10 @@ const EXEMPT = new Map([
   ["tools", "the review grids and the roster share one toolbar"],
   ["ev", "evidence reads the same wherever it is shown"],
   ["evidence", "evidence reads the same wherever it is shown"],
-  // Sign-in and the password screen are deliberately one flow.
-  ["signin", "the password screen is part of the sign-in flow"],
-  ["lockup", "the password screen is part of the sign-in flow"],
+  // The front door is one flow: the landing page, sign-in and the password
+  // screen wear the same lockup, and every sign-in ends on the landing page.
+  ["signin", "the landing page, sign-in and the password screen are one front door"],
+  ["lockup", "the landing page, sign-in and the password screen are one front door"],
   ["credentials", "sign-in and the password screen ask for the same kind of thing"],
   // A refusal is a refusal wherever it is raised.
   ["refusal", "a refusal reads the same whoever raises it"],

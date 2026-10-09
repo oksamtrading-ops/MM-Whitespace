@@ -41,6 +41,18 @@ VENDOR_NOTICE = (
 )
 INTERNAL_USE = "INTERNAL USE ONLY - contains licensed third-party data."
 
+# How the researched values were produced. Deliberately generic: it names no AI
+# tool or vendor, because more than one may be used, and it claims nothing the
+# product does not do -- every researched value is reviewed before publication
+# and carries its source. src/lib/publish/notices.ts holds the same words, and
+# its test holds the two in step and refuses a tool's name in either.
+AI_NOTICE = (
+    "Some of the information in this tool is researched with the help of artificial "
+    "intelligence. A person reviews every researched value before it is published, and "
+    "each one shows the source it came from. It can still be incomplete or wrong, so "
+    "check the source before you rely on it."
+)
+
 REGION_COLUMNS = ["AFRICA", "ASIA", "AUS/NZ/PNG", "CANADA",
                   "LATIN AMERICA", "OTHER", "UK/EUROPE", "USA"]
 ABROAD_COLUMNS = [r for r in REGION_COLUMNS if r != "CANADA"]
@@ -480,7 +492,7 @@ def _cover(wb, data):
     ws.column_dimensions["B"].width = 34
     ws.column_dimensions["C"].width = 92
 
-    title = put(ws, 2, 2, "Mining Whitespace Analysis")
+    title = put(ws, 2, 2, "Market Assessment Tool")
     title.font = Font(bold=True, size=16)
     for col in (2, 3):
         ws.cell(row=2, column=col).border = HEADER_BORDER
@@ -511,6 +523,9 @@ def _cover(wb, data):
     put(ws, r, 2, INTERNAL_USE).font = BOLD; r += 1
     put(ws, r, 2, EXCHANGE_NOTICE); r += 1
     put(ws, r, 2, VENDOR_NOTICE); r += 2
+
+    _header(ws, r, 2, "How the values were produced"); r += 1
+    put(ws, r, 2, AI_NOTICE); r += 2
 
     _header(ws, r, 2, "If the numbers look different"); r += 1
     put(ws, r, 2,
@@ -864,7 +879,7 @@ def write_flat_csv(data: Dict[str, Any], path: str) -> str:
     """Same injection guard as the workbook, same notices in the header."""
     from .xlsxwrite import needs_quote_prefix, sanitize
     with open(path, "w", newline="", encoding="utf-8") as fh:
-        fh.write("# %s\n# %s\n# %s\n" % (INTERNAL_USE, EXCHANGE_NOTICE, VENDOR_NOTICE))
+        fh.write("# %s\n# %s\n# %s\n# %s\n" % (INTERNAL_USE, EXCHANGE_NOTICE, VENDOR_NOTICE, AI_NOTICE))
         writer = csv.DictWriter(fh, fieldnames=FLAT_COLUMNS)
         writer.writeheader()
         for row in flat_rows(data):

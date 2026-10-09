@@ -136,10 +136,10 @@ export async function exportPayload(db: Sql, periodId?: string): Promise<ExportP
   };
 }
 
-/** "Q3-2026 (2026-05-31)" -> "MM Whitespace Q3-2026.xlsx". */
+/** "Q3-2026 (2026-05-31)" -> "Market Assessment Tool Q3-2026.xlsx". */
 export function exportFilename(label: string, extension: "xlsx" | "csv"): string {
   const name = String(label).replace(/\s*\([^)]*\)\s*$/, "").trim() || "period";
-  return `MM Whitespace ${name.replace(/[^A-Za-z0-9 ._-]/g, "-")}.${extension}`;
+  return `Market Assessment Tool ${name.replace(/[^A-Za-z0-9 ._-]/g, "-")}.${extension}`;
 }
 
 /** The file itself: payload out, bytes back, from the Python that builds it. */

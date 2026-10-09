@@ -1,4 +1,8 @@
-# Mining Whitespace Intelligence Tool
+# Market Assessment Tool
+
+Formerly the Mining Whitespace Intelligence Tool. The product was renamed on 9
+October 2026; "whitespace" survives as the domain term for companies Deloitte
+does not audit, and in the source workbook's own name.
 
 Deloitte Canada, Mining & Metals. Design in [`docs/DESIGN.md`](docs/DESIGN.md);
 decisions in [`docs/decisions/`](docs/decisions/).

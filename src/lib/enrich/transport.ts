@@ -20,7 +20,7 @@ import { FetchRefused, isBlockedAddress, MAX_BYTES, type Http, type Resolver } f
 
 /** Who is asking. SEC EDGAR requires a contact in it and blocks requests without one. */
 export function userAgentFor(host: string, contact: string | undefined = process.env.MM_SEC_CONTACT): string {
-  const base = "MM-Whitespace-Research/1.0 (Deloitte Canada Mining & Metals pilot)";
+  const base = "MM-Market-Assessment-Research/1.0 (Deloitte Canada Mining & Metals pilot)";
   if (/(^|\.)sec\.gov$/i.test(host)) {
     if (!contact) {
       throw new FetchRefused("sec_contact_missing", `https://${host}`,

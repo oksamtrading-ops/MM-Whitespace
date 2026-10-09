@@ -5,6 +5,7 @@ import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { proofLine, type Bar } from "../../../lib/publish/views.ts";
 import Bars from "../../_ui/Bars.tsx";
 import Callout from "../../_ui/Callout.tsx";
+import AiNotice from "../../_ui/AiNotice.tsx";
 import Composition, { type Part } from "../../_ui/Composition.tsx";
 import Donut, { type Slice } from "../../_ui/Donut.tsx";
 import DotPlot from "../../_ui/DotPlot.tsx";
@@ -278,6 +279,15 @@ export default async function Styleguide() {
                               <button type="button" className="btn sm quiet">Publish anyway</button></>}>
             You may publish through it with a reason, which is printed on the dashboard header.
           </Callout>
+
+          <h3>The AI notice</h3>
+          <p className="note" style={{ marginTop: 0 }}>
+            One wording, <code>AI_NOTICE</code>, shared with the exported workbook and naming no
+            tool. Stated as a callout on the landing page, where everybody arrives; one quiet line
+            on the working screens.
+          </p>
+          <AiNotice />
+          <AiNotice compact />
 
           <h3>Panels and the stat row</h3>
           <Panel icon="database" title="Q3 2026 · revision 1" right="Published 10 Sep 2026" bare>

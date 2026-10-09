@@ -13,6 +13,7 @@ import Section from "../../../_ui/Section.tsx";
 import Callout from "../../../_ui/Callout.tsx";
 import Icon from "../../../_ui/Icon.tsx";
 import Page from "../../../_ui/Page.tsx";
+import AiNotice from "../../../_ui/AiNotice.tsx";
 import { fmtDate, periodName } from "../../../_ui/format.ts";
 
 export const dynamic = "force-dynamic";
@@ -107,6 +108,8 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
             </>
           </Callout>
         )}
+
+        <AiNotice compact />
 
         {/* The two things a partner opened this page to learn. */}
         <p className="verdict rise">

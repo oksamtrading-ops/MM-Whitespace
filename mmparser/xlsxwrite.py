@@ -78,7 +78,7 @@ def put(ws, row: int, column: int, value: Any, *,
         cell.number_format = number_format
     if comment:
         from openpyxl.comments import Comment
-        cell.comment = Comment(sanitize(comment), "Mining Whitespace Tool")
+        cell.comment = Comment(sanitize(comment), "Market Assessment Tool")
     return cell
 
 

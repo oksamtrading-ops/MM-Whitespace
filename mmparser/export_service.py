@@ -90,11 +90,11 @@ def flat_csv_text(data):
     """The flat one-row-per-company CSV, as text. Same injection guard."""
     import csv
 
-    from .export import EXCHANGE_NOTICE, INTERNAL_USE, VENDOR_NOTICE
+    from .export import AI_NOTICE, EXCHANGE_NOTICE, INTERNAL_USE, VENDOR_NOTICE
     from .xlsxwrite import needs_quote_prefix, sanitize
 
     out = io.StringIO()
-    out.write("# %s\n# %s\n# %s\n" % (INTERNAL_USE, EXCHANGE_NOTICE, VENDOR_NOTICE))
+    out.write("# %s\n# %s\n# %s\n# %s\n" % (INTERNAL_USE, EXCHANGE_NOTICE, VENDOR_NOTICE, AI_NOTICE))
     writer = csv.DictWriter(out, fieldnames=FLAT_COLUMNS)
     writer.writeheader()
     for row in flat_rows(normalise(data)):
