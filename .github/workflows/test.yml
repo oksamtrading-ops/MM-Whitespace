@@ -19,7 +19,7 @@ jobs:
     name: no licensed workbook is tracked
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Assert only the synthetic fixture is tracked
@@ -48,8 +48,8 @@ jobs:
     name: libraries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -65,8 +65,8 @@ jobs:
     name: every endpoint asserts a role
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       # Middleware is not an authorisation boundary and a Server Action is
@@ -81,8 +81,8 @@ jobs:
     name: the application builds and type-checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -93,12 +93,12 @@ jobs:
     name: five journeys and six routes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: pip install openpyxl
@@ -108,16 +108,28 @@ jobs:
       - run: npm run e2e
 
   python:
-    name: parser
-    runs-on: ubuntu-latest
+    # Named explicitly so the check names stay "parser (3.9)" and
+    # "parser (3.12)" rather than gaining the runner image.
+    name: parser (${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         # 3.9 is the floor this code targets; the upper version catches drift.
-        python-version: ['3.9', '3.12']
+        #
+        # 3.9 is pinned to Ubuntu 24.04 because setup-python has no 3.9 build
+        # for 26.04, which ubuntu-latest becomes from 19 October 2026 -- 3.9
+        # ended upstream at 3.9.25, before that image existed. When GitHub
+        # retires ubuntu-24.04 this floor can no longer be tested on a hosted
+        # runner, and has to be raised or tested another way.
+        include:
+          - python-version: '3.9'
+            os: ubuntu-24.04
+          - python-version: '3.12'
+            os: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install openpyxl
@@ -127,8 +139,8 @@ jobs:
     name: the fixture rebuilds from source
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: pip install openpyxl
