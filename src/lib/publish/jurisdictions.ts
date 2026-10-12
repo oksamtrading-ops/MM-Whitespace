@@ -82,11 +82,15 @@ export function hqJurisdiction(region: string | null | undefined): {
   const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
   const country = parts[parts.length - 1];
   const sub = parts.length > 1 ? parts.slice(0, -1).join(", ") : null;
+  // Accents folded: research reads a French filing as "Québec, Canada", the
+  // workbook writes "Quebec", and both are QC. Without the fold, three of
+  // Q3-2026's companies read as "Canada" and fell out of a Quebec filter.
+  const fold = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
   const codeOf = (map: Record<string, string>, name: string | null) => {
     if (!name) return null;
     const up = name.toUpperCase();
     if (up in map) return up;
-    return Object.entries(map).find(([, n]) => n.toLowerCase() === name.toLowerCase())?.[0] ?? null;
+    return Object.entries(map).find(([, n]) => fold(n) === fold(name))?.[0] ?? null;
   };
   if (/^canada$/i.test(country)) {
     const code = codeOf(CANADA_SUBDIVISIONS, sub);

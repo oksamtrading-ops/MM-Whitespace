@@ -48,3 +48,10 @@ test("a head office reads short, filters by jurisdiction, and groups by country"
   assert.equal(hqJurisdiction("Western Australia, Australia")?.key, "Australia", "abroad, the country is the jurisdiction");
   assert.equal(hqJurisdiction(""), null);
 });
+
+test("a head office spelled with its accents is the same place", () => {
+  // Research read French filings and wrote "Québec"; the workbook writes "Quebec".
+  assert.equal(hqJurisdiction("Québec, Canada")?.key, "CA:QC");
+  assert.equal(hqJurisdiction("Québec, Canada")?.short, "QC");
+  assert.equal(hqJurisdiction("Colorado, United States of America")?.key, "US:CO");
+});
