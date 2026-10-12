@@ -28,7 +28,7 @@ import {
   type RunOptions,
 } from "./worker.ts";
 import {
-  BATCH_ENABLED, BATCH_SIZE, openBatches, pollBatch, sdkBatchVendor, settleBatch,
+  BATCH_ENABLED, BATCH_SIZE, openBatchCount, openBatches, pollBatch, sdkBatchVendor, settleBatch,
   submitBatch, type BatchVendor, type Submission,
 } from "./batch.ts";
 
@@ -154,8 +154,12 @@ export async function drain(db: Sql, opts: DrainOptions): Promise<DrainOutcome> 
     };
 
     // Answers first: a batch already paid for is worth more than a job not yet
-    // started, and its companies have been waiting longest.
-    if (batching) settled += await settleReady(db, await batchVendor(), opts, now);
+    // started, and its companies have been waiting longest. Read whenever one
+    // is open, batching or not: turning batching off must not strand a batch
+    // already sent, whose jobs nothing else will ever move.
+    if (batching || await openBatchCount(db) > 0) {
+      settled += await settleReady(db, await batchVendor(), opts, now);
+    }
 
     let emptyClaims = 0;
     try {

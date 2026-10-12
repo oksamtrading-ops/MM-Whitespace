@@ -591,6 +591,33 @@ test("BATCH: an expired request goes back to the queue and is charged no attempt
     "awaiting_batch", "it is asked again");
 });
 
+test("BATCH: a batch sent before batching was switched off is still read, and what it hands back runs at once", async () => {
+  // Production was switched to immediate runs mid-trial. The drain read open
+  // batches only while batching was on, so the trial's batch would have had
+  // no reader, and its jobs would have waited on an answer nothing collected.
+  // Expired and cancelled requests take the same path; the fake can expire.
+  for (const handedBack of [false, true]) {
+    const { db, periodId, northco } = await seeded();
+    const { v } = vendor();
+    const { fetchDeps } = world();
+    const live = deps(db, v, fetchDeps);
+    const { runId } = await createRun(db, periodId, [northco.id],
+      { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+    const { vendor: bv } = batchVendor(v, { expire: handedBack });
+    await drainBatched(db, live, bv);
+    const state = async () =>
+      (await db.get("select state from enrichment_jobs where run_id = ?", runId) as { state: string }).state;
+    assert.equal(await state(), "awaiting_batch", "sent while batching was on");
+
+    await drain(db, { deadlineSeconds: 30, mode: "live", cassetteDir: CASSETTE_DIR,
+                      batch: false, batchVendor: bv, live, workerId: `w-${Math.random()}` });
+    assert.equal(await state(), "completed",
+                 handedBack ? "handed back, then researched at once" : "its answer was read");
+    const batches = await db.all("select state from enrichment_batches") as Array<{ state: string }>;
+    assert.deepEqual(batches.map((b) => b.state), ["settled"], "and nothing was sent to a new batch");
+  }
+});
+
 test("a live run stamps both halves on the run AND on every finding it makes", async () => {
   // The unit above proves the composer; this proves the wiring, which is the
   // half that was actually wrong. worker.ts recorded prompt.ts's constant at

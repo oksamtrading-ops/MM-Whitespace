@@ -17,7 +17,7 @@
 > Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
 > Everything on `main` is deployed; migrations are applied through `0032`.
-> 157 commits on `main`. To start a new session, paste everything below the line.
+> 158 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -417,6 +417,20 @@ review approved. What changed instead:
   because nothing sets the run's model. Opus pass-1 findings before 12 October
   are labelled Sonnet too. Tell them apart by run date.
 
+**Immediate runs (12 October).** The pass-1 trial's batch was still processing
+after 20 minutes, where every earlier batch had finished in 2 to 10, and the
+Batch API promises only 24 hours. Samuel chose immediate runs: the trial's
+batch was cancelled in the Anthropic Console and `MM_ENRICH_BATCH` removed in
+Vercel. Two things to know:
+- **It costs more.** Batching halves token prices but not search fees. Across
+  the remaining research, immediate runs cost about US$20 more.
+- **A fix shipped with it.** The drain read open batches only while batching
+  was on, so switching it off would have stranded any batch already sent, and
+  nothing would ever have moved its jobs. It now reads an open batch either
+  way, and anything the batch hands back (cancelled or expired) is then
+  researched at once. A test covers both the answered and the handed-back
+  case.
+
 **Flagged in passing, not fixed:**
 - ~~**A Viewer still sees the Deloitte market**~~ on a company's page —
   **fixed 12 October.** `readCompanyProfile` now drops Deloitte-internal fields
@@ -653,8 +667,11 @@ seconds.
   none at all, so every pursuit tag rendered bare — the contrast check only
   verifies pairs it is told about.
 
-**The Batch API is ON in production and proven end to end.**
-`MM_ENRICH_BATCH=1` is set and deployed. A three-company smoke run took the
+**The Batch API was ON in production, proven end to end, and switched OFF on
+12 October** (see *Immediate runs* below), at Samuel's choice: research now
+runs at once, at full token price. Putting `MM_ENRICH_BATCH=1` back and
+redeploying turns it on again. As first set up, `MM_ENRICH_BATCH=1` was
+deployed. A three-company smoke run took the
 whole path against the real vendor — submit, a real `msgbatch` id, the tick
 counting an open batch as work, the poll, the download, the resume, findings
 persisted — in about five minutes:
@@ -824,7 +841,7 @@ and the machinery is in git at `fc00769^`.
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |
 | `MM_CRON_SECRET`, `CRON_SECRET` | same value | The per-minute tick in `vercel.json`, and the worker endpoint |
 | `MM_ENRICH_MODE` | `live` | Set 11 September 2026. Never `replay` in production: it would abandon every real company |
-| `MM_ENRICH_BATCH` | `1` | **Set 13 September 2026 and proven end to end** — two real batches have settled. Sends each pass's model call to the Batch API, where the TOKENS are half price and the web searches are not. Migrations `0016`/`0017` are applied |
+| `MM_ENRICH_BATCH` | **removed 12 October 2026** | Runs are immediate. It was `1` from 13 September, proven end to end — two real batches had settled. Sends each pass's model call to the Batch API, where the TOKENS are half price and the web searches are not. Migrations `0016`/`0017` are applied |
 | `ANTHROPIC_API_KEY` | model key | **Sensitive**, added 11 September 2026, from workspace `mm-whitespace-prod` (`wrkspc_01W9ytyaac9BqDzPzLkxNAKT`) with a $100/month limit. Unused until `LIVE_ENABLED` is true |
 | `MM_SEC_CONTACT` | contact email | **Sensitive**, set 11 September 2026. SEC EDGAR's required User-Agent contact. Live mode refuses to start without it |
 
