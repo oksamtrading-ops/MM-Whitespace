@@ -6,16 +6,18 @@
 > produced. All three releases built for the client's requests are deployed:
 > **A** (landing page, rename), **B** (the new companies table, with sources on
 > every value — complete with **revision 9**, published 12 October) and **C**
-> (Incumbent ERP). What C still needs is research and review: the pass-2
-> re-run, then revision 10 (item 1 below).
+> (Incumbent ERP). C's pass-2 re-run finished on 12 October; what it needs
+> now is review, then revision 10 (item 1 below). That run found a bug in how
+> batch answers are saved, and **the fix is deployed** the same day.
 >
 > Q3-2026 is at **revision 9**: 4,030 values frozen, every one with a citation,
 > stage rows for the 40 researched companies, and a head office for all 259.
-> 240 decisions, 34 companies researched, US$11.7563 spent before C's re-run.
+> 240 decisions, 34 companies researched, US$13.2333 spent (US$1.477 of it on
+> C's re-run).
 > Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
 > Everything on `main` is deployed; migrations are applied through `0032`.
-> 153 commits on `main`. To start a new session, paste everything below the line.
+> 155 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -45,19 +47,27 @@ anything.
 Release C is deployed (12 October) and migration `0032` is applied. What it
 needs now is data:
 
-1. **The pass-2 re-run**: an Admin on `/runs`, pass 2, scope "Every company"
-   — the ~33 companies with a trusted website, about US$2.50 batched. Started
-   right after the deploy on 12 October; `/runs` shows its state. A batch can
-   take far longer than a synchronous run: check `enrichment_batches` before
-   treating it as stalled.
-2. **Review the ERP findings** on `/review/incumbent_erp`. Expect few values
-   and many abstentions: a company names its ERP mostly when it changes
-   internal controls. A quote that does not name the system arrives as an
+1. ~~**The pass-2 re-run**~~ — **done 12 October**. Run `496db939…`: 28 of 28
+   jobs, US$1.477, 272 findings (191 proposed, 62 abstained, 10 anchor
+   mismatches, 9 unsupported).
+   - It stalled once, on the bug described under *The batch fix* below,
+     cleared by hand and since fixed in code.
+   - **Franco-Nevada was researched twice** because of it. Its first attempt
+     left two findings behind (an auditor abstention and an unsupported stage);
+     its second attempt has the full set. Review FNV from attempt 2.
+2. **Review the ERP findings** on `/review/incumbent_erp`. As expected, few
+   values and many abstentions: **one value, Cameco's SAP S/4HANA** (evidence
+   0.79), and **26 abstentions**. A company names its ERP mostly when it
+   changes internal controls. Also look at each field's **Newer research**
+   tab (values accepted, then researched again), where this run may disagree
+   with what was already accepted. A quote that does not name the system arrives as an
    abstention by design. An override must type the public page after the
    system (`SAP S/4HANA https://…`) — refused otherwise, because an ERP known
    from an engagement is client information.
 3. **Publish revision 10** on `/publish`, with an amendment reason; it will
-   need the blocked-gate override as 6–9 did.
+   need the blocked-gate override as 6–9 did. **The override's reason needs new
+   numbers.** This run has 9 unsupported claims out of 210, so the line used
+   for 6–9, that the three most recent runs have none, is no longer true.
 4. `pg:smoke` from Samuel's own terminal — never yet run against this code:
 
    ```bash
@@ -128,8 +138,8 @@ source" is true on screen.
   **overdue since 30 September**.
 
 **6. Run 3**, the remaining 229 companies at about US$41.22 batched. Release C
-is deployed, so it will research ERP too; run it once the ERP re-run's
-results have been looked at.
+is deployed, so it will research ERP too, and the batch fix it was waiting on
+is deployed. Run it once the ERP re-run's results have been looked at.
 
 **The roster, as at 12 October 2026** (read the live state from `/access`):
 
@@ -318,12 +328,50 @@ two instructions of his own, are built:
 - **Not bulk-acceptable yet.**
 - **Live rules move to `2026-10-09.1`.**
 
+**The batch fix (deployed 12 October, `037d5b1`).** C's pass-2 re-run stalled,
+and the cause was in how batched answers are saved.
+- **What happened.**
+  - Franco-Nevada's first answer named its auditor twice. Findings are unique
+    per field and attempt, so the second insert failed the save part way.
+  - That left the job in `persisting`, still holding the lease it was
+    submitted under, which had expired hours before. The tick requeued it, and
+    the company was researched and paid for a second time.
+  - Its first answer, still waiting in batch `msgbatch_01SsmAWqCn9JaNksNfuYECYa`,
+    then threw on every worker (`completed → persisting` is not a legal move).
+    The error was swallowed, and IVN's and NTR's answers waited behind it.
+  - Cleared by hand on 12 October: the stale request was marked cancelled
+    (audited as `batch_request_superseded`) and the run completed.
+- **What changed** (`worker.ts`, `batch.ts`, `drain.ts`):
+  - **One finding per field.** The one the gate let through wins, then any
+    other claim, then an abstention; ties go to stronger evidence, then the
+    model's confidence. The full answer stays in `enrichment_job_results`.
+  - **A save is all or nothing.** Findings and the job's move to `completed`
+    are one transaction, so `persisting` is never seen outside it and the
+    reaper cannot catch a job mid-save. Documents are inserted in hash order so
+    that two saves cannot deadlock.
+  - **A batched answer that fails to save is retried from the stored answer**,
+    without asking the model again or charging twice. Each failure costs the
+    job an attempt; once they are spent it is dead-lettered, so a batch cannot
+    retry the same failure on every tick.
+  - **An answer the job has moved past is set aside.** That covers a job
+    finished by a later attempt, waiting on a later batch, or halted. The
+    request is marked cancelled with the reason, and what it cost goes on the
+    run.
+  - **A result that throws stays open**, with its error on the request and
+    the batch rows and in the logs, and the rest of the batch is still read.
+- **Not covered by tests:** the Postgres engine (`pg:smoke`), the hash order,
+  and the guard for two workers settling the same batch at once. SQLite cannot
+  run two workers at the same time.
+- **Left as it is:** a halted job's paid-for answer is set aside, not used, so
+  resuming the run researches that company again.
+
 **Checks on each branch:**
 
 | Branch | Node | Python | End-to-end |
 |---|---|---|---|
 | Release A | 451 | 73 | 162 |
 | Release C | 489 | 85 | 173 |
+| Batch fix | 499 | 85 | 173 |
 
 The auth, class and contrast checks and the build pass on both. Each new
 guard was watched failing against a planted bug, except where the traps below
@@ -1014,6 +1062,17 @@ from GitHub. `npx vercel redeploy <failed deployment URL>` built it
 cleanly. That commit was the only one whose summary line carried a non-ASCII
 character ("Québec"); unproven as the cause, and cheap to avoid.
 
+**Vercel can refuse a commit by its author's email.** On 12 October the push
+of `037d5b1` never deployed, and a CLI deploy of it was *Blocked*: "the commit
+email samowusuking@gmail.com could not be matched to a Git account". The
+global git address on Samuel's Mac is that one, and `2bf0d77`, an hour
+earlier, had the same author and deployed, so the check is not consistent.
+The next commit was authored as `oksamtrading@gmail.com`, the address GitHub
+itself puts on its own commits here, and Vercel builds the newest commit, so
+that carried the fix out with it. The lasting fix is Samuel's: add
+samowusuking@gmail.com as a verified email on the `oksamtrading-ops` GitHub
+account.
+
 **`git checkout -- <file>` while planting a bug also discards the fix.** On
 12 October restoring a planted file that way threw away the uncommitted
 change it was planted against. Copy the file aside and copy it back.
@@ -1026,6 +1085,13 @@ loads the secret (`read -rs`), not a placeholder for it.
 suite needs `npm ci` since `postgres.ts` imported `@vercel/functions`. Fixed
 (`c6a54ef`); a red CI is a signal again, so keep it one.
 
+**A batch that never settles used to say nothing.** Until `037d5b1` a result
+that threw was swallowed, and the batch stayed open with no error anywhere.
+Now read `last_error` on `enrichment_batch_requests` and `enrichment_batches`,
+or search the Vercel logs for `left open`. A request still `submitted` with an
+error is retried by the next worker; one the job has moved past is cancelled
+on its own.
+
 **`/Users/oksam` is itself a git repository**, with the Archieva folder inside
 it. Never run `git add -A` outside this project's folder.
 
@@ -1036,10 +1102,10 @@ As at 12 October 2026, in the order worth doing:
 | | | Whose |
 |---|---|---|
 | **a** | ~~Release B~~ — done 12 October, revision 9 published | — |
-| **b** | **Finish Release C**: the pass-2 re-run's ERP findings reviewed, then revision 10; `pg:smoke` | Samuel and Kay; `pg:smoke` in Samuel's terminal |
+| **b** | **Finish Release C**: review the pass-2 re-run (done 12 Oct), then revision 10 with fresh numbers in the override; `pg:smoke` | Samuel and Kay; `pg:smoke` in Samuel's terminal |
 | **c** | **Unblock the second Admin.** A Deloitte address with no account, or a forgotten password | Samuel, on `/access` |
 | **d** | **Review**: 67 undecided pairs, the two flagged judgements, the Barrick action overdue since 30 Sep | Samuel and Kay |
-| **e** | **Run 3**, the remaining 229 companies, about US$41.22 batched | Samuel starts it on `/runs`, after Release C |
+| **e** | **Run 3**, the remaining 229 companies, about US$41.22 batched. The batch fix is deployed, so nothing blocks it | Samuel starts it on `/runs`, after revision 10 |
 | **f** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
 | **g** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
 | **h** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |

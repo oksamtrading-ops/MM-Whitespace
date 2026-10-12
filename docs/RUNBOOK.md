@@ -59,6 +59,7 @@ Read it in this order.
 | Jobs in `claimed`/`researching` with a **past** `lease_expires_at` | A worker died holding them. This is the ordinary case |
 | Every slot leased, all `lease_expires_at` in the past | The slots leaked with the workers |
 | Jobs in `awaiting_batch` and no movement | The batch is still running, or its results were never downloaded |
+| A batch request still `submitted` with a `last_error` | Its answer arrived and could not be applied. The next worker retries it from the stored answer; after the job's attempts are spent it is dead-lettered |
 | `attempts` at `max_attempts` | These are not stalled, they are exhausted — look in `last_error` |
 
 ### Fix
