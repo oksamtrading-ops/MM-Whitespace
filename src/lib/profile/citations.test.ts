@@ -6,7 +6,7 @@ import { commitPeriod, type ParsedCompany } from "../db/commit.ts";
 import { publishPeriod, PublishUncited } from "../publish/snapshot.ts";
 import { recordDecision } from "../review/decide.ts";
 import { standingValueDecision, standingValueDecisions } from "../review/resolve.ts";
-import { citationsForPeriod, citeKey, safeHref, uncited, urlIn } from "./citations.ts";
+import { citationsForPeriod, citeKey, documentLabel, safeHref, uncited, urlIn } from "./citations.ts";
 import { listCompanies, readCompanyProfile } from "./company.ts";
 
 function company(over: Partial<ParsedCompany> = {}): ParsedCompany {
@@ -199,4 +199,14 @@ test("an ERP override must name its public source, and that source is its citati
   const [row] = await listCompanies(db, { allowDraft: true });
   assert.equal(row.erp, "SAP S/4HANA");
   assert.equal(row.sources.incumbent_erp, "manual_override");
+});
+
+test("a document is named by its title, else its file, and only last by its host", () => {
+  const url = "https://s21.q4cdn.com/753203377/files/doc_financials/2025/sr/Management-Information-Circular-2025.pdf";
+  assert.equal(documentLabel({ url, title: null, docType: null }), "Management Information Circular 2025 (PDF)");
+  assert.equal(documentLabel({ url, title: "2025 Circular", docType: null }), "2025 Circular");
+  assert.equal(documentLabel({ url, title: null, docType: "annual_information_form" }), "Annual information form");
+  assert.equal(documentLabel({ url: "https://www.northco.example/", title: null, docType: null }), "northco.example");
+  assert.equal(documentLabel({ url: "https://northco.example/investors/index.html", title: null, docType: null }), "northco.example");
+  assert.equal(documentLabel({ url: null, title: null, docType: null }), "A filing");
 });

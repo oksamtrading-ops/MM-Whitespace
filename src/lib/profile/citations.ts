@@ -53,6 +53,31 @@ export type ValueCitation = {
 
 export const citeKey = (companyId: string, fieldKey: string) => `${companyId}|${fieldKey}`;
 
+/**
+ * What to call a document in its citation. Its recorded title or type when
+ * there is one; otherwise the file's own name, which says far more than the
+ * host does -- "Management Information Circular 2025 (PDF)", not
+ * "s21.q4cdn.com", which is the investor-relations CDN half the industry uses.
+ * The host is the last resort.
+ */
+export function documentLabel(d: Pick<DocumentRef, "url" | "title" | "docType">): string {
+  if (d.title?.trim()) return d.title.trim();
+  if (d.docType?.trim()) return d.docType.trim().replace(/_/g, " ").replace(/^./, (ch) => ch.toUpperCase());
+  if (!d.url) return "A filing";
+  try {
+    const u = new URL(d.url);
+    const last = decodeURIComponent(u.pathname.split("/").filter(Boolean).pop() ?? "");
+    const ext = last.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toLowerCase() ?? null;
+    const stem = (ext ? last.slice(0, -ext.length - 1) : last).replace(/[-_+]+/g, " ").replace(/\s+/g, " ").trim();
+    if (stem.length >= 4 && /[a-z]/i.test(stem) && !/^(index|default|home)$/i.test(stem)) {
+      return ext === "pdf" ? `${stem} (PDF)` : stem;
+    }
+    return u.hostname.replace(/^www\./, "");
+  } catch {
+    return d.url;
+  }
+}
+
 /** Only links that are links. */
 export function safeHref(url: unknown): string | null {
   return typeof url === "string" && /^https?:\/\/[^\s]+$/i.test(url.trim()) ? url.trim() : null;

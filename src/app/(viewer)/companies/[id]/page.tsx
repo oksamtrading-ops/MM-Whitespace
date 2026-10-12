@@ -7,7 +7,7 @@ import {
   readCompanyProfile, SOURCE_LABEL, unpublishedChanges, type ProfileValue,
 } from "../../../../lib/profile/company.ts";
 import { evidenceBand } from "../../../../lib/review/decide.ts";
-import type { Citation } from "../../../../lib/profile/citations.ts";
+import { documentLabel, type Citation } from "../../../../lib/profile/citations.ts";
 import { STAGE_LABEL, type StageEvidence } from "../../../../lib/profile/roster.ts";
 import type { Stage } from "../../../../lib/format/fields.ts";
 import Facts from "../../../_ui/Facts.tsx";
@@ -345,10 +345,10 @@ function CitationLine({ citation: c, showReasons }: { citation: Citation | null;
             <span key={i} className="citedoc">
               {d.url
                 ? <a href={d.url} target="_blank" rel="noopener noreferrer">
-                    {d.title || d.docType || host(d.url)}<Icon name="external-link" size={11} />
+                    {documentLabel(d)}<Icon name="external-link" size={11} />
                   </a>
-                : (d.title || d.docType || "A filing")}
-              {d.url && <span className="dim">{` · ${host(d.url)}`}</span>}
+                : documentLabel(d)}
+              {d.url && documentLabel(d) !== host(d.url) && <span className="dim">{` · ${host(d.url)}`}</span>}
               {d.retrievedAt && <span className="dim">{` · read ${fmtDate(d.retrievedAt)}`}</span>}
             </span>
           ))}
