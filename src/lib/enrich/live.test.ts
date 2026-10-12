@@ -11,10 +11,11 @@ import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
   BATCH_DISCOUNT, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
-  canonicalAuditor, collectSearchUrls, kindFromUrl, linkedFilings, Meter, toFinding, windowsOf,
+  canonicalAuditor, collectSearchUrls, discoveryRequest, kindFromUrl, linkedFilings, Meter, toFinding, windowsOf,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
 import { EgressViolation, PROMPT_VERSION } from "./prompt.ts";
+import { DISCOVERY_MAX_SEARCHES, ROUTE_CONFIG } from "./client.ts";
 import { extractPdf } from "./pdf.ts";
 import { createRun, JobFailed, loadDocuments, processJob, storeDocument } from "./worker.ts";
 import { seedFixtureDatabase, PERIOD_AS_OF } from "../../../tests/cassettes/build_cassettes.mjs";
@@ -382,6 +383,22 @@ test("cost counts tokens at each model's price and every search at a cent", () =
   m.add("claude-opus-5", { input_tokens: 0, output_tokens: 0, server_tool_use: { web_search_requests: 3 } });
   assert.equal(m.cost.toFixed(2), "3.23");
   assert.equal(m.usage.requests, 2);
+});
+
+test("discovery asks the model and the search cap the route names, from one place", () => {
+  // The request wrote its own six beside the route's six, so a change to one
+  // would have moved what /runs quotes and not what the model was allowed.
+  const request = discoveryRequest({
+    companyId: "c1", canonicalName: "Northco Mining Corp.", aliases: [], rootTicker: "NRTH",
+    exchange: "TSX", interlistedVenues: [], headOfficeLocation: null, headOfficeRegion: null,
+    knownRegions: {}, knownCommodities: [], knownWebsite: null, periodAsOf: PERIOD_AS_OF,
+  });
+  assert.equal(request.model, ROUTE_CONFIG.discovery.model);
+  const search = (request.tools as Array<Record<string, unknown>>).find((t) => t.name === "web_search")!;
+  assert.equal(search.max_uses, DISCOVERY_MAX_SEARCHES);
+  assert.equal(ROUTE_CONFIG.discovery.tools[0].max_uses, DISCOVERY_MAX_SEARCHES);
+  assert.deepEqual(search.blocked_domains, ["sedarplus.ca", "sedarplus.com", "sedar.com"],
+                   "SEDAR+ stays blocked whatever the cap");
 });
 
 test("a finding records the prompt that was actually put to the model", () => {

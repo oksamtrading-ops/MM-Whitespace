@@ -14,20 +14,35 @@ import { Cassettes, cassetteKey, type Mode, type Recording } from "./cassette.ts
 import { egressScan, type RestrictionSet, type Route } from "./prompt.ts";
 
 /**
+ * How many web searches discovery may make for one company.
+ *
+ * Six until 12 October 2026, and every one of 35 pass-1 jobs used all six.
+ * Searches cost a cent each that the Batch API does not discount, and each
+ * result's page content is cached and re-read on every later turn: at six,
+ * caching search content was nearly 40% of a pass-1 job and the fees a quarter.
+ */
+export const DISCOVERY_MAX_SEARCHES = 4;
+
+/**
  * Route configuration.
  *
- * Discovery runs on the Opus tier deliberately: picking the wrong company's
- * filing produces a confidently wrong, well-cited fee, which is the worst
- * failure this system has. The cost delta does not buy that risk across 110
- * interlisted companies and known renames.
+ * Discovery ran on the Opus tier until 12 October 2026, on the reasoning that
+ * picking the wrong company's filing produces a confidently wrong, well-cited
+ * fee, the worst failure this system has. It moved to Sonnet because that
+ * failure is now refused in code rather than avoided by the model's care:
+ * pass 2 reads no document that does not name the company (fieldsPrepare), a
+ * website counts only if search returned it and its own homepage names the
+ * company (verifyWebsite), and an EDGAR record must match by name
+ * (lookupEdgar). Opus was about 75% of a pass-1 job's cost. The move is on
+ * trial: docs/HANDOVER.md records what it is measured against.
  */
 export const ROUTE_CONFIG = {
   discovery: {
-    model: "claude-opus-5",
+    model: "claude-sonnet-5",
     effort: "high" as const,
     // Dynamic-filtering variant. The older web_search_20250305 is for models
     // before Opus 4.6 / Sonnet 4.6 and is the only variant on Vertex.
-    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6 }],
+    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: DISCOVERY_MAX_SEARCHES }],
     structured: true,
     citations: false,
   },

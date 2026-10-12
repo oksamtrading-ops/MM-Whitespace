@@ -25,7 +25,7 @@ import { detectScale } from "./anchor.ts";
 import { canonicalErp, currencyCode, namesSystem } from "../format/fields.ts";
 import { canonicalRegion } from "../publish/jurisdictions.ts";
 import type { Mode } from "./cassette.ts";
-import { ROUTE_CONFIG } from "./client.ts";
+import { DISCOVERY_MAX_SEARCHES, ROUTE_CONFIG } from "./client.ts";
 import { asStored, edgarFindings, edgarIndexDocuments, lookupEdgar, normalizeName, SEC_HOST } from "./edgar.ts";
 import { fetchDocument, type FetchDeps, type FetchedDocument } from "./fetch.ts";
 import { buildPrompt, egressScan, PROMPT_VERSION, type PublicCompanyRow, type RestrictionSet } from "./prompt.ts";
@@ -303,7 +303,8 @@ export function discoveryRequest(row: PublicCompanyRow): Record<string, unknown>
     // A constant tools block: a per-company domain list here would rebuild the
     // cache for every company (docs/design/06).
     tools: [
-      { type: "web_search_20260209", name: "web_search", max_uses: 6, blocked_domains: EXCLUDED_DOMAINS },
+      { type: "web_search_20260209", name: "web_search", max_uses: DISCOVERY_MAX_SEARCHES,
+        blocked_domains: EXCLUDED_DOMAINS },
       REPORT_TOOL,
     ],
     messages: [{ role: "user", content: prompt.userContent }],

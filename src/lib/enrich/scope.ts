@@ -62,9 +62,14 @@ export type Estimate = {
  * mean plus about 20%, because the start form refuses a run whose estimate
  * exceeds its budget and a run that halts part-way is wasted. Spend is
  * recorded per run, not per company, so these are means, not a p95.
+ *
+ * Pass 1 is not measured yet at its current settings. Since 12 October 2026
+ * discovery runs on Sonnet with four searches (client.ts); $0.15 is the 35
+ * Opus jobs' mean token use priced at Sonnet's rates, with four searches,
+ * plus a wide margin. Replace it with the trial's measured mean.
  */
 export const ESTIMATED_USD_PER_COMPANY_BY_PASS: Record<Pass, number> = {
-  identity: 0.30,
+  identity: 0.15,
   general: 0.15,
 };
 /**
@@ -75,11 +80,12 @@ export const ESTIMATED_USD_PER_COMPANY_BY_PASS: Record<Pass, number> = {
  * Measured, not assumed: across 75 real jobs in production, pass 1 made
  * exactly six searches for every company it touched (34 jobs, 204 searches,
  * no exceptions) and pass 2 made none at all -- it reads filings from the
- * trusted domain and EDGAR rather than searching. Six searches at a cent is
- * six cents that a batched run still owes in full.
+ * trusted domain and EDGAR rather than searching. Pass 1 always used every
+ * search it was allowed, so the cap is the count: four, at a cent each, owed
+ * in full by a batched run.
  */
 export const ESTIMATED_SEARCH_USD_BY_PASS: Record<Pass, number> = {
-  identity: 0.06,
+  identity: 0.04,
   general: 0,
 };
 /**

@@ -17,7 +17,7 @@
 > Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
 > Everything on `main` is deployed; migrations are applied through `0032`.
-> 156 commits on `main`. To start a new session, paste everything below the line.
+> 157 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -137,9 +137,25 @@ source" is true on screen.
 - The Barrick pursuit action, owned by `samowusuking@gmail.com`, has been
   **overdue since 30 September**.
 
-**6. Run 3**, the remaining 229 companies at about US$41.22 batched. Release C
-is deployed, so it will research ERP too, and the batch fix it was waiting on
-is deployed. Run it once the ERP re-run's results have been looked at.
+**6. Run 3**, now about US$22 for pass 1 of the remaining 225 (was US$41.22),
+because discovery moved to Sonnet with four searches on 12 October (see *Cheaper
+pass 1* below). **Trial it first**, on `/runs`: pass 1, scope "Every company",
+these ten tickers, budget US$3:
+
+- **Already researched by Opus**, to compare the filings each finds:
+  ABX (renamed from Barrick Gold), DPM (was Dundee Precious Metals), ELE (a
+  merger), NOU (files in French and with the SEC), CGG (reports in Hong Kong).
+- **No trusted website yet**, to test finding one: OM (two other Osisko
+  companies), AII (US head office, interlisted), PDN (Australian), VMET
+  (royalty), SCZ (Mexico).
+
+Then compare, read-only, against the Opus results: each of the first five
+should still list an AIF or SEC annual report and the information circular
+among its candidates, and at least four of the second five should have a
+website verified on its own homepage, which Samuel then reviews. If filings go
+missing, raise `DISCOVERY_MAX_SEARCHES` back to 6 and keep Sonnet; if a
+website is wrong, return discovery to Opus. Replace the pass-1 estimate in
+`scope.ts` with the trial's measured cost. Run 3 follows revision 10.
 
 **The roster, as at 12 October 2026** (read the live state from `/access`):
 
@@ -373,10 +389,33 @@ and the cause was in how batched answers are saved.
 | Release C | 489 | 85 | 173 |
 | Batch fix | 499 | 85 | 173 |
 | Viewer market fix | 500 | 85 | 175 |
+| Cheaper pass 1 | 501 | 85 | 175 |
 
 The auth, class and contrast checks and the build pass on both. Each new
 guard was watched failing against a planted bug, except where the traps below
 say otherwise.
+
+**Cheaper pass 1 (12 October, not yet trialled).** Samuel asked to cut the
+API cost rather than move research onto a Claude Max subscription. That move
+was weighed and set aside: Anthropic's Claude Code documentation says Max usage
+limits assume ordinary individual use and that products should use API keys,
+and Max runs on consumer terms rather than the commercial API terms the risk
+review approved. What changed instead:
+- **Measured first.** A pass-1 job averaged US$0.21 across 35 jobs: about 75%
+  was Opus tokens (output, and search content cached and re-read on every
+  turn) and a quarter was search fees. Every job used all six searches.
+- **Discovery runs on Sonnet** (`ROUTE_CONFIG`, `client.ts`). Opus was chosen
+  to avoid the wrong company's filing; that is now refused in code (pass 2
+  reads only documents that name the company, a website must appear in search
+  and name the company on its homepage, EDGAR matches by name). The comment
+  there records the reversal.
+- **Four searches, not six**, as one constant (`DISCOVERY_MAX_SEARCHES`) that
+  the request and the route now share; a test ties them.
+- **The /runs estimate** for pass 1 is US$0.15 a company (four cents of it
+  search), a margin over the expected cost, until the trial measures it.
+- **Known gap, unchanged:** findings record `claude-sonnet-5` whatever answered,
+  because nothing sets the run's model. Opus pass-1 findings before 12 October
+  are labelled Sonnet too. Tell them apart by run date.
 
 **Flagged in passing, not fixed:**
 - ~~**A Viewer still sees the Deloitte market**~~ on a company's page —
@@ -1111,7 +1150,7 @@ As at 12 October 2026, in the order worth doing:
 | **b** | **Finish Release C**: review the pass-2 re-run (done 12 Oct), then revision 10 with fresh numbers in the override; `pg:smoke` | Samuel and Kay; `pg:smoke` in Samuel's terminal |
 | **c** | **Unblock the second Admin.** A Deloitte address with no account, or a forgotten password | Samuel, on `/access` |
 | **d** | **Review**: 67 undecided pairs, the two flagged judgements, the Barrick action overdue since 30 Sep | Samuel and Kay |
-| **e** | **Run 3**, the remaining 229 companies, about US$41.22 batched. The batch fix is deployed, so nothing blocks it | Samuel starts it on `/runs`, after revision 10 |
+| **e** | **Run 3**, the remaining 225 companies, about US$22 batched for pass 1. Trial the cheaper pass 1 on ten tickers first (item 6) | Samuel starts both on `/runs`, after revision 10 |
 | **f** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
 | **g** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
 | **h** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
