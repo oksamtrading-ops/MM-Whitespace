@@ -1,26 +1,24 @@
-# Handover — Mining Whitespace Intelligence Tool
+# Handover — Market Assessment Tool
 
-> **Status at 14 September 2026.** Built, deployed, and doing the work it
-> exists to do. Q3-2026 is published at **revision 8**; **33 companies
-> researched** — Run 1 (5), Run 2 (25) and two batched runs (3 + 1) — for
-> **US$11.6009 all in**; **40 companies carry a tier**, 19 audit fees carry
-> their currency and fiscal year, and the period downloads as a clean workbook.
-> The pursuit workflow carries its first real pursuit.
+> **Status at 12 October 2026.** The product is now the **Market Assessment
+> Tool** (formerly the Mining Whitespace Intelligence Tool). Since 12 October
+> every sign-in lands on a landing page that says how its information was
+> produced. That is **Release A**, deployed. **Releases B and C are built and
+> tested, and wait on local branches** for steps only Samuel can authorise.
 >
-> **Sign-in changed on 14 September: an email address and a password, no mail
-> anywhere in it.** That reversed a design decision and unblocked the thing it
-> was blocking — **Kay has an account and can sign in**. Four people are on the
-> roster.
+> Production data has not moved since 13 September: Q3-2026 is at
+> **revision 8**, 240 decisions, 34 companies researched, **US$11.7563** all
+> in. Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
-> Everything in this note is deployed and every migration is applied, through
-> `0029`. 140 commits. To start a new session, paste everything below the line
-> into it.
+> Everything on `main` is deployed; migrations are applied through `0029`.
+> 143 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
-I'm continuing work on the **Mining Whitespace Intelligence Tool** for Deloitte
-Canada's Mining & Metals practice. It is built and running in production. Read
-this whole note before changing anything.
+I'm continuing work on the **Market Assessment Tool** (formerly the Mining
+Whitespace Intelligence Tool) for Deloitte Canada's Mining & Metals practice.
+It is built and running in production. Read this whole note before changing
+anything.
 
 ## First, before any work
 
@@ -34,73 +32,116 @@ this whole note before changing anything.
    the guide in `node_modules/next/dist/docs/` before writing Next.js code).
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
+5. **Check the release branches exist**: `git branch --list "release-*"`.
+   Releases B and C live ONLY as local branches on Samuel's Mac
+   (`release-b-table`, `release-c-erp`). They have not been pushed anywhere. A
+   session on another machine will not see them.
 
 ## What is waiting on Samuel
 
-**1. Two findings are flagged, and they are judgements, not defects.**
+**1. Release B — the new companies table.** Built and tested on
+`release-b-table`. It answers the client's requests (see "Built on 9–12
+October" below). Shipping it is five steps, each needing Samuel's explicit yes:
 
-- **China Gold's auditor.** Its 2026 circular says Lixin & Ethos CPA LLP was
-  appointed on 26 February 2026 for Canadian reporting, and BDO continues for
-  Hong Kong. The workbook says Deloitte. Three sources, three answers; the
-  whitespace question is which one the practice counts.
-- **Barrick's audit fee.** The table reads "Audit fees(2) $10.3" under "In
-  millions of dollars" and nothing else. One pass proposed Australian
-  dollars, the re-run proposed US dollars and was held because the circular
-  names Canadian dollars and never US dollars. It needs someone who knows
-  Barrick's reporting currency.
+1. Apply migrations `0030_published_stages.sql` and
+   `0031_published_stages_grants.sql` to Supabase. Harmless to the running
+   version, which never reads the new table.
+2. Merge to `main` and push (which deploys). Rebase onto `main` first; git
+   drops the duplicate injection-fix commit, which is already on `main`.
+3. Backfill head office into the published Q3-2026, from Samuel's shell. Run
+   without `--apply` first; it reports what it would write:
 
-Both are on `/review` with the reason on the row. **Barrick's is also the open
-action on its pursuit** — High priority, owned by `samowusuking@gmail.com`, due
-30 September 2026 — which is the first real use of the pursuit workflow.
+   ```bash
+   MM_DATABASE_URL='…' node scripts/backfill_head_office.mjs "M&M - Whitespace Analysis Q3-2026.xlsx" --expect-revision 8
+   ```
 
-**2. ~~Publish revision 7~~ — done.** Revisions 7 and 8 went out on 13
-September. All 178 decisions are on the dashboards: 40 companies carry a tier
-(up from 21) and the auditor cross-tab reads 55.6%. Publishing took seconds
-rather than revision 6's four minutes.
+   It should say roughly 259 facts and 259 − *n* values, with *n* head offices
+   left alone because research already stands there. Then run the same command
+   with `--apply`.
+4. Publish **revision 9** on `/publish` (Admin), with an amendment reason; it
+   will probably need the blocked-gate override again. Revision 9 is the first
+   to freeze citations and stage rows. Publish **refuses** if any researched
+   value has neither a quote nor a document. On 9 October production had 218
+   accepted research values: 212 with a quote and document, and 6 accepted
+   abstentions that cite the search itself. So it should pass.
+5. `MM_DATABASE_URL='…' npm run pg:smoke` from Samuel's shell. It has never
+   been run against this code. Its "ledger is current" step fails until step 1
+   is done.
 
-**3. Fifteen findings from the two batched runs are unreviewed** — eleven from
-Aclara, Alkane and Allied Gold, and **four more from Elemental Royalty**, whose
-run settled at 22:23 UTC on 13 September, after the section below was written.
-All on `/review`. Nothing is wrong with them; nobody has looked.
+**2. Release C — Incumbent ERP.** Built on `release-c-erp`, on top of B. Ship
+it after B and **before Run 3**:
 
-**4. ~~Kay cannot sign in.~~ Done — Kay has an account.** Sign-in became an
-email address and a password on 14 September, `deloitte.ca` is on the allowlist,
-and the roster is four people:
+1. Apply `0032_incumbent_erp.sql`.
+2. Merge and push.
+3. An Admin starts a pass-2 run on `/runs` with scope "Every company". That
+   re-reads the ~33 companies already researched, about US$2.50 batched.
+4. Review the ERP findings and publish revision 10.
+
+Run 3 then picks ERP up for the other 229.
+
+**3. The second Admin cannot sign in, and the reason has changed.**
+`hasaleem@r8dius.ca` (Hasan Saleem) was invited as Admin on 25 September and
+set a password on 1 October.
+- **2 October:** four `bad password` refusals.
+- **9 October:** two refusals as **`hasaleem@deloitte.ca`**, reason `not on the
+  roster`. Hasan is now signing in with a Deloitte address that has no account.
+
+The fix is Samuel's choice:
+- invite `hasaleem@deloitte.ca` as Admin on `/access` and deactivate the
+  R8dius account, or
+- issue the R8dius account a new password and tell Hasan which address to use.
+
+The client's email asks Hasan to check in with Samuel this week.
+
+**4. Confirm the AI notice's wording with the practice.** It is a draft, in one
+constant (`AI_NOTICE`, in `src/lib/publish/notices.ts` and `mmparser/export.py`,
+held in step by `notices.test.ts`):
+
+> *Some of the information in this tool is researched with the help of
+> artificial intelligence. A person reviews every researched value before it is
+> published, and each one shows the source it came from. It can still be
+> incomplete or wrong, so check the source before you rely on it.*
+
+It must stay generic, because more than one AI tool may be used, and a test
+refuses any tool or vendor name in it. Note that "each one shows the source"
+becomes true on screen only with Release B and revision 9.
+
+**5. Review has not been touched since 13 September.**
+- 67 company/field pairs carry a finding and no decision.
+- The two flagged judgements are still open:
+  - **Barrick's audit fee currency.** The table says only "In millions of
+    dollars".
+  - **China Gold's auditor.** Lixin & Ethos for Canadian reporting, BDO for
+    Hong Kong, Deloitte in the workbook.
+- The Barrick pursuit action, owned by `samowusuking@gmail.com`, has been
+  **overdue since 30 September**.
+
+**6. Run 3**, the remaining 229 companies at about US$41.22 batched, waits on
+Release C.
+
+**The roster, as at 12 October 2026** (read the live state from `/access`):
 
 | Address | Role | State |
 |---|---|---|
-| `oksamtrading@gmail.com` | Admin | settled |
-| `Kampofo@deloitte.ca` | Analyst | **temporary password, never signed in** |
+| `oksamtrading@gmail.com` | Admin | settled, last in 9 Oct |
+| `hasaleem@r8dius.ca` | Admin | **cannot sign in** (see item 3) |
+| `Kampofo@deloitte.ca` | Analyst | settled, **uses it unaided**: ran Lucara on 25 Sep, exported the workbook |
 | `samowusuking@gmail.com` | Analyst | settled |
 | `saowusu@deloitte.ca` | Viewer | settled |
 
-**Kay has not signed in yet.** The account holds a password an Admin chose, so
-it is stopped at every screen but `/password` until it is replaced — the gate
-working, not a fault. Read the live state from `/access` rather than from this
-table, which is a snapshot.
-
-**There is exactly ONE Admin.** Only `oksamtrading@gmail.com` can invite
-somebody, change a role, deactivate an account or issue a password. If that
-account is lost or locked out, none of those can be done from inside the
-application at all: the way back is `scripts/set_temp_password.mjs`, which needs
-`MM_DATABASE_URL` and therefore Samuel's own shell. That is a thin thread for
-the one screen that exists because there is no leaver process here. A second
-Admin is one selector away on `/access`, and is worth having.
-
-**Two things that were waiting are now done.** The live upload was confirmed
-from the database side on 11 September (hash and parse matched byte for byte;
-the screen should have said "Cannot be committed", because Q3-2026 was
-already published). And the per-minute schedule ran a full day: **1,440 of
-1,440 ticks**, recorded in `docs/decisions/S1-WORKER-SHAPE.md`.
+`allowed_email_domains` is `gmail.com, deloitte.ca, r8dius.ca`. Samuel added
+`r8dius.ca` on `/settings` on 25 September, one minute before the invite.
 
 ## Where everything is
 
 | What | Where |
 |---|---|
 | Project folder | `/Users/oksam/Documents/Work Research/Opp Research` |
-| Repository | `github.com/oksamtrading-ops/MM-Whitespace`, branch `main`. **A push to `main` deploys production** |
-| Live application | **https://mm-whitespace.vercel.app** — Vercel project `oksamtrading-ops-projects/mm-whitespace`, linked locally in `.vercel/` |
+| Repository | `github.com/oksamtrading-ops/MM-Whitespace`, branch `main`. **A push to `main` deploys production**. Releases B and C: local branches `release-b-table`, `release-c-erp` |
+| Live application | **https://mm-whitespace.vercel.app** — Vercel project `oksamtrading-ops-projects/mm-whitespace`, linked locally in `.vercel/`. Not renamed; that is outward-facing and a separate decision |
 | Database | Supabase project **MM_Whitespace**, ref `djepptfxdkvmcretnogy`, region `ca-central-1`, Postgres 17.6 |
+| The client's requests | An email after a client conversation, 9 October 2026, read from a screenshot. See "Built on 9–12 October" |
+| The plan B and C were built to | `~/.claude/plans/review-the-request-in-eager-noodle.md` (local only, approved by Samuel) |
 | Start here | `README.md` — what is built, how to run it, and why |
 | Operating it | `docs/RUNBOOK.md` — loading a period, sign-in, publishing, incidents |
 | Design | `docs/DESIGN.md` and `docs/design/00`–`18`. **Section 00 first**. Two documents reverse earlier ones and say so: doc 18 reverses doc 17's light-first decision, and doc 11's authentication section reverses its own magic-link-only rule |
@@ -109,7 +150,7 @@ already published). And the per-minute schedule ran a full day: **1,440 of
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
-Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 140 commits.
+Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 143 commits on `main`.
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -150,9 +191,144 @@ Owners: **Kay Ampofo** (workbook and domain) and **Samuel Owusu** (solution).
 
 **This build is a proof of concept and stores no Deloitte client information.**
 The `Deloitte Tax Client` column is excluded at parse time. Do not add it back
-without the firm's own due diligence.
+without the firm's own due diligence. The same rule is why an Incumbent ERP
+override must cite a public page (Release C): an ERP known from an engagement
+is client information.
 
 ## What exists, and what state it is in
+
+### Built on 9–12 October 2026 — the client's requests
+
+An email after a client conversation, 9 October 2026, asked for six things.
+Samuel excluded the sixth (*remove the Pursuit section*). The other five, and
+two instructions of his own, are built:
+
+| # | Request | Where | State |
+|---|---|---|---|
+| 1 | A landing page with a disclaimer that results are generated by AI | Release A | **deployed 12 Oct** |
+| 2 | Rename "Whitespace" to Market Assessment Tool | Release A | **deployed 12 Oct** |
+| 3 | Company table: Audit Fees, Mine Lifecycle, Incumbent ERP; Company HQ in place of Deloitte market | B (C for ERP) | built |
+| 4 | Filters on Tier, HQ, Stage, Mine Lifecycle, Auditor, Footprint, property location; search reaching the company page | B | built |
+| 5 | Multi-select filters, and an Excel export of the filtered table | B | built |
+| — | Samuel: the disclaimer names no AI tool | A | deployed |
+| — | Samuel: every screen cites its sources; publish always copies the evidence | B | built |
+
+**Decisions taken with Samuel**
+- **Mine Lifecycle is Stage of Operations.** The four stage flags appear as tick
+  columns, as the workbook's A.02 Matrix draws them, so "Stage" and "Mine
+  Lifecycle" are one filter.
+- **Company HQ** is the workbook's Head Office column.
+- **The filtered export is open to every role.** It carries only the published
+  snapshot a Viewer can already read.
+- **ERP is research plus override.**
+
+**Release A (deployed).**
+- **Landing page.** `src/app/page.tsx` renders instead of redirecting. Every
+  sign-in already ended at `/`, so everybody passes the notice; there is no
+  acknowledgement gate.
+- **Routing.** "Continue" goes wherever `homeFor()` (`src/lib/auth/home.ts`)
+  says, and the sign-in screen asks the same function.
+- **The notice.** `AiNotice` (`src/app/_ui/AiNotice.tsx`) renders it as a
+  callout on the landing page and as one quiet line on the dashboard, the
+  companies table and the company page. The dashboard's licence notices are
+  print-only, which is why it needed its own component. Both exports carry it.
+- **The rename touches the product name only.** "Whitespace" as the domain term
+  (companies Deloitte does not audit) stays, and so do the workbook's own name,
+  the fixture file, the repository, the Vercel project and the URL.
+- **The injection fix** (see the traps) shipped here too.
+
+**Release B (built, `release-b-table`).**
+- **One pure module for screen and export.** `src/lib/profile/roster.ts` (no
+  node imports) holds the row, the filter, its URL form, the sort and their
+  words. The client table and `/api/companies/export` both narrow through it,
+  so a download never holds rows the screen did not show.
+- **The URL is the state** (`?tier=2&hq=CA:ON&stage=production`), and the page
+  parses it on the server. The map's old `?province=` link still works.
+- **Columns:**
+  - Stage (the one that decided the tier)
+  - four Stage of Operations ticks
+  - Footprint
+  - **Company HQ** (short, as the workbook writes it: "ON", "Chile", "Toronto, ON")
+  - Auditor
+  - **Audit fees**
+  - **Incumbent ERP**
+  - Market cap
+- **Deloitte market is gone from the table**, and from the export.
+- **New controls.**
+  - **MultiSelect** (`src/app/_ui/MultiSelect.tsx`) uses native `<details>` and
+    real checkboxes. It is in `/styleguide`.
+  - **Search** also matches every public company-page value that has no
+    column, and says which one matched.
+- **Citations (`src/lib/profile/citations.ts`).** A working value never
+  recorded which finding produced it. The chain runs value → standing decision
+  → finding → quote and documents. The resolver walks it once per period, in
+  four queries, using a batched form of review's own "which decision stands"
+  rule; a test pins the two together.
+  - **Six kinds:** the filing and its passage; a search that found nothing,
+    with the reason given; a reviewer's override and the source it cites; the
+    workbook; an earlier period; the rules.
+  - **Publish freezes all six** into the snapshot columns that existed and were
+    never written. It refuses (`PublishUncited`, not an Admin override) a
+    researched value with neither a quote nor a document.
+  - **The company page** shows a citation on every value and anchors each row
+    (`#v-<field>`), and the table's researched cells link there.
+- **Stage rows are frozen with each revision** (0030/0031). Before, the table
+  could only infer the stage from the tier.
+  - Display is tri-state: a tick, a "?" where research is unsettled, and one
+    "Not researched" cell, never four blank "noes".
+  - **Revisions 1–8 froze no stage rows and no citations**, and are not
+    back-filled. A revision's citations are the marker that it also froze stage
+    rows (`carriesStages`), because zero stage rows cannot tell "nobody
+    researched" from "not recorded".
+- **Company HQ for all 259.** The parser now reads B.01 "HO Location" against
+  "HO Region", cross-checked with the matrix "Head Office", and writes
+  `head_office_region` the way EDGAR and research do. On the real workbook all
+  259 read cleanly. Future periods get it at commit; Q3-2026 needs the backfill
+  in item 1.
+- **The export.** A Companies sheet carries the filter in words, the basis and
+  the notices. Fees go in three columns, cited cells are hyperlinked, and a
+  Sources sheet quotes each passage. The CSV has the same rows plus a source
+  column per cited field. Every download is audited as `companies_exported`,
+  with its filter.
+- **The dashboard's period-export button** no longer shows to Viewers, who
+  could only ever get a 403 from it.
+
+**Release C (built, `release-c-erp`).**
+- **A new research field.** `incumbent_erp` (0032) is extracted in pass 2 with
+  an anchored quote. A quote that does not name the proposed system is an
+  abstention: "a new ERP" is real text that says nothing about which.
+- **One spelling per system.** `canonicalErp` in `src/lib/format/fields.ts`.
+- **ERP windows go last.** They are placed in whatever text budget the other
+  fields left, so the field cannot push a fee table out of what the model reads.
+- **An override must cite a public web address.** `SOURCED_OVERRIDES` in
+  `decide.ts`, enforced in `recordDecision` for every path. The reviewer types
+  "SAP S/4HANA https://…", and the address becomes the citation.
+- **Not bulk-acceptable yet.**
+- **Live rules move to `2026-10-09.1`.**
+
+**Checks on each branch:**
+
+| Branch | Node | Python | End-to-end |
+|---|---|---|---|
+| Release A | 451 | 73 | 162 |
+| Release C | 489 | 85 | 173 |
+
+The auth, class and contrast checks and the build pass on both. Each new
+guard was watched failing against a planted bug, except where the traps below
+say otherwise.
+
+**Flagged in passing, not fixed:**
+- **A Viewer still sees the Deloitte market** on a company's page, against doc
+  11. Release B removes it from the table and the export only.
+- **0008 grants `app_analyst` select on the frozen tables with no analyst
+  policy**, so through that role they return no rows. Nothing reads through it
+  today, and 0031 pairs both for its own table.
+- **The table keeps the derived "Stage" column** beside the four ticks, because
+  the email said "in addition to what is already visible". Removing it is one
+  line.
+
+### Before 9 October
+
 
 **Every milestone screen is built.** Upload and validation report, period
 commit, run status, field-major and company-major review with keyboard accept,
@@ -537,7 +713,7 @@ and the machinery is in git at `fc00769^`.
 |---|---|---|
 | `MM_DATABASE_URL` | Supabase **transaction pooler** string, port 6543 (since 11 September 2026) | **Sensitive**, unreadable. Host `aws-1-ca-central-1.pooler.supabase.com`, user `postgres.djepptfxdkvmcretnogy` |
 | `MM_AUTH` | `session` | Email and password since 14 September 2026 |
-| `MM_MAIL`, `MM_RESEND_KEY`, `MM_MAIL_FROM` | `resend`, key, `Whitespace <onboarding@resend.dev>` | **No longer used by sign-in.** Kept set; `mail.ts` has no caller until something needs to send |
+| `MM_MAIL`, `MM_RESEND_KEY`, `MM_MAIL_FROM` | `resend`, key, `Whitespace <onboarding@resend.dev>` | **No longer used by sign-in.** Kept set; `mail.ts` has no caller until something needs to send. The sender name still says Whitespace — change it to Market Assessment Tool before anything sends |
 | `MM_ALLOWED_DOMAINS` | `gmail.com` | **Only a fallback.** The `allowed_email_domains` setting wins once it exists, and it does: `gmail.com, deloitte.ca` |
 | `MM_PUBLIC_URL` | `https://mm-whitespace.vercel.app` | **How the tick reaches the worker** (`src/lib/enrich/kick.ts`). It used to be the origin in a sign-in link too; deleting it as dead magic-link config breaks enrichment |
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |
@@ -774,25 +950,79 @@ start" and nothing else. `npm run e2e:isolated` runs the journeys in a detached
 worktree with its own `node_modules`, so a preview someone else is using stays
 up; prefer it to `npm run e2e`.
 
+**`quotePrefix` is a style, not a type.** The export's injection guard set
+`cell.quotePrefix = True` on anything Excel would interpret, and its test
+checked that flag. But openpyxl decides a cell is a formula from its first
+character, and writes `<f>…</f>` for a value beginning with `=` whatever the
+style says. So `=HYPERLINK(...)` from data left every workbook as a live
+formula from 12 September to 12 October. `put()` now also sets
+`cell.data_type = "s"`, and the test reads the saved XML. Any check of an
+export must read the FILE, not the object that wrote it.
+
+**`periods.source_file_sha256` means two things.** The upload screen stores the
+hash of the workbook's bytes; `scripts/commit_period.mjs` stores the hash of the
+parsed JSON. Q3-2026 came through the script (`8c7405d3…`); the same workbook
+uploaded through the screen on 11 September hashed `4d93cc52…`. Never use it to
+prove "same workbook": the JSON's bytes change with every parser change. The
+head-office backfill proves it by 259 market caps instead.
+
+**A test can be written so that it cannot fail.** The ERP-window test's first
+version passed with or without the protection it was written for: each pattern
+takes at most six windows, so its document never reached the cap. It was
+caught only because the planted bug did not turn it red. Plant first, every
+time.
+
+**`PublishUncited` has no override, and an unfaithful fixture will hit it.**
+Publish refuses a researched value with neither a quote nor a document. Two
+test fixtures that wrote findings "as the worker would have" omitted the quote
+an anchored finding always carries, and one faked an `ai_accepted` value with
+no decision behind it. Both were wrong, and the refusal was right. Give a
+fixture a finding, a quote and a decision.
+
+**`git checkout` carries uncommitted changes to the other branch** when they
+do not conflict. On 9 October it moved Release B's work-in-progress onto
+Release A's branch mid-cherry-pick. Commit or stash before switching.
+
+**`e2e:isolated` can be blocked by a dead worktree registration** ("missing but
+already registered worktree"). `git worktree list` shows it as prunable. Check
+the commit it names is on a branch, then `git worktree prune`.
+
+**A stale `.next/dev/types` fails the build's type-check** after a dev server
+ran on another branch. It references routes the current branch does not have.
+`.next/` is ignored build output: delete `.next/dev` and rebuild. Vercel builds
+clean and never sees it.
+
+**The browser pane cannot screenshot while it is hidden** ("not compositing
+frames"). Read the DOM instead, or fix a viewport with `resize_window` before
+screenshotting; the pane otherwise changes size between captures.
+
 **`/Users/oksam` is itself a git repository**, with the Archieva folder inside
 it. Never run `git add -A` outside this project's folder.
 
 ## What is left, in order
 
-**Five things are live; items 1, 2 and 8 are struck through and done.** In the
-order they are worth doing:
+As at 12 October 2026, in the order worth doing:
 
 | | | Whose |
 |---|---|---|
-| **3** | **Run 3** — the remaining 229 companies, US$41.22 batched. The biggest single thing left, and nothing blocks it | Samuel starts it on `/runs` |
-| **5** | **Schedule retention.** The job runs; nothing calls it, so production sweeps nothing | a decision about deleting production data automatically |
-| **6** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
-| **4** | **Rotate the Resend key**, which was pasted into a chat once. Blocking nothing, true anyway | Samuel |
-| **7** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
+| **a** | **Release B**: migrations, push, head-office backfill, revision 9, `pg:smoke` | Samuel's yes at each step; the backfill and `pg:smoke` run in his shell |
+| **b** | **Release C**: migration, push, the ~US$2.50 pass-2 re-run, revision 10 | Samuel's yes; before Run 3 |
+| **c** | **Unblock the second Admin.** A Deloitte address with no account, or a forgotten password | Samuel, on `/access` |
+| **d** | **Review**: 67 undecided pairs, the two flagged judgements, the Barrick action overdue since 30 Sep | Samuel and Kay |
+| **e** | **Run 3**, the remaining 229 companies, about US$41.22 batched | Samuel starts it on `/runs`, after Release C |
+| **f** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
+| **g** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
+| **h** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
+| **i** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
+| **j** | **Viewers see the Deloitte market on the company page** (doc 11 says they should not) | a small build, when wanted |
 
-**And the work nobody has done that is not on this list:** fifteen findings from
-the batched runs are unreviewed, two findings are flagged for a judgement, and
-**Kay has an account but has never signed in**. See "What is waiting on Samuel".
+Rename the Vercel project, the URL and the repository only if Samuel decides
+to; they are outward-facing.
+
+### The list as it stood on 14 September, kept for its reasoning
+
+Items 3–7 below are a–i above. What is recorded under each, about why things
+are as they are, still holds.
 
 1. ~~Confirm the live upload~~, ~~read a day of ticks~~ (1,440 of 1,440),
    ~~Run 1~~, ~~the Excel export~~, ~~Run 2~~, ~~publish revision 7~~,
