@@ -781,3 +781,10 @@ test("an ERP named far from every other window is still read, when there is room
   const text = `Cover page of Westco. ${filler} The Corporation operates Pronto Xi for finance. ${filler}`;
   assert.ok(windowsOf(text).includes("Pronto Xi"));
 });
+
+test("a head office read from a French filing is stored as the workbook spells it; the quote is not", () => {
+  const f = toFinding({ ...erpBase, field_key: "head_office_region", text_value: "Québec, Canada",
+    evidence_excerpt: "siège social : Montréal (Québec) Canada" }, [])!;
+  assert.equal(f.value, "Quebec, Canada");
+  assert.equal(f.evidence_excerpt, "siège social : Montréal (Québec) Canada", "the quote keeps the filing's words");
+});

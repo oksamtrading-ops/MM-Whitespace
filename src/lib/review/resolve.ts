@@ -21,6 +21,7 @@
 import { ABROAD } from "../db/commit.ts";
 import type { Sql } from "../db/sql.ts";
 import { formatStamp } from "../db/stamp.ts";
+import { canonicalRegion } from "../publish/jurisdictions.ts";
 import { classify, deriveFootprint, type Evidence, type Stage } from "../tiering/index.ts";
 
 export const STAGES: readonly Stage[] = ["exploration", "development", "production", "royalty_streaming"];
@@ -161,6 +162,10 @@ export async function resolveAfterDecision(
     }
     source = "extract";
   }
+
+  // A head office resolves to the workbook's spelling, whichever finding,
+  // override or undo put it there -- so no decision can bring "Québec" back.
+  if (fieldKey === "head_office_region" && typeof value === "string") value = canonicalRegion(value);
 
   if (fieldKey === "stage_evidence_state") {
     await resolveStage(db, periodId, companyId, value, source, actorId);

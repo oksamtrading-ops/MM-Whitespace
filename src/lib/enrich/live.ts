@@ -23,6 +23,7 @@
  */
 import { detectScale } from "./anchor.ts";
 import { canonicalErp, currencyCode, namesSystem } from "../format/fields.ts";
+import { canonicalRegion } from "../publish/jurisdictions.ts";
 import type { Mode } from "./cassette.ts";
 import { ROUTE_CONFIG } from "./client.ts";
 import { asStored, edgarFindings, edgarIndexDocuments, lookupEdgar, normalizeName, SEC_HOST } from "./edgar.ts";
@@ -732,8 +733,12 @@ export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFind
       return e.auditor_change ? { ...base, value: e.auditor_change } : null;
     case "fiscal_year_end":
       return e.text_value && /^\d{2}-\d{2}$/.test(e.text_value) ? { ...base, value: e.text_value } : null;
-    case "head_office_location": case "head_office_region":
+    case "head_office_location":
       return e.text_value ? { ...base, value: e.text_value.trim() } : null;
+    case "head_office_region":
+      // The workbook's spelling ("Quebec"), not the filing's ("Québec"): the
+      // excerpt keeps the filing's words, the value is canonical.
+      return e.text_value ? { ...base, value: canonicalRegion(e.text_value) } : null;
     case "incumbent_erp": {
       if (!e.text_value) return null;
       const system = canonicalErp(e.text_value);

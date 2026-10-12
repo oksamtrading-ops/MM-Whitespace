@@ -179,3 +179,18 @@ test("an overridden region set re-derives the footprint and the tier", async () 
                              overrideValue: { CANADA: ["ON", "QC"] } });
   assert.equal((await tierOf(db, periodId, companyId)).footprint, "canada_only");
 });
+
+test("accepting a head office spelled \"Québec\" stores the workbook's \"Quebec\", and it is no conflict", async () => {
+  const { db, periodId, companyId } = await committed();
+  await db.run(`insert into company_period_facts (period_id, company_id, field_key, raw_value, typed_value, assertion)
+      values (?, ?, 'head_office_region', 'Quebec, Canada', '"Quebec, Canada"', 'asserted')`, periodId, companyId);
+  const f = await finding(db, periodId, companyId, "head_office_region", "Québec, Canada");
+  const { isConflict } = await import("./decide.ts");
+  assert.equal(isConflict({ fieldKey: "head_office_region", extractValue: "Quebec, Canada", proposedValue: "Québec, Canada" } as never), false);
+  assert.equal(isConflict({ fieldKey: "head_office_region", extractValue: "British Columbia, Canada", proposedValue: "Québec, Canada" } as never), true,
+               "a different province is still a conflict");
+  await recordDecision(db, { periodId, companyId, fieldKey: "head_office_region", decision: "accept", findingId: f });
+  const v = await db.get(`select value, source from company_period_field_values
+      where period_id = ? and company_id = ? and field_key = 'head_office_region'`, periodId, companyId) as { value: string; source: string };
+  assert.deepEqual(v, { value: '"Quebec, Canada"', source: "ai_accepted" });
+});

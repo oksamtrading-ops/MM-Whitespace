@@ -106,3 +106,19 @@ export function hqJurisdiction(region: string | null | undefined): {
   }
   return { key: country, short: country, label: country, group: "Other countries" };
 }
+
+/**
+ * A head office in the spelling the workbook uses for its province: research
+ * reads French filings and writes "Québec, Canada"; the workbook, and so this
+ * application, write "Quebec, Canada". Samuel decided on 12 October 2026 that
+ * the stored value uses the workbook's spelling. The research finding keeps
+ * the filing's own spelling -- it is the quote -- and only the value it
+ * resolves to is canonical. Anything that is not a recognised Canadian
+ * province or territory comes back as it was.
+ */
+export function canonicalRegion(region: string): string {
+  const j = hqJurisdiction(region);
+  return j && j.group === "Canada" && j.key.startsWith("CA:")
+    ? `${CANADA_SUBDIVISIONS[j.short]}, Canada`
+    : region.trim();
+}

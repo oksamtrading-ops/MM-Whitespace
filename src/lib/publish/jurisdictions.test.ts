@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CANADA_ALIASES, CANADA_SUBDIVISIONS, foldProvinces, hqJurisdiction, provinceCode, US_STATES } from "./jurisdictions.ts";
+import { CANADA_ALIASES, CANADA_SUBDIVISIONS, canonicalRegion, foldProvinces, hqJurisdiction, provinceCode, US_STATES } from "./jurisdictions.ts";
 
 const PY = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "mmparser", "aliases.py");
 
@@ -54,4 +54,13 @@ test("a head office spelled with its accents is the same place", () => {
   assert.equal(hqJurisdiction("Québec, Canada")?.key, "CA:QC");
   assert.equal(hqJurisdiction("Québec, Canada")?.short, "QC");
   assert.equal(hqJurisdiction("Colorado, United States of America")?.key, "US:CO");
+});
+
+test("a head office is stored in the workbook's spelling, and nothing else is touched", () => {
+  assert.equal(canonicalRegion("Québec, Canada"), "Quebec, Canada");
+  assert.equal(canonicalRegion("québec, canada"), "Quebec, Canada");
+  assert.equal(canonicalRegion("Ontario, Canada"), "Ontario, Canada");
+  for (const unchanged of ["Chile", "Colorado, United States", "Toronto, Ontario, Canada", "Western Australia, Australia"]) {
+    assert.equal(canonicalRegion(unchanged), unchanged);
+  }
 });

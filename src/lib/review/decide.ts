@@ -9,6 +9,7 @@
  * See docs/design/08-review-workspace.md.
  */
 import { sourceUrlIn } from "../format/fields.ts";
+import { canonicalRegion } from "../publish/jurisdictions.ts";
 import { decisionStamp } from "../db/stamp.ts";
 import type { Sql } from "../db/sql.ts";
 import { preserveExtract, resolveAfterDecision } from "./resolve.ts";
@@ -128,6 +129,11 @@ export function isStageField(fieldKey: string): boolean {
 export function isConflict(c: Candidate): boolean {
   if (c.extractValue === null || c.extractValue === undefined) return false;
   if (c.proposedValue === null || c.proposedValue === undefined) return false;
+  // "Québec, Canada" from a French filing and "Quebec, Canada" from the
+  // workbook are one place, not two proposals to adjudicate.
+  if (c.fieldKey === "head_office_region" && typeof c.extractValue === "string" && typeof c.proposedValue === "string") {
+    return canonicalRegion(c.extractValue) !== canonicalRegion(c.proposedValue);
+  }
   return JSON.stringify(c.extractValue) !== JSON.stringify(c.proposedValue);
 }
 
