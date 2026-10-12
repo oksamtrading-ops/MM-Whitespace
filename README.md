@@ -45,7 +45,9 @@ python3 -m unittest discover -s tests
 node --test 'src/**/*.test.ts'
 ```
 
-The Node suite needs no dependencies — Node 24 runs TypeScript directly.
+Node 24 runs TypeScript directly, so there is no build step, but the Node suite
+needs `npm ci` first: tests open the database through `src/lib/db/open.ts`,
+which imports `pg` and `@vercel/functions`.
 
 ### Committing a period
 

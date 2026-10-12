@@ -52,9 +52,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      # Still no install: Node 24 runs TypeScript directly, node:sqlite is
-      # built in, and no test imports the app. The application's dependencies
-      # are exercised in the `app` job below.
+          cache: npm
+      # Node 24 runs TypeScript directly and node:sqlite is built in, but the
+      # suite is not dependency-free: since the Sql seam (10 September 2026)
+      # tests reach the database through open.ts, which imports pg and
+      # @vercel/functions. Without this install the job failed on every
+      # commit for a month.
+      - run: npm ci
       - run: npm run test:node
 
   auth:
