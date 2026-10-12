@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { Sql } from "../db/sql.ts";
+import { formatStamp } from "../db/stamp.ts";
 import { gate, type StoredDocument } from "./anchor.ts";
 import { evidenceStrength, type EvidenceInput } from "./evidence.ts";
 import { Cassettes, cassetteKey, type Mode } from "./cassette.ts";
@@ -28,7 +29,7 @@ import {
   type CandidateDoc, type LiveBody, type LiveDeps, type LiveJob, type Pass,
   type PassContext, type Prepared,
 } from "./live.ts";
-import type { BatchRequestRow, BatchResult, Submission } from "./batch.ts";
+import type { BatchRequestRow, BatchResult, Submission, Verdict } from "./batch.ts";
 import { extractPdf } from "./pdf.ts";
 import { nodeHttp, nodeResolve } from "./transport.ts";
 import { getNumber } from "../settings/index.ts";
@@ -322,6 +323,13 @@ async function nextAttempt(db: Sql, jobId: string): Promise<number> {
     jobId) as { a: number }).a) + 1;
 }
 
+/** A response already stored for this attempt, or null. */
+async function storedResult(db: Sql, jobId: string, attempt: number): Promise<CassetteBody | null> {
+  const r = await db.get("select raw from enrichment_job_results where job_id = ? and attempt = ?",
+                         jobId, attempt) as { raw: unknown } | undefined;
+  return r ? safeJson(r.raw) as CassetteBody : null;
+}
+
 /** The response, stored raw before anything is derived from it. */
 async function storeRawResult(
   db: Sql, jobId: string, attempt: number, body: CassetteBody, requestId: string,
@@ -380,15 +388,44 @@ export async function prepareJobForBatch(
  * An expired or cancelled request is NOT a failure -- a batch has 24 hours and
  * the world sometimes takes longer. The job returns to the queue with its
  * attempt given back, exactly as a lapsed lease does.
+ *
+ * An answer is applied only to the job still waiting for it. One the job has
+ * moved past -- finished by a later attempt, waiting on a later batch, halted
+ * -- is set aside with a Verdict saying so, and what it cost goes on the run.
+ * Franco-Nevada's first answer arrived after its second attempt had finished
+ * the job; applying it threw on every worker that tried, and held two other
+ * companies' answers in the same batch until it was cleared by hand.
  */
 export async function settleBatchResult(
   db: Sql, runId: string, request: BatchRequestRow, result: BatchResult["result"],
   opts: RunOptions,
-): Promise<ResearchOutcome | null> {
+): Promise<ResearchOutcome | Verdict | null> {
   const job = await db.get(
-    "select id, company_id, field_group, attempts from enrichment_jobs where id = ?",
-    request.job_id) as ClaimedJob | undefined;
+    `select j.id, j.company_id, j.field_group, j.attempts, j.max_attempts, j.state,
+            j.batch_id, b.vendor_batch_id
+       from enrichment_batch_requests r
+       join enrichment_jobs j on j.id = r.job_id
+       join enrichment_batches b on b.id = r.batch_id
+      where r.id = ?`, request.id) as
+    (ClaimedJob & { max_attempts: number; state: string; batch_id: string | null;
+                    vendor_batch_id: string | null }) | undefined;
   if (!job) return null;
+
+  const context = safeJson(request.context) as PassContext & {
+    fieldGroup?: string; periodAsOf?: string; model?: string;
+    spentUsage?: Record<string, number>; spentUsd?: number;
+  };
+
+  if (job.state !== "awaiting_batch" || job.batch_id !== job.vendor_batch_id) {
+    // Billed whether or not it is used: both halves, as finishing it would have.
+    const meter = new Meter(BATCH_DISCOUNT);
+    meter.seed(context.spentUsage, context.spentUsd);
+    if (result.type === "succeeded") meter.add(context.model ?? DEFAULT_MODEL, result.message.usage ?? {});
+    if (meter.cost > 0) await recordSpend(db, runId, meter.cost);
+    const where = job.state === "awaiting_batch" ? "waiting on a later batch" : job.state;
+    return { state: "canceled",
+             note: `superseded: the job is ${where}, so this ${result.type} answer was not applied` };
+  }
 
   if (result.type === "expired" || result.type === "canceled") {
     await db.run(`update enrichment_jobs
@@ -404,40 +441,115 @@ export async function settleBatchResult(
       result.error);
   }
 
-  const context = safeJson(request.context) as PassContext & {
-    fieldGroup?: string; periodAsOf?: string; model?: string;
-    spentUsage?: Record<string, number>; spentUsd?: number;
-  };
-  const deps = opts.live ?? await defaultLiveDeps(db);
-  // Half price, and seeded with what the submitting worker already spent.
-  const meter = new Meter(BATCH_DISCOUNT);
-  meter.seed(context.spentUsage, context.spentUsd);
-  // The batched answer is metered HERE. resumePass only meters calls it makes
-  // itself, and in the ordinary case it makes none -- so without this line the
-  // tokens the batch actually billed for never reach the run's spend at all.
-  meter.add(context.model ?? DEFAULT_MODEL, result.message.usage ?? {});
+  // A save that failed last time stored this answer first: finish from that,
+  // rather than resuming again and perhaps paying for a continuation twice.
+  let body = await storedResult(db, job.id, request.attempt);
+  if (!body) {
+    const deps = opts.live ?? await defaultLiveDeps(db);
+    // Half price, and seeded with what the submitting worker already spent.
+    const meter = new Meter(BATCH_DISCOUNT);
+    meter.seed(context.spentUsage, context.spentUsd);
+    // The batched answer is metered HERE. resumePass only meters calls it makes
+    // itself, and in the ordinary case it makes none -- so without this line the
+    // tokens the batch actually billed for never reach the run's spend at all.
+    meter.add(context.model ?? DEFAULT_MODEL, result.message.usage ?? {});
 
-  let body: LiveBody;
-  try {
-    const row = await publicRow(db, job.company_id, String(context.periodAsOf ?? "").slice(0, 10));
-    body = await resumePass(
-      await liveJobFor(db, row, String(context.fieldGroup ?? job.field_group)),
-      context, result.message, deps, meter);
-  } catch (err) {
-    throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
+    let resumed: LiveBody;
+    try {
+      const row = await publicRow(db, job.company_id, String(context.periodAsOf ?? "").slice(0, 10));
+      resumed = await resumePass(
+        await liveJobFor(db, row, String(context.fieldGroup ?? job.field_group)),
+        context, result.message, deps, meter);
+    } catch (err) {
+      throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
+    }
+    await storeRawResult(db, job.id, request.attempt, resumed, `batch-${request.custom_id}`);
+    body = resumed;
   }
 
-  await storeRawResult(db, job.id, request.attempt, body, `batch-${request.custom_id}`);
-  return await finishJob(db, runId, job, body, request.attempt, opts);
+  let findings: ResearchOutcome["findings"];
+  try {
+    findings = await saveJob(db, runId, job, body, request.attempt, opts);
+  } catch (err) {
+    return await unsaved(db, runId, job, body, err);
+  }
+  return await finished(db, runId, job, body, findings);
 }
 
-/** Derive, gate, record: the tail both paths share once a body exists. */
+/**
+ * A batched answer that could not be saved.
+ *
+ * Nothing was written, because a save is one transaction, so the job is still
+ * waiting on this batch with its answer paid for and stored. It is charged an
+ * attempt and the error is rethrown, which leaves the request open for the next
+ * worker to settle the batch: that one saves the stored answer and asks the
+ * vendor nothing. Once the job's attempts are spent it is dead-lettered
+ * instead, so a batch cannot retry, on every tick, an answer it will never save.
+ */
+async function unsaved(
+  db: Sql, runId: string, job: ClaimedJob & { max_attempts: number }, body: CassetteBody, err: unknown,
+): Promise<Verdict> {
+  const message = ((err as Error)?.message ?? String(err)).split("\n")[0].slice(0, 400);
+  // Only while it still waits: another worker settling the same batch may
+  // have saved it meanwhile, and that is not this job's failure.
+  const charged = await db.run(`update enrichment_jobs set attempts = attempts + 1, last_error = ?, updated_at = ?
+      where id = ? and state = 'awaiting_batch'`,
+    `the answer could not be saved: ${message}`, formatStamp(Date.now()), job.id);
+  if (Number(charged.changes) === 0) throw err;
+  const { attempts } = await db.get("select attempts from enrichment_jobs where id = ?", job.id) as
+    { attempts: number };
+  if (attempts < job.max_attempts) throw err;
+
+  await transition(db, job.id, "dead_letter", { error: `the answer could not be saved: ${message}` });
+  await recordSpend(db, runId, body.cost_usd ?? 0);
+  return { state: "errored", note: `not saved, and the job's attempts are spent: ${message}` };
+}
+
+/**
+ * Derive, gate, record: the tail both paths share once a body exists, for a
+ * job still in research. A save that fails is routed like any failed call.
+ */
 async function finishJob(
   db: Sql, runId: string, job: ClaimedJob, body: CassetteBody, attempt: number, opts: RunOptions,
 ): Promise<ResearchOutcome> {
-  await transition(db, job.id, "persisting");
-  const findings = await persist(db, runId, job.id, job.company_id, body, attempt, opts);
-  await transition(db, job.id, "completed");
+  let findings: ResearchOutcome["findings"];
+  try {
+    findings = await saveJob(db, runId, job, body, attempt, opts);
+  } catch (err) {
+    throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
+  }
+  return await finished(db, runId, job, body, findings);
+}
+
+/**
+ * The save: findings in and the job completed, all or nothing.
+ *
+ * It was not all or nothing. A save that failed halfway left some findings
+ * written and the job in `persisting`, still holding the lease it was
+ * submitted under -- hours expired, for a batched job -- so the next tick
+ * requeued it and the company was researched, and paid for, a second time.
+ * Now a failed save leaves the job where it was, nothing is half-written, and
+ * `persisting` is never seen outside this transaction.
+ */
+async function saveJob(
+  db: Sql, runId: string, job: ClaimedJob, body: CassetteBody, attempt: number, opts: RunOptions,
+): Promise<ResearchOutcome["findings"]> {
+  return await db.tx(async (db) => {
+    await transition(db, job.id, "persisting");
+    const findings = await persist(db, runId, job.id, job.company_id, body, attempt, opts);
+    await transition(db, job.id, "completed");
+    return findings;
+  });
+}
+
+/**
+ * The spend, once the save has committed. Outside the save on purpose: a run
+ * at its budget halts here, and halting writes every unfinished job in the
+ * run -- rows another worker's save may be holding.
+ */
+async function finished(
+  db: Sql, runId: string, job: ClaimedJob, body: CassetteBody, findings: ResearchOutcome["findings"],
+): Promise<ResearchOutcome> {
   const budget = await recordSpend(db, runId, body.cost_usd ?? 0);
   const state = (await db.get("select state from enrichment_jobs where id = ?", job.id) as { state: string }).state;
   return { runId, jobId: job.id, findings, spendUsd: budget.spend, jobState: state };
@@ -454,22 +566,25 @@ async function persist(
   body: CassetteBody, attempt: number, opts: RunOptions): Promise<ResearchOutcome["findings"]> {
   const model = opts.model ?? DEFAULT_MODEL;
   const docs = new Map<string, StoredDocument>();
-  for (const d of body.documents ?? []) {
-    const hash = d.contentHash ?? `sha256:${createHash("sha256").update(d.text).digest("hex")}`;
-    const stored: StoredDocument = { ...d, contentHash: hash };
-    docs.set(hash, stored);
+  // In hash order. A save is one transaction, holding each document row it
+  // inserts until it commits; two saves sharing documents in opposite orders
+  // would each wait for the other.
+  const fetched = (body.documents ?? []).map((d) => ({
+    ...d, contentHash: d.contentHash ?? `sha256:${createHash("sha256").update(d.text).digest("hex")}`,
+  })).sort((a, b) => a.contentHash < b.contentHash ? -1 : a.contentHash > b.contentHash ? 1 : 0);
+  for (const d of fetched) {
+    docs.set(d.contentHash, d);
     await db.run(`insert into documents (content_hash, url, retrieved_at, extractor, extractor_version,
                               normalization_version, text_content, char_count, page_count,
                               chars_per_page, source_tier, doc_type, scale_phrase, has_text_layer)
        values (?, ?, ?, 'fixture', '1.0.0', '1.0.0', ?, ?, ?, ?, ?, ?, ?, ?)
-       on conflict (content_hash) do nothing`, hash, d.url, new Date().toISOString(), d.text, d.text.length,
+       on conflict (content_hash) do nothing`, d.contentHash, d.url, new Date().toISOString(), d.text, d.text.length,
           d.pageCount ?? 1, d.charsPerPage ?? d.text.length,
           d.sourceTier, d.docType ?? null, d.scalePhrase ?? null,
           d.hasTextLayer === false ? 0 : 1);
   }
 
-  const out: ResearchOutcome["findings"] = [];
-  for (const f of body.findings) {
+  const judged = body.findings.map((f) => {
     // A finding is checked against the document it names and no other. One
     // that names none is unverified -- source_unreachable, the manual queue --
     // never quietly checked against whatever else the job happened to fetch.
@@ -512,8 +627,11 @@ async function persist(
       corroboratingSources: f.corroborating_sources ?? 0,
       extractionAgreement: null,
     };
-    const score = evidenceStrength(ev);
+    return { f, verdict, value, score: evidenceStrength(ev) };
+  });
 
+  const out: ResearchOutcome["findings"] = [];
+  for (const { f, verdict, value, score } of onePerField(judged)) {
     const finding = await db.get(`insert into enrichment_findings
          (run_id, job_id, attempt, company_id, field_key, proposed_value,
           evidence_strength, evidence_version, evidence_components,
@@ -541,6 +659,35 @@ async function persist(
     });
   }
   return out;
+}
+
+/**
+ * One finding per field: the best-verified of any the model gave for it.
+ *
+ * Findings are stored once per field and attempt -- the table is unique on
+ * it -- and a model will sometimes answer a field twice. Franco-Nevada's first
+ * pass-2 answer named its auditor in two findings, and the second insert
+ * failed the whole save. Best is one the gate let through, then any other
+ * claim, then an abstention; among equals the stronger evidence, then the
+ * model's own confidence, then whichever came first. Nothing is lost by the
+ * choice: the full answer is in enrichment_job_results.
+ */
+function onePerField<T extends {
+  f: ProposedFinding; verdict: { state: string }; score: { strength: number };
+}>(judged: T[]): T[] {
+  const rank = (j: T) => [
+    j.verdict.state === "proposed" ? 0 : j.f.abstained ? 2 : 1,
+    -j.score.strength, -(j.f.model_self_confidence ?? 0)];
+  const better = (a: number[], b: number[]) => {
+    const i = a.findIndex((x, k) => x !== b[k]);
+    return i >= 0 && a[i] < b[i];
+  };
+  const best = new Map<string, T>();
+  for (const j of judged) {
+    const held = best.get(j.f.field_key);
+    if (!held || better(rank(j), rank(held))) best.set(j.f.field_key, j);
+  }
+  return judged.filter((j) => best.get(j.f.field_key) === j);
 }
 
 /**

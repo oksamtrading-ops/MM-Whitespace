@@ -263,21 +263,27 @@ export async function settleReady(
       if (batch.state !== "ended" && !await pollBatch(db, batch, vendor, now)) continue;
       const tally = await settleBatch(db, { ...batch, state: "ended" }, vendor, async (row, result) => {
         try {
-          await settleBatchResult(db, batch.run_id, row, result, {
+          const r = await settleBatchResult(db, batch.run_id, row, result, {
             mode: opts.mode, cassetteDir: opts.cassetteDir ?? defaultCassetteDir(),
             ...(opts.live ? { live: opts.live } : {}),
           });
+          return r && "note" in r ? r : undefined;
         } catch (err) {
-          // settleBatchResult has already routed the job. One company's bad
-          // answer must not abandon the rest of the batch's results, which are
-          // downloaded and would otherwise be read again next time.
+          // A JobFailed has been routed: the job is queued again or abandoned,
+          // and its request is settled. Anything else was not -- settleBatch
+          // leaves that request open, to be tried again by the next worker.
           if (!(err instanceof JobFailed)) throw err;
         }
       }, now);
       settled += tally.succeeded;
-    } catch {
+    } catch (err) {
       // A batch that cannot be polled or read is left open and tried again on
-      // the next worker; nothing about it has been consumed.
+      // the next worker; nothing about it has been consumed. Said, though, not
+      // swallowed: a batch that never settles is a period that never advances.
+      const message = String((err as Error)?.message ?? err).split("\n")[0].slice(0, 500);
+      console.error(`batch ${batch.vendor_batch_id}: not settled: ${message}`);
+      await db.run("update enrichment_batches set last_error = ? where id = ?", message, batch.id)
+        .catch(() => { /* the database is the likelier thing to have failed */ });
       continue;
     }
     await settleRun(db, batch.run_id);

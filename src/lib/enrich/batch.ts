@@ -182,35 +182,61 @@ export async function pollBatch(
 export type SettleOutcome = "succeeded" | "errored" | "expired" | "canceled";
 
 /**
+ * What became of a result, when that is not simply what the vendor said: an
+ * answer the job had moved past, or one that could never be saved. The note
+ * is written on the request row.
+ */
+export type Verdict = { state: SettleOutcome; note: string };
+
+/**
  * Read an ended batch's results and hand each to `onResult`.
  *
  * Results arrive in ANY order, keyed by custom_id -- never by position -- so
  * each is matched to its request row by that id. A result whose row is gone,
  * or already settled, is skipped rather than applied twice: settling is
  * re-entrant because a worker can die halfway through a download.
+ *
+ * A result `onResult` throws on is left submitted, with the error on its row
+ * and on the batch's, and the rest are still read. It used to end the loop,
+ * silently: one result that threw on every worker held every result after it
+ * for as long as nobody looked.
  */
 export async function settleBatch(
   db: Sql, batch: BatchRow, vendor: BatchVendor,
-  onResult: (row: BatchRequestRow, result: BatchResult["result"]) => Promise<void>,
+  onResult: (row: BatchRequestRow, result: BatchResult["result"]) => Promise<Verdict | void>,
   now: () => number = Date.now,
-): Promise<Record<SettleOutcome, number>> {
+): Promise<Record<SettleOutcome | "unapplied", number>> {
   const rows = await db.all(
     `select id, batch_id, job_id, custom_id, attempt, context, state
        from enrichment_batch_requests where batch_id = ?`, batch.id) as BatchRequestRow[];
   const byCustomId = new Map(rows.map((r) => [r.custom_id, r]));
-  const tally: Record<SettleOutcome, number> = { succeeded: 0, errored: 0, expired: 0, canceled: 0 };
+  const tally: Record<SettleOutcome | "unapplied", number> =
+    { succeeded: 0, errored: 0, expired: 0, canceled: 0, unapplied: 0 };
 
   for await (const result of await vendor.results(batch.vendor_batch_id!)) {
     const row = byCustomId.get(result.custom_id);
     if (!row || row.state !== "submitted") continue;
-    tally[result.result.type]++;
-    await onResult(row, result.result);
+    let verdict: Verdict | void;
+    try {
+      verdict = await onResult(row, result.result);
+    } catch (err) {
+      tally.unapplied++;
+      const message = String((err as Error)?.message ?? err).split("\n")[0].slice(0, 400);
+      await db.run("update enrichment_batch_requests set last_error = ? where id = ?", message, row.id);
+      await db.run("update enrichment_batches set last_error = ? where id = ?",
+                   `${row.custom_id}: ${message}`.slice(0, 500), batch.id);
+      console.error(`batch ${batch.vendor_batch_id}: ${row.custom_id} left open: ${message}`);
+      continue;
+    }
+    const state = verdict ? verdict.state : result.result.type;
+    tally[state]++;
     await db.run(
       `update enrichment_batch_requests set state = ?, settled_at = ?, last_error = ?
         where id = ?`,
-      result.result.type, formatStamp(now()),
-      result.result.type === "errored"
-        ? String(JSON.stringify(result.result.error)).slice(0, 500) : null,
+      state, formatStamp(now()),
+      verdict ? verdict.note.slice(0, 500)
+        : result.result.type === "errored"
+          ? String(JSON.stringify(result.result.error)).slice(0, 500) : null,
       row.id);
   }
 

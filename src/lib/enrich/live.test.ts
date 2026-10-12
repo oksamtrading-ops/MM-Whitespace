@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { Sql } from "../db/sql.ts";
 import { regionFrom, resetTickerCache, titleAddress } from "./edgar.ts";
 import type { HttpResponse } from "./fetch.ts";
-import { claimJobs, ensureSlots } from "./ledger.ts";
+import { claimJobs, ensureSlots, reapExpiredLeases } from "./ledger.ts";
 import { drain, settleReady } from "./drain.ts";
 import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
@@ -123,7 +123,7 @@ const EXTRACTION = { findings: [
 ] };
 
 function vendor(opts: { pauseFirst?: boolean; refuse?: boolean; perCompany?: boolean;
-                        report?: Record<string, unknown> } = {}) {
+                        report?: Record<string, unknown>; extraction?: typeof EXTRACTION } = {}) {
   const requests: Array<Record<string, unknown>> = [];
   let discoveries = 0;
   const v: Vendor = {
@@ -157,7 +157,7 @@ function vendor(opts: { pauseFirst?: boolean; refuse?: boolean; perCompany?: boo
           { type: "tool_use", id: "t1", name: "report_sources", input: opts.report ?? DISCOVERY_REPORT },
         ] } as VendorMessage;
       }
-      return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(EXTRACTION) }],
+      return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(opts.extraction ?? EXTRACTION) }],
                usage: { input_tokens: 8000, output_tokens: 900 } } as VendorMessage;
     },
   };
@@ -704,6 +704,196 @@ test("BATCH: two companies in one batch are told apart by custom_id, never by po
   }
 });
 
+
+/* ------------------------------------------- settling, when it goes wrong */
+// Each of these is a way the second pass-2 run lost a company's answer, or
+// paid for it twice, or held other companies' answers behind it.
+
+const SETTLE = { deadlineSeconds: 30, mode: "live" as const, cassetteDir: CASSETTE_DIR };
+
+/** A save that fails on its second finding, as a full disk or a dropped connection would. */
+async function failSecondFinding(db: Sql): Promise<() => Promise<void>> {
+  await db.exec(`create trigger planted_failure before insert on enrichment_findings
+      when (select count(*) from enrichment_findings
+             where job_id = new.job_id and attempt = new.attempt) >= 1
+      begin select raise(abort, 'planted: the save failed part way'); end`);
+  return () => db.exec("drop trigger planted_failure");
+}
+
+/** One company's pass 2, submitted to a batch and not yet settled. */
+async function submittedGeneral() {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v, requests } = vendor();
+  const { fetchDeps } = world();
+  const live = deps(db, v, fetchDeps);
+  const { runId } = await createRun(db, periodId, [northco.id],
+    { cassetteDir: CASSETTE_DIR, fieldGroup: "general", mode: "live" });
+  const { vendor: bv } = batchVendor(v);
+  assert.equal((await drainBatched(db, live, bv)).jobsBatched, 1);
+  const job = async () => await db.get(
+    "select id, state, attempts, last_error from enrichment_jobs where run_id = ?", runId) as
+    { id: string; state: string; attempts: number; last_error: string | null };
+  const request = async () => await db.get(
+    "select state, last_error from enrichment_batch_requests") as { state: string; last_error: string | null };
+  const batch = async () => await db.get(
+    "select state, last_error from enrichment_batches") as { state: string; last_error: string | null };
+  const spend = async () => Number((await db.get(
+    "select spend_usd from enrichment_runs where id = ?", runId) as { spend_usd: number }).spend_usd);
+  return { db, runId, live, bv, requests, job, request, batch, spend };
+}
+
+test("a field answered twice is saved once, by the answer the gate let through", async () => {
+  // Franco-Nevada's first pass-2 answer named its auditor twice. Findings are
+  // unique per field and attempt, so the second insert failed the whole save.
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const auditor = EXTRACTION.findings[0];
+  const extraction = { findings: [
+    { ...auditor, abstained: true, abstention_reason: "not in this document",
+      evidence_excerpt: null, text_value: null, self_confidence: 0.95 },
+    // Fabricated, and the model is surer of it than of the real one.
+    { ...auditor, text_value: "KPMG LLP", self_confidence: 0.99,
+      evidence_excerpt: "KPMG LLP has been the auditor of the Corporation since 2019." },
+    ...EXTRACTION.findings,
+  ] } as typeof EXTRACTION;
+  const { v } = vendor({ extraction });
+  const { fetchDeps } = world();
+  const { outcome, findings, by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+
+  assert.equal(outcome.jobState, "completed", "the save went through");
+  assert.equal(findings.filter((f) => f.field_key === "auditor").length, 1, "one auditor, not three");
+  assert.equal(JSON.parse(by.auditor.proposed_value), "Deloitte",
+               "the one in the filing, over an abstention and over a surer fabrication");
+  assert.equal(by.auditor.state, "proposed");
+  assert.equal(findings.length, EXTRACTION.findings.length, "every other field is saved as before");
+});
+
+test("a save that fails part way leaves nothing behind, and the job is routed, not left to be reaped", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  await failSecondFinding(db);
+  const { v } = vendor();
+  const { fetchDeps } = world();
+  await assert.rejects(runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps)),
+    (err: unknown) => err instanceof JobFailed && err.outcome === "dead_letter");
+
+  const n = await db.get("select count(*) n from enrichment_findings") as { n: number };
+  assert.equal(Number(n.n), 0, "the first finding went with the second");
+  const job = await db.get("select state, last_error from enrichment_jobs") as { state: string; last_error: string };
+  assert.equal(job.state, "dead_letter", "routed like any failed call, never left in persisting");
+  assert.match(job.last_error, /planted/);
+});
+
+test("BATCH: an answer that fails to save is saved by the next worker, from the stored answer", async () => {
+  // The answer is paid for and downloaded. A save that fails must cost a
+  // retry of the save -- not a second research of the company.
+  const { db, live, bv, requests, job, request, batch, spend } = await submittedGeneral();
+  const asked = requests.length;
+  const restore = await failSecondFinding(db);
+
+  await settleReady(db, bv, { ...SETTLE, live });
+  let j = await job();
+  assert.equal(j.state, "awaiting_batch", "it still waits on its batch, which the reaper never touches");
+  assert.equal(j.attempts, 2, "a failed save is charged as an attempt");
+  assert.equal(Number((await db.get("select count(*) n from enrichment_findings") as { n: number }).n), 0,
+               "nothing is half-written");
+  assert.equal((await request()).state, "submitted", "its request stays open, to be tried again");
+  assert.match(String((await request()).last_error), /planted/, "with the reason on it");
+  assert.match(String((await batch()).last_error), /planted/, "and on the batch, where the runbook looks");
+  assert.equal((await batch()).state, "ended", "the batch is not settled while it owes an answer");
+  assert.equal(await spend(), 0, "nothing is charged for a save that did not happen");
+
+  // Hours later, as in production: the lease it was submitted under is long gone.
+  await db.run("update enrichment_jobs set lease_expires_at = '2000-01-01 00:00:00' where id = ?", j.id);
+  await reapExpiredLeases(db);
+  assert.equal((await job()).state, "awaiting_batch", "so it is not sent back to be researched again");
+
+  await restore();
+  await settleReady(db, bv, { ...SETTLE, live });
+  j = await job();
+  assert.equal(j.state, "completed");
+  assert.ok(Number((await db.get("select count(*) n from enrichment_findings") as { n: number }).n) > 1);
+  assert.equal(requests.length, asked, "the vendor was asked nothing more");
+  assert.equal((await request()).state, "succeeded");
+  assert.equal((await batch()).state, "settled");
+
+  const stored = await db.all("select raw from enrichment_job_results where job_id = ?", j.id) as
+    Array<{ raw: string }>;
+  assert.equal(stored.length, 1, "the answer was stored once, and saved from that");
+  const cost = Number(JSON.parse(stored[0].raw).cost_usd);
+  assert.ok(cost > 0);
+  assert.ok(Math.abs(await spend() - cost) < 1e-9, `charged once: ${await spend()} against ${cost}`);
+});
+
+test("BATCH: an answer that can never be saved is dead-lettered once its attempts are spent", async () => {
+  // Otherwise every tick would invoke a worker to fail the same save, forever.
+  const { db, live, bv, job, request, batch, spend } = await submittedGeneral();
+  await failSecondFinding(db);
+
+  await settleReady(db, bv, { ...SETTLE, live });
+  assert.equal((await job()).state, "awaiting_batch", "the first failure is retried");
+  await settleReady(db, bv, { ...SETTLE, live });
+  const j = await job();
+  assert.equal(j.state, "dead_letter", "the third attempt is the last");
+  assert.match(String(j.last_error), /could not be saved: planted/);
+  assert.equal((await request()).state, "errored", "its request is closed");
+  assert.match(String((await request()).last_error), /attempts are spent/);
+  assert.equal((await batch()).state, "settled", "and the batch with it");
+  assert.ok(await spend() > 0, "an answer is paid for whether or not it could be saved");
+});
+
+test("BATCH: an answer the job has moved past is set aside and charged, and holds up nothing", async () => {
+  // Franco-Nevada's first save failed, the job was reaped and researched
+  // again, and that second attempt finished it. Its first answer then threw
+  // on every worker, and two other companies' answers waited behind it.
+  for (const moved of ["completed", "waiting on a later batch"]) {
+    resetTickerCache();
+    const { db, periodId, companies } = seedFixtureDatabase() as {
+      db: Sql; periodId: string; companies: Array<{ id: string; name: string }>;
+    };
+    const { v } = vendor({ perCompany: true });
+    const { fetchDeps } = world();
+    const live = deps(db, v, fetchDeps);
+    const { vendor: bv } = batchVendor(v);
+    const { runId } = await createRun(db, periodId, companies.slice(0, 2).map((c) => c.id),
+      { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+    assert.equal((await drainBatched(db, live, bv)).jobsBatched, 2);
+
+    // Results come back reversed, so the last request's answer is read first:
+    // the stale one goes there, where it used to stop everything after it.
+    const reqs = await db.all("select id, job_id, custom_id from enrichment_batch_requests") as
+      Array<{ id: string; job_id: string; custom_id: string }>;
+    reqs.sort((a, b) => Number(a.custom_id.split("-").pop()) - Number(b.custom_id.split("-").pop()));
+    const [fresh, stale] = reqs;
+    await db.run(`update enrichment_jobs set batch_id = 'msgbatch_later'${moved === "completed"
+      ? ", state = 'completed'" : ""} where id = ?`, stale.job_id);
+
+    await settleReady(db, bv, { ...SETTLE, live });
+
+    const state = async (id: string) =>
+      (await db.get("select state from enrichment_jobs where id = ?", id) as { state: string }).state;
+    assert.equal(await state(fresh.job_id), "completed", `${moved}: the other company is not held up`);
+    assert.equal(await state(stale.job_id), moved === "completed" ? "completed" : "awaiting_batch",
+                 `${moved}: the job is left as it was`);
+    const findings = await db.get("select count(*) n from enrichment_findings where job_id = ?", stale.job_id) as
+      { n: number };
+    assert.equal(Number(findings.n), 0, `${moved}: the old answer was not applied`);
+
+    const r = await db.get("select state, last_error from enrichment_batch_requests where id = ?", stale.id) as
+      { state: string; last_error: string };
+    assert.equal(r.state, "canceled", moved);
+    assert.match(r.last_error, new RegExp(`superseded: the job is ${moved}`));
+    const b = await db.get("select state from enrichment_batches") as { state: string };
+    assert.equal(b.state, "settled", `${moved}: nothing is left owing, so the batch settles`);
+
+    // Both answers were billed, and the two companies cost the same to ask.
+    const raw = await db.get("select raw from enrichment_job_results where job_id = ?", fresh.job_id) as
+      { raw: string };
+    const one = Number(JSON.parse(raw.raw).cost_usd);
+    const spent = Number((await db.get("select spend_usd from enrichment_runs where id = ?", runId) as
+      { spend_usd: number }).spend_usd);
+    assert.ok(one > 0);
+    assert.ok(Math.abs(spent - 2 * one) < 1e-9, `${moved}: both answers charged, ${spent} against ${one} each`);
+  }
+});
 
 test("EDGAR shouts, and a subdivision code cased down is not a word", async () => {
   // Alkane's head office came back from the first batched run as "Perth, Wa":
