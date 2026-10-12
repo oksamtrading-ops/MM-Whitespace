@@ -69,7 +69,7 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
         "select id from pursuits where company_id = ? order by created_at limit 1", id) as
         { id: string } | undefined)?.id ?? null)
     : null;
-  const p = await readCompanyProfile(ctx.db, id, { allowDraft: canReview });
+  const p = await readCompanyProfile(ctx.db, id, { allowDraft: canReview, internal: canReview });
   if (!p) {
     return <Refusal title="No such company"
                     body="That company is not in the published population for this period."

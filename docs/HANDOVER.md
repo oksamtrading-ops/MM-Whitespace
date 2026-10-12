@@ -17,7 +17,7 @@
 > Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
 > Everything on `main` is deployed; migrations are applied through `0032`.
-> 155 commits on `main`. To start a new session, paste everything below the line.
+> 156 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -372,14 +372,20 @@ and the cause was in how batched answers are saved.
 | Release A | 451 | 73 | 162 |
 | Release C | 489 | 85 | 173 |
 | Batch fix | 499 | 85 | 173 |
+| Viewer market fix | 500 | 85 | 175 |
 
 The auth, class and contrast checks and the build pass on both. Each new
 guard was watched failing against a planted bug, except where the traps below
 say otherwise.
 
 **Flagged in passing, not fixed:**
-- **A Viewer still sees the Deloitte market** on a company's page, against doc
-  11. Release B removes it from the table and the export only.
+- ~~**A Viewer still sees the Deloitte market**~~ on a company's page —
+  **fixed 12 October.** `readCompanyProfile` now drops Deloitte-internal fields
+  unless its `internal` option is set, and only Analysts and Admins set it. It
+  is off by default, so a new caller hides the field rather than leaking it.
+  The database policy in 0008 already hid these values from the Viewer role,
+  but no request runs as that role, so the policy guards only direct access to
+  the Data API, never the app.
 - **0008 grants `app_analyst` select on the frozen tables with no analyst
   policy**, so through that role they return no rows. Nothing reads through it
   today, and 0031 pairs both for its own table.
@@ -1110,7 +1116,7 @@ As at 12 October 2026, in the order worth doing:
 | **g** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
 | **h** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
 | **i** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
-| **j** | **Viewers see the Deloitte market on the company page** (doc 11 says they should not) | a small build, when wanted |
+| **j** | ~~Viewers see the Deloitte market on the company page~~ — fixed 12 October | — |
 
 Rename the Vercel project, the URL and the repository only if Samuel decides
 to; they are outward-facing.

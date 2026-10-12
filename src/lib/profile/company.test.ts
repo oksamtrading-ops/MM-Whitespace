@@ -4,6 +4,8 @@ import { memorySql } from "../db/open.ts";
 import assert from "node:assert/strict";
 import { applySchema } from "../db/schema.ts";
 import { formatProfileValue, listCompanies, readCompanyProfile, unpublishedChanges } from "./company.ts";
+import { commitPeriod, type ParsedCompany } from "../db/commit.ts";
+import { publishPeriod } from "../publish/snapshot.ts";
 
 test("a market cap reads as money and a region map as the regions actually held", async () => {
   assert.equal(formatProfileValue("market_cap_cad", 1060201462), "C$1,060,201,462", "never a bare $");
@@ -41,6 +43,44 @@ test("a Viewer reads nothing until a period is published", async () => {
   assert.equal(draft?.publication, null, "an Analyst is told this is the draft");
   assert.equal(draft?.tier?.tier, 4);
   assert.equal((await listCompanies(db, { allowDraft: true })).length, 1);
+});
+
+/*
+ * docs/design/11: the Deloitte market is Deloitte internal, "hidden from
+ * Viewers by column, not by interface". The companies table dropped it at
+ * the read; the company page read it for every role, and showed it to Viewers
+ * in the rail.
+ */
+test("a Viewer's company page never receives the Deloitte market; an Analyst's does", async () => {
+  const db = memorySql();
+  await commitPeriod(db, { period: "2026-05-31", companies: [{
+    ticker: "NRTH", exchange: "TSX", name: "Northco Mining Corp.", ordinal: 1, market_cap: 5_000_000_000,
+    stages: [], stage_evidence: "none", property_evidence: "complete",
+    regions: { CANADA: ["ON"] }, region_provenance: { CANADA: "extract" },
+    commodities: ["Gold"], venture_graduate: false, auditor: null, auditor_class: null,
+    entity_id: null, website: null, tier_workbook: 4, footprint_workbook: "Canada only",
+    dtt_market: "Ontario",
+  } as ParsedCompany] }, { label: "P1 (2026-05-31)" });
+  const periodId = (await db.get("select id from periods") as { id: string }).id;
+  const companyId = (await db.get("select id from companies") as { id: string }).id;
+  await publishPeriod(db, periodId, { overrideReason: "test" });
+  const frozen = await db.get("select count(*) n from published_period_values where field_key = 'dtt_market'") as
+    { n: number };
+  assert.equal(Number(frozen.n), 1, "the revision holds it, or this proves nothing");
+
+  // As the page calls it for a Viewer, and with the option left out entirely.
+  for (const viewer of [
+    await readCompanyProfile(db, companyId, { allowDraft: false, internal: false }),
+    await readCompanyProfile(db, companyId, { allowDraft: false }),
+  ]) {
+    assert.ok(viewer, "the Viewer still reads the company");
+    assert.ok(!viewer.values.some((v) => v.fieldKey === "dtt_market"), "the field is not in what the page receives");
+    assert.doesNotMatch(JSON.stringify(viewer), /dtt_market|Deloitte market/);
+  }
+
+  const analyst = await readCompanyProfile(db, companyId, { allowDraft: true, internal: true });
+  assert.equal(analyst!.values.find((v) => v.fieldKey === "dtt_market")?.value, "Ontario",
+               "an Analyst or Admin still sees it");
 });
 
 test("a company that does not exist is absent, not an error", async () => {

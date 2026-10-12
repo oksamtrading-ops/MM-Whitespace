@@ -910,6 +910,12 @@ async function journeys(dbPath) {
   const analystProfile = await get(`/companies/${seeded.companyId}`, analyst.cookie);
   check("an Analyst's does, and it points at the one already open",
         analystProfile.html.includes("Open the pursuit"));
+  // The Deloitte market is internal too (docs/design/11). The page's rail
+  // named it for every role until the read itself dropped it for a Viewer.
+  check("an Analyst's company profile names the Deloitte market",
+        analystProfile.html.includes("Deloitte market"));
+  check("and a Viewer's does not, anywhere in the page",
+        !viewerProfile.html.includes("Deloitte market") && !viewerProfile.html.includes("dtt_market"));
 
   // The repair for a renamed status appears only when there is something to
   // repair, and names what is stranded rather than asking the person to know.

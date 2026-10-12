@@ -88,9 +88,15 @@ function parseJson(text: unknown): unknown {
  *
  * `draft` is true only for an Analyst or Admin looking at a period that has
  * not been published, and the page says so on their behalf.
+ *
+ * `internal` admits the Deloitte-internal fields (the Deloitte market). They
+ * are dropped here unless it is set, so a Viewer's page never receives them:
+ * docs/design/11 says "hidden from Viewers by column, not by interface", and
+ * this read used to hand them to every role and leave the choice to the page.
+ * Off by default, so a caller that forgets fails closed.
  */
 export async function readCompanyProfile(
-  db: Sql, rawCompanyId: string, opts: { allowDraft: boolean },
+  db: Sql, rawCompanyId: string, opts: { allowDraft: boolean; internal?: boolean },
 ): Promise<CompanyProfile | null> {
   // A link made before a merge still lands on the company it was about.
   const companyId = await resolveCompanyId(db, rawCompanyId);
@@ -108,15 +114,18 @@ export async function readCompanyProfile(
   if (!pub && !opts.allowDraft) return null;
 
   const catalogue = new Map(
-    (await db.all("select key, label from field_catalog") as Array<{ key: string; label: string }>)
-      .map((f) => [f.key, f.label]));
+    (await db.all("select key, label, classification from field_catalog") as
+      Array<{ key: string; label: string; classification: string }>).map((f) => [f.key, f]));
+  const admitted = (r: RawValue) =>
+    opts.internal === true || catalogue.get(r.field_key)?.classification !== "deloitte_internal";
 
-  const rows = pub
+  const rows = (pub
     ? await db.all(`select field_key, value, source, evidence_state, evidence_strength, excerpt, sources
            from published_period_values where publication_id = ? and company_id = ?`, pub.id, companyId) as RawValue[]
     : await db.all(`select field_key, value, source, evidence_state,
                 null as evidence_strength, null as excerpt, null as sources, source_period_id
-           from company_period_field_values where period_id = ? and company_id = ?`, period.id, companyId) as RawValue[];
+           from company_period_field_values where period_id = ? and company_id = ?`, period.id, companyId) as RawValue[]
+  ).filter(admitted);
 
   // A draft has no frozen citations, so they are resolved live -- the same
   // resolver publish freezes from, so an Analyst sees the source a Viewer
@@ -136,7 +145,7 @@ export async function readCompanyProfile(
     const strength = resolved ? resolved.strength : r.evidence_strength;
     return {
       fieldKey: r.field_key,
-      label: catalogue.get(r.field_key) ?? r.field_key,
+      label: catalogue.get(r.field_key)?.label ?? r.field_key,
       value,
       display: formatProfileValue(r.field_key, value),
       source: r.source,
