@@ -3,15 +3,17 @@
 > **Status at 12 October 2026.** The product is now the **Market Assessment
 > Tool** (formerly the Mining Whitespace Intelligence Tool). Since 12 October
 > every sign-in lands on a landing page that says how its information was
-> produced. That is **Release A**, deployed. **Releases B and C are built and
-> tested, and wait on local branches** for steps only Samuel can authorise.
+> produced. That is **Release A**, deployed. **Release B — the new companies
+> table — is deployed too, but not yet complete**: its head-office backfill
+> and revision 9 are still to run (item 1 below). **Release C waits on a local
+> branch.**
 >
 > Production data has not moved since 13 September: Q3-2026 is at
 > **revision 8**, 240 decisions, 34 companies researched, **US$11.7563** all
 > in. Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
-> Everything on `main` is deployed; migrations are applied through `0029`.
-> 143 commits on `main`. To start a new session, paste everything below the line.
+> Everything on `main` is deployed; migrations are applied through `0031`.
+> 146 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -32,22 +34,24 @@ anything.
    the guide in `node_modules/next/dist/docs/` before writing Next.js code).
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
-5. **Check the release branches exist**: `git branch --list "release-*"`.
-   Releases B and C live ONLY as local branches on Samuel's Mac
-   (`release-b-table`, `release-c-erp`). They have not been pushed anywhere. A
-   session on another machine will not see them.
+5. **Check the release branch exists**: `git branch --list "release-*"`.
+   Release C lives ONLY as a local branch on Samuel's Mac (`release-c-erp`).
+   It has not been pushed anywhere, and a session on another machine will not
+   see it. (Releases A and B are on `main`.)
 
 ## What is waiting on Samuel
 
-**1. Release B — the new companies table.** Built and tested on
-`release-b-table`. It answers the client's requests (see "Built on 9–12
-October" below). Shipping it is five steps, each needing Samuel's explicit yes:
+**1. Release B — the new companies table — is deployed and half-finished.**
+It answers the client's requests (see "Built on 9–12 October" below).
+**Until steps 3 and 4 run, the new screens read revision 8**, which froze no
+stage rows and no citations. So the stage columns say "Not recorded in this
+revision", values say "Sources were not recorded in this revision", and
+Company HQ shows only where research found one. Each step needs Samuel's yes:
 
-1. Apply migrations `0030_published_stages.sql` and
-   `0031_published_stages_grants.sql` to Supabase. Harmless to the running
-   version, which never reads the new table.
-2. Merge to `main` and push (which deploys). Rebase onto `main` first; git
-   drops the duplicate injection-fix commit, which is already on `main`.
+1. ~~Apply migrations `0030` and `0031`~~ — **done 12 October**, verified:
+   RLS on, select for `app_analyst` only, no access for `anon` or
+   `authenticated`, both policies present, and the ledger records both.
+2. ~~Merge to `main` and push~~ — **done 12 October**.
 3. Backfill head office into the published Q3-2026, from Samuel's shell. Run
    without `--apply` first; it reports what it would write:
 
@@ -137,7 +141,7 @@ Release C.
 | What | Where |
 |---|---|
 | Project folder | `/Users/oksam/Documents/Work Research/Opp Research` |
-| Repository | `github.com/oksamtrading-ops/MM-Whitespace`, branch `main`. **A push to `main` deploys production**. Releases B and C: local branches `release-b-table`, `release-c-erp` |
+| Repository | `github.com/oksamtrading-ops/MM-Whitespace`, branch `main`. **A push to `main` deploys production** — on 12 October Vercel took about six minutes to start the build, so check `npx vercel ls` before concluding it did not. Release C: local branch `release-c-erp` |
 | Live application | **https://mm-whitespace.vercel.app** — Vercel project `oksamtrading-ops-projects/mm-whitespace`, linked locally in `.vercel/`. Not renamed; that is outward-facing and a separate decision |
 | Database | Supabase project **MM_Whitespace**, ref `djepptfxdkvmcretnogy`, region `ca-central-1`, Postgres 17.6 |
 | The client's requests | An email after a client conversation, 9 October 2026, read from a screenshot. See "Built on 9–12 October" |
@@ -150,7 +154,7 @@ Release C.
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
-Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 143 commits on `main`.
+Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 146 commits on `main`.
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -207,11 +211,11 @@ two instructions of his own, are built:
 |---|---|---|---|
 | 1 | A landing page with a disclaimer that results are generated by AI | Release A | **deployed 12 Oct** |
 | 2 | Rename "Whitespace" to Market Assessment Tool | Release A | **deployed 12 Oct** |
-| 3 | Company table: Audit Fees, Mine Lifecycle, Incumbent ERP; Company HQ in place of Deloitte market | B (C for ERP) | built |
-| 4 | Filters on Tier, HQ, Stage, Mine Lifecycle, Auditor, Footprint, property location; search reaching the company page | B | built |
-| 5 | Multi-select filters, and an Excel export of the filtered table | B | built |
+| 3 | Company table: Audit Fees, Mine Lifecycle, Incumbent ERP; Company HQ in place of Deloitte market | B (C for ERP) | **B deployed 12 Oct**, completes with revision 9; ERP built |
+| 4 | Filters on Tier, HQ, Stage, Mine Lifecycle, Auditor, Footprint, property location; search reaching the company page | B | **deployed 12 Oct** |
+| 5 | Multi-select filters, and an Excel export of the filtered table | B | **deployed 12 Oct** |
 | — | Samuel: the disclaimer names no AI tool | A | deployed |
-| — | Samuel: every screen cites its sources; publish always copies the evidence | B | built |
+| — | Samuel: every screen cites its sources; publish always copies the evidence | B | deployed; visible from revision 9 |
 
 **Decisions taken with Samuel**
 - **Mine Lifecycle is Stage of Operations.** The four stage flags appear as tick
@@ -237,7 +241,7 @@ two instructions of his own, are built:
   the fixture file, the repository, the Vercel project and the URL.
 - **The injection fix** (see the traps) shipped here too.
 
-**Release B (built, `release-b-table`).**
+**Release B (deployed 12 October; completes with the backfill and revision 9).**
 - **One pure module for screen and export.** `src/lib/profile/roster.ts` (no
   node imports) holds the row, the filter, its URL form, the sort and their
   words. The client table and `/api/companies/export` both narrow through it,
@@ -1005,7 +1009,7 @@ As at 12 October 2026, in the order worth doing:
 
 | | | Whose |
 |---|---|---|
-| **a** | **Release B**: migrations, push, head-office backfill, revision 9, `pg:smoke` | Samuel's yes at each step; the backfill and `pg:smoke` run in his shell |
+| **a** | **Finish Release B**: the head-office backfill, revision 9, `pg:smoke` (migrations and the push are done) | Samuel's yes at each step; the backfill and `pg:smoke` run in his shell |
 | **b** | **Release C**: migration, push, the ~US$2.50 pass-2 re-run, revision 10 | Samuel's yes; before Run 3 |
 | **c** | **Unblock the second Admin.** A Deloitte address with no account, or a forgotten password | Samuel, on `/access` |
 | **d** | **Review**: 67 undecided pairs, the two flagged judgements, the Barrick action overdue since 30 Sep | Samuel and Kay |
