@@ -3,17 +3,19 @@
 > **Status at 12 October 2026.** The product is now the **Market Assessment
 > Tool** (formerly the Mining Whitespace Intelligence Tool). Since 12 October
 > every sign-in lands on a landing page that says how its information was
-> produced. That is **Release A**, deployed. **Release B — the new companies
-> table — is deployed too, but not yet complete**: its head-office backfill
-> and revision 9 are still to run (item 1 below). **Release C waits on a local
-> branch.**
+> produced. All three releases built for the client's requests are deployed:
+> **A** (landing page, rename), **B** (the new companies table, with sources on
+> every value — complete with **revision 9**, published 12 October) and **C**
+> (Incumbent ERP). What C still needs is research and review: the pass-2
+> re-run, then revision 10 (item 1 below).
 >
-> Production data has not moved since 13 September: Q3-2026 is at
-> **revision 8**, 240 decisions, 34 companies researched, **US$11.7563** all
-> in. Kay uses the tool unaided. A second Admin exists and cannot sign in.
+> Q3-2026 is at **revision 9**: 4,030 values frozen, every one with a citation,
+> stage rows for the 40 researched companies, and a head office for all 259.
+> 240 decisions, 34 companies researched, US$11.7563 spent before C's re-run.
+> Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
-> Everything on `main` is deployed; migrations are applied through `0031`.
-> 146 commits on `main`. To start a new session, paste everything below the line.
+> Everything on `main` is deployed; migrations are applied through `0032`.
+> 153 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -34,54 +36,59 @@ anything.
    the guide in `node_modules/next/dist/docs/` before writing Next.js code).
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
-5. **Check the release branch exists**: `git branch --list "release-*"`.
-   Release C lives ONLY as a local branch on Samuel's Mac (`release-c-erp`).
-   It has not been pushed anywhere, and a session on another machine will not
-   see it. (Releases A and B are on `main`.)
+5. Releases A, B and C are all on `main`; the `release-*` branches on
+   Samuel's Mac are spent and can be deleted.
 
 ## What is waiting on Samuel
 
-**1. Release B — the new companies table — is deployed and half-finished.**
-It answers the client's requests (see "Built on 9–12 October" below).
-**Until steps 3 and 4 run, the new screens read revision 8**, which froze no
-stage rows and no citations. So the stage columns say "Not recorded in this
-revision", values say "Sources were not recorded in this revision", and
-Company HQ shows only where research found one. Each step needs Samuel's yes:
+**1. Finish Release C: research the ERP, review it, publish revision 10.**
+Release C is deployed (12 October) and migration `0032` is applied. What it
+needs now is data:
 
-1. ~~Apply migrations `0030` and `0031`~~ — **done 12 October**, verified:
-   RLS on, select for `app_analyst` only, no access for `anon` or
-   `authenticated`, both policies present, and the ledger records both.
-2. ~~Merge to `main` and push~~ — **done 12 October**.
-3. Backfill head office into the published Q3-2026, from Samuel's shell. Run
-   without `--apply` first; it reports what it would write:
+1. **The pass-2 re-run**: an Admin on `/runs`, pass 2, scope "Every company"
+   — the ~33 companies with a trusted website, about US$2.50 batched. Started
+   right after the deploy on 12 October; `/runs` shows its state. A batch can
+   take far longer than a synchronous run: check `enrichment_batches` before
+   treating it as stalled.
+2. **Review the ERP findings** on `/review/incumbent_erp`. Expect few values
+   and many abstentions: a company names its ERP mostly when it changes
+   internal controls. A quote that does not name the system arrives as an
+   abstention by design. An override must type the public page after the
+   system (`SAP S/4HANA https://…`) — refused otherwise, because an ERP known
+   from an engagement is client information.
+3. **Publish revision 10** on `/publish`, with an amendment reason; it will
+   need the blocked-gate override as 6–9 did.
+4. `pg:smoke` from Samuel's own terminal — never yet run against this code:
 
    ```bash
-   MM_DATABASE_URL='…' node scripts/backfill_head_office.mjs "M&M - Whitespace Analysis Q3-2026.xlsx" --expect-revision 8
+   read -rs MM_DATABASE_URL && export MM_DATABASE_URL
    ```
 
-   It should say roughly 259 facts and 259 − *n* values, with *n* head offices
-   left alone because research already stands there. Then run the same command
-   with `--apply`.
-4. Publish **revision 9** on `/publish` (Admin), with an amendment reason; it
-   will probably need the blocked-gate override again. Revision 9 is the first
-   to freeze citations and stage rows. Publish **refuses** if any researched
-   value has neither a quote nor a document. On 9 October production had 218
-   accepted research values: 212 with a quote and document, and 6 accepted
-   abstentions that cite the search itself. So it should pass.
-5. `MM_DATABASE_URL='…' npm run pg:smoke` from Samuel's shell. It has never
-   been run against this code. Its "ledger is current" step fails until step 1
-   is done.
+   then `npm run pg:smoke`. **Never type the address after `!` in a Claude
+   session**: that lands it in the transcript.
 
-**2. Release C — Incumbent ERP.** Built on `release-c-erp`, on top of B. Ship
-it after B and **before Run 3**:
+**2. Release B — done 12 October, and how.** Migrations `0030`/`0031`
+applied and verified; code pushed; then:
 
-1. Apply `0032_incumbent_erp.sql`.
-2. Merge and push.
-3. An Admin starts a pass-2 run on `/runs` with scope "Every company". That
-   re-reads the ~33 companies already researched, about US$2.50 batched.
-4. Review the ERP findings and publish revision 10.
-
-Run 3 then picks ERP up for the other 229.
+- **The head-office backfill ran through the Supabase connector, not Samuel's
+  shell**, on his instruction — the logic of `scripts/backfill_head_office.mjs`
+  with its guards rebuilt in one SQL transaction (revision must be 8; every one
+  of 259 market caps equal to the committed fact). It wrote 259 facts and 234
+  values, and left the 25 research and review values alone. Audited as
+  `head_office_backfilled`, with the workbook's hash.
+- **"Québec" became "Quebec".** Research had copied French filings' spelling
+  for G Mining, Nouveau Monde and Radisson; Samuel decided the stored value
+  uses the workbook's spelling. Corrected before revision 9, source and
+  citation unchanged (audited as `head_office_spelling_normalised`), and
+  Release C's `canonicalRegion` keeps it so for research, review and undo. The
+  finding's QUOTE keeps the filing's spelling: it is the citation.
+- **Revision 9** froze 4,030 values, all cited (211 to a filing, 7 searches that
+  found nothing, 7 review entries, 3,028 to the workbook, 777 to the rules),
+  76 stage rows and 259 head offices.
+- **Four head offices disagree with the workbook** and are worth a reviewer's
+  eye — research stands, but one of the two sources is stale: China Gold
+  (research BC, workbook China), First Quantum (Ontario / BC), G Mining
+  (Quebec / BC), Lundin Mining (BC / Ontario).
 
 **3. The second Admin cannot sign in, and the reason has changed.**
 `hasaleem@r8dius.ca` (Hasan Saleem) was invited as Admin on 25 September and
@@ -107,8 +114,8 @@ held in step by `notices.test.ts`):
 > incomplete or wrong, so check the source before you rely on it.*
 
 It must stay generic, because more than one AI tool may be used, and a test
-refuses any tool or vendor name in it. Note that "each one shows the source"
-becomes true on screen only with Release B and revision 9.
+refuses any tool or vendor name in it. Since revision 9, "each one shows the
+source" is true on screen.
 
 **5. Review has not been touched since 13 September.**
 - 67 company/field pairs carry a finding and no decision.
@@ -120,8 +127,9 @@ becomes true on screen only with Release B and revision 9.
 - The Barrick pursuit action, owned by `samowusuking@gmail.com`, has been
   **overdue since 30 September**.
 
-**6. Run 3**, the remaining 229 companies at about US$41.22 batched, waits on
-Release C.
+**6. Run 3**, the remaining 229 companies at about US$41.22 batched. Release C
+is deployed, so it will research ERP too; run it once the ERP re-run's
+results have been looked at.
 
 **The roster, as at 12 October 2026** (read the live state from `/access`):
 
@@ -141,7 +149,7 @@ Release C.
 | What | Where |
 |---|---|
 | Project folder | `/Users/oksam/Documents/Work Research/Opp Research` |
-| Repository | `github.com/oksamtrading-ops/MM-Whitespace`, branch `main`. **A push to `main` deploys production** — on 12 October Vercel took about six minutes to start the build, so check `npx vercel ls` before concluding it did not. Release C: local branch `release-c-erp` |
+| Repository | `github.com/oksamtrading-ops/MM-Whitespace`, branch `main`. **A push to `main` deploys production** — on 12 October Vercel took about six minutes to start one build, and failed another with `git_info_fail` (see the traps), so check `npx vercel ls` before concluding anything |
 | Live application | **https://mm-whitespace.vercel.app** — Vercel project `oksamtrading-ops-projects/mm-whitespace`, linked locally in `.vercel/`. Not renamed; that is outward-facing and a separate decision |
 | Database | Supabase project **MM_Whitespace**, ref `djepptfxdkvmcretnogy`, region `ca-central-1`, Postgres 17.6 |
 | The client's requests | An email after a client conversation, 9 October 2026, read from a screenshot. See "Built on 9–12 October" |
@@ -154,7 +162,7 @@ Release C.
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
-Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 146 commits on `main`.
+Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 153 commits on `main`.
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -211,11 +219,11 @@ two instructions of his own, are built:
 |---|---|---|---|
 | 1 | A landing page with a disclaimer that results are generated by AI | Release A | **deployed 12 Oct** |
 | 2 | Rename "Whitespace" to Market Assessment Tool | Release A | **deployed 12 Oct** |
-| 3 | Company table: Audit Fees, Mine Lifecycle, Incumbent ERP; Company HQ in place of Deloitte market | B (C for ERP) | **B deployed 12 Oct**, completes with revision 9; ERP built |
+| 3 | Company table: Audit Fees, Mine Lifecycle, Incumbent ERP; Company HQ in place of Deloitte market | B (C for ERP) | **deployed 12 Oct**; revision 9 published; ERP values arrive with C's re-run |
 | 4 | Filters on Tier, HQ, Stage, Mine Lifecycle, Auditor, Footprint, property location; search reaching the company page | B | **deployed 12 Oct** |
 | 5 | Multi-select filters, and an Excel export of the filtered table | B | **deployed 12 Oct** |
 | — | Samuel: the disclaimer names no AI tool | A | deployed |
-| — | Samuel: every screen cites its sources; publish always copies the evidence | B | deployed; visible from revision 9 |
+| — | Samuel: every screen cites its sources; publish always copies the evidence | B | **live since revision 9** |
 
 **Decisions taken with Samuel**
 - **Mine Lifecycle is Stage of Operations.** The four stage flags appear as tick
@@ -241,7 +249,7 @@ two instructions of his own, are built:
   the fixture file, the repository, the Vercel project and the URL.
 - **The injection fix** (see the traps) shipped here too.
 
-**Release B (deployed 12 October; completes with the backfill and revision 9).**
+**Release B (deployed 12 October; revision 9 published the same day).**
 - **One pure module for screen and export.** `src/lib/profile/roster.ts` (no
   node imports) holds the row, the filter, its URL form, the sort and their
   words. The client table and `/api/companies/export` both narrow through it,
@@ -297,7 +305,7 @@ two instructions of his own, are built:
 - **The dashboard's period-export button** no longer shows to Viewers, who
   could only ever get a 403 from it.
 
-**Release C (built, `release-c-erp`).**
+**Release C (deployed 12 October).**
 - **A new research field.** `incumbent_erp` (0032) is extracted in pass 2 with
   an anchored quote. A quote that does not name the proposed system is an
   abstention: "a new ERP" is real text that says nothing about which.
@@ -1000,6 +1008,24 @@ clean and never sees it.
 frames"). Read the DOM instead, or fix a viewport with `resize_window` before
 screenshotting; the pane otherwise changes size between captures.
 
+**A Vercel build can fail with `git_info_fail` before it starts.** The push
+of `7828be0` errored within three seconds: Vercel could not read the commit
+from GitHub. `npx vercel redeploy <failed deployment URL>` built it
+cleanly. That commit was the only one whose summary line carried a non-ASCII
+character ("Québec"); unproven as the cause, and cheap to avoid.
+
+**`git checkout -- <file>` while planting a bug also discards the fix.** On
+12 October restoring a planted file that way threw away the uncommitted
+change it was planted against. Copy the file aside and copy it back.
+
+**A placeholder in a command will be run as written.** `MM_DATABASE_URL='…'`
+was run literally and failed with `ENOTFOUND base`. Give the command that
+loads the secret (`read -rs`), not a placeholder for it.
+
+**CI was red from 10 September to 12 October and nobody noticed.** The Node
+suite needs `npm ci` since `postgres.ts` imported `@vercel/functions`. Fixed
+(`c6a54ef`); a red CI is a signal again, so keep it one.
+
 **`/Users/oksam` is itself a git repository**, with the Archieva folder inside
 it. Never run `git add -A` outside this project's folder.
 
@@ -1009,8 +1035,8 @@ As at 12 October 2026, in the order worth doing:
 
 | | | Whose |
 |---|---|---|
-| **a** | **Finish Release B**: the head-office backfill, revision 9, `pg:smoke` (migrations and the push are done) | Samuel's yes at each step; the backfill and `pg:smoke` run in his shell |
-| **b** | **Release C**: migration, push, the ~US$2.50 pass-2 re-run, revision 10 | Samuel's yes; before Run 3 |
+| **a** | ~~Release B~~ — done 12 October, revision 9 published | — |
+| **b** | **Finish Release C**: the pass-2 re-run's ERP findings reviewed, then revision 10; `pg:smoke` | Samuel and Kay; `pg:smoke` in Samuel's terminal |
 | **c** | **Unblock the second Admin.** A Deloitte address with no account, or a forgotten password | Samuel, on `/access` |
 | **d** | **Review**: 67 undecided pairs, the two flagged judgements, the Barrick action overdue since 30 Sep | Samuel and Kay |
 | **e** | **Run 3**, the remaining 229 companies, about US$41.22 batched | Samuel starts it on `/runs`, after Release C |
