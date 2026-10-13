@@ -16,29 +16,30 @@ import { egressScan, type RestrictionSet, type Route } from "./prompt.ts";
 /**
  * How many web searches discovery may make for one company.
  *
- * Six until 12 October 2026, and every one of 35 pass-1 jobs used all six.
- * Searches cost a cent each that the Batch API does not discount, and each
- * result's page content is cached and re-read on every later turn: at six,
- * caching search content was nearly 40% of a pass-1 job and the fees a quarter.
+ * Six. Every one of 35 Opus pass-1 jobs used all six. Four was tried on 12
+ * October 2026 with Sonnet and failed: every company spent its four, read the
+ * cap's error as the tool being down, and stopped -- Paladin and China Gold
+ * came back with no filings, and long retries ran workers past the platform's
+ * limit. One constant, because the request once carried its own copy.
  */
-export const DISCOVERY_MAX_SEARCHES = 4;
+export const DISCOVERY_MAX_SEARCHES = 6;
 
 /**
  * Route configuration.
  *
- * Discovery ran on the Opus tier until 12 October 2026, on the reasoning that
- * picking the wrong company's filing produces a confidently wrong, well-cited
- * fee, the worst failure this system has. It moved to Sonnet because that
- * failure is now refused in code rather than avoided by the model's care:
- * pass 2 reads no document that does not name the company (fieldsPrepare), a
- * website counts only if search returned it and its own homepage names the
- * company (verifyWebsite), and an EDGAR record must match by name
- * (lookupEdgar). Opus was about 75% of a pass-1 job's cost. The move is on
- * trial: docs/HANDOVER.md records what it is measured against.
+ * Discovery runs on the Opus tier deliberately: picking the wrong company's
+ * filing produces a confidently wrong, well-cited fee, which is the worst
+ * failure this system has. The cost delta does not buy that risk across 110
+ * interlisted companies and known renames.
+ *
+ * Sonnet was trialled on 12 October 2026, with four searches, to cut cost, and
+ * lost on both counts: about US$0.25 a finished company against Opus's $0.21,
+ * and far fewer filings found (Barrick 8 against 15, Elemental 4 against 12).
+ * docs/HANDOVER.md has the trial.
  */
 export const ROUTE_CONFIG = {
   discovery: {
-    model: "claude-sonnet-5",
+    model: "claude-opus-5",
     effort: "high" as const,
     // Dynamic-filtering variant. The older web_search_20250305 is for models
     // before Opus 4.6 / Sonnet 4.6 and is the only variant on Vertex.

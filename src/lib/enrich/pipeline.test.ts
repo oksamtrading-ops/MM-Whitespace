@@ -158,6 +158,36 @@ test("an expired lease returns the job to queued and charges NO attempt", async 
   assert.equal((await after).leased_by, null);
 });
 
+test("a job cut off on its last attempt is dead-lettered, not researched and paid for again", async () => {
+  // 12 October 2026: three trial jobs were cut off at the platform's limit
+  // three times each. Reaping charges nothing and starting research charges
+  // one, so each try climbed an attempt and nothing ever stopped the next.
+  const { db, periodId, companies } = await seeded();
+  const { runId } = await createRun(db, periodId, [companies[0].id, companies[1].id], { cassetteDir: CASSETTE_DIR });
+  await ensureSlots(db, 1);
+  const [spent, left] = await claimJobs(db, runId, "w1", 2);
+  assert.ok(spent && left, "the fixture needs two jobs");
+  await db.run(`update enrichment_jobs set state = 'researching', attempts = max_attempts,
+      lease_expires_at = '2000-01-01 00:00:00' where id = ?`, spent.id);
+  await db.run(`update enrichment_jobs set state = 'researching', attempts = 1,
+      lease_expires_at = '2000-01-01 00:00:00' where id = ?`, left.id);
+
+  assert.equal(await reapExpiredLeases(db), 2);
+  const row = async (id: string) => await db.get(
+    "select state, attempts, last_error, leased_by from enrichment_jobs where id = ?", id) as
+    { state: string; attempts: number; last_error: string | null; leased_by: string | null };
+
+  const last = await row(spent.id);
+  assert.equal(last.state, "dead_letter", "its attempts are spent; another try is another bill");
+  assert.match(String(last.last_error), /cut off before finishing on every attempt it was given \(3\)/);
+  assert.equal(last.leased_by, null);
+
+  const other = await row(left.id);
+  assert.equal(other.state, "queued", "a job with tries left still goes back, as before");
+  assert.equal(other.attempts, 1, "and is charged nothing for being cut off");
+  assert.equal(other.last_error, null);
+});
+
 test("heartbeat extends the lease of held jobs only", async () => {
   const { db, periodId, companies } = await seeded();
   const { runId } = await createRun(db, periodId, [companies[0].id], { cassetteDir: CASSETTE_DIR });

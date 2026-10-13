@@ -522,6 +522,48 @@ async function findingsOf(db: Sql, runId: string) {
       from enrichment_findings where run_id = ? order by field_key`, runId) as Array<Record<string, string>>;
 }
 
+test("each call's cost reaches the run as it returns, so a pass that never finishes is still counted", async () => {
+  // A trial attempt cut off at the platform's limit had made paid calls, and
+  // none reached the run: spend was recorded only once a job had saved.
+  const usage = { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0,
+                  cache_creation_input_tokens: 0, server_tool_use: { web_search_requests: 2 } };
+  const oneCall = new Meter();
+  oneCall.add(ROUTE_CONFIG.discovery.model, usage);
+
+  const { db, periodId, northco } = await seeded();
+  const { v } = vendor({ pauseFirst: true });
+  let calls = 0;
+  const dropsSecond: Vendor = {
+    async create(request) {
+      if (++calls === 2) throw new Error("the connection dropped");
+      return v.create(request);
+    },
+  };
+  const { fetchDeps } = world();
+  const { runId } = await createRun(db, periodId, [northco.id],
+    { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+  await ensureSlots(db, 1);
+  const [job] = await claimJobs(db, runId, `w-${Math.random()}`, 1);
+  await assert.rejects(processJob(db, runId, job, PERIOD_AS_OF,
+    { mode: "live", cassetteDir: CASSETTE_DIR, live: deps(db, dropsSecond, fetchDeps) }), JobFailed);
+
+  const spend = async (id: string) => Number((await db.get(
+    "select spend_usd from enrichment_runs where id = ?", id) as { spend_usd: number }).spend_usd);
+  assert.ok(oneCall.cost > 0);
+  assert.ok(Math.abs(await spend(runId) - oneCall.cost) < 1e-4,
+            `the first call was billed and is counted: ${await spend(runId)} against ${oneCall.cost}`);
+
+  // And a pass that finishes is counted once, not once per call and again at the end.
+  const done = await createRun(db, periodId, [northco.id],
+    { cassetteDir: CASSETTE_DIR, fieldGroup: "identity", mode: "live" });
+  const [next] = await claimJobs(db, done.runId, `w-${Math.random()}`, 1);
+  await processJob(db, done.runId, next, PERIOD_AS_OF,
+    { mode: "live", cassetteDir: CASSETTE_DIR, live: deps(db, vendor().v, fetchDeps) });
+  const raw = await db.get("select raw from enrichment_job_results where job_id = ?", next.id) as { raw: string };
+  const cost = Number(JSON.parse(raw.raw).cost_usd);
+  assert.ok(Math.abs(await spend(done.runId) - cost) < 1e-4, `once: ${await spend(done.runId)} against ${cost}`);
+});
+
 test("BATCH: a batched pass produces exactly what the synchronous one does", async () => {
   // The whole reason each pass is cut in half at its model call rather than
   // reimplemented: the two paths run the same code on either side of the gap.

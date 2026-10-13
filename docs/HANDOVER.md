@@ -17,7 +17,7 @@
 > Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
 > Everything on `main` is deployed; migrations are applied through `0032`.
-> 158 commits on `main`. To start a new session, paste everything below the line.
+> 159 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -137,25 +137,19 @@ source" is true on screen.
 - The Barrick pursuit action, owned by `samowusuking@gmail.com`, has been
   **overdue since 30 September**.
 
-**6. Run 3**, now about US$22 for pass 1 of the remaining 225 (was US$41.22),
-because discovery moved to Sonnet with four searches on 12 October (see *Cheaper
-pass 1* below). **Trial it first**, on `/runs`: pass 1, scope "Every company",
-these ten tickers, budget US$3:
-
-- **Already researched by Opus**, to compare the filings each finds:
-  ABX (renamed from Barrick Gold), DPM (was Dundee Precious Metals), ELE (a
-  merger), NOU (files in French and with the SEC), CGG (reports in Hong Kong).
-- **No trusted website yet**, to test finding one: OM (two other Osisko
-  companies), AII (US head office, interlisted), PDN (Australian), VMET
-  (royalty), SCZ (Mexico).
-
-Then compare, read-only, against the Opus results: each of the first five
-should still list an AIF or SEC annual report and the information circular
-among its candidates, and at least four of the second five should have a
-website verified on its own homepage, which Samuel then reviews. If filings go
-missing, raise `DISCOVERY_MAX_SEARCHES` back to 6 and keep Sonnet; if a
-website is wrong, return discovery to Opus. Replace the pass-1 estimate in
-`scope.ts` with the trial's measured cost. Run 3 follows revision 10.
+**6. Re-run the ten trial companies, then Run 3.** Pass 1 is back on Opus
+with six searches (13 October); the cheaper Sonnet trial failed (see *Pass-1
+trial* below).
+- **First, the ten trial tickers again**, on `/runs`: pass 1, scope "Every
+  company", budget US$5: ABX, DPM, ELE, NOU, CGG, OM, AII, PDN, VMET, SCZ. The
+  trial left thin results for seven (Paladin and China Gold found no filings),
+  and pass 2 reads a company's newest pass-1 result. AII, DPM and NOU are
+  halted in the trial run, not done.
+- **Then Run 3**, the remaining 220 or so. Runs are immediate now (batching is
+  off): about US$0.25–0.30 a company, so roughly US$60 for pass 1, against
+  about US$41 batched. Put `MM_ENRICH_BATCH=1` back in Vercel and redeploy for
+  the saving, at the price of waiting, sometimes much longer than the usual
+  minutes. Run 3 follows revision 10.
 
 **The roster, as at 12 October 2026** (read the live state from `/access`):
 
@@ -390,32 +384,53 @@ and the cause was in how batched answers are saved.
 | Batch fix | 499 | 85 | 173 |
 | Viewer market fix | 500 | 85 | 175 |
 | Cheaper pass 1 | 501 | 85 | 175 |
+| Opus restored, retries capped | 504 | 85 | 175 |
 
 The auth, class and contrast checks and the build pass on both. Each new
 guard was watched failing against a planted bug, except where the traps below
 say otherwise.
 
-**Cheaper pass 1 (12 October, not yet trialled).** Samuel asked to cut the
-API cost rather than move research onto a Claude Max subscription. That move
-was weighed and set aside: Anthropic's Claude Code documentation says Max usage
-limits assume ordinary individual use and that products should use API keys,
-and Max runs on consumer terms rather than the commercial API terms the risk
-review approved. What changed instead:
+**Pass-1 trial: Sonnet with four searches (12 October), failed and reverted
+(13 October).** Samuel asked to cut the API cost rather than move research onto
+a Claude Max subscription. That move was weighed and set aside: Anthropic's
+Claude Code documentation says Max usage limits assume ordinary individual use
+and that products should use API keys, and Max runs on consumer terms rather
+than the commercial API terms the risk review approved.
 - **Measured first.** A pass-1 job averaged US$0.21 across 35 jobs: about 75%
   was Opus tokens (output, and search content cached and re-read on every
   turn) and a quarter was search fees. Every job used all six searches.
-- **Discovery runs on Sonnet** (`ROUTE_CONFIG`, `client.ts`). Opus was chosen
-  to avoid the wrong company's filing; that is now refused in code (pass 2
-  reads only documents that name the company, a website must appear in search
-  and name the company on its homepage, EDGAR matches by name). The comment
-  there records the reversal.
-- **Four searches, not six**, as one constant (`DISCOVERY_MAX_SEARCHES`) that
-  the request and the route now share; a test ties them.
-- **The /runs estimate** for pass 1 is US$0.15 a company (four cents of it
-  search), a margin over the expected cost, until the trial measures it.
+- **Trialled** on ten companies (run `5dd76d2b`), with discovery on Sonnet and
+  four searches. It lost on both counts:
+  - **Cost:** US$0.25 a finished company, run immediately, against Opus's
+    US$0.21. The run recorded US$2.94, and more was billed (below).
+  - **Quality:** every company spent its four searches, read the cap's error as
+    the tool being down, and stopped. Paladin, China Gold and Osisko Metals
+    found no filings and Versamet one; Barrick found 8 against Opus's 15 and
+    Elemental 4 against 12. Two of five new websites were verified.
+  - **Workers were cut off:** long, flailing discovery calls ran workers past
+    the 720-second deadline. AII, DPM and NOU were cut off three times each and
+    are halted in that run (audited `run_halted_by_hand`).
+- **Reverted:** Opus and six searches again. Kept from the change: one
+  constant, `DISCOVERY_MAX_SEARCHES` in `client.ts`, that the request and the
+  route share, and the test that ties them. The `/runs` estimate is back to
+  US$0.30 a company.
 - **Known gap, unchanged:** findings record `claude-sonnet-5` whatever answered,
-  because nothing sets the run's model. Opus pass-1 findings before 12 October
-  are labelled Sonnet too. Tell them apart by run date.
+  because nothing sets the run's model. Opus pass-1 findings are labelled
+  Sonnet too; tell them apart by run date. The trial's findings really are
+  Sonnet's.
+
+**Two fixes the trial exposed (13 October).**
+- **A job cut off on every attempt is no longer researched forever.** Reaping
+  charges nothing, but starting research charges an attempt, so a job the
+  platform cuts off each time climbed an attempt per try and nothing stopped
+  it. The reaper now dead-letters a job cut off on its last attempt, with the
+  reason (`reapExpiredLeases`).
+- **A model call's cost reaches the run as soon as it returns.** Spend was
+  recorded only once a job saved, so an attempt that was cut off or failed had
+  been billed and never counted. The synchronous path now records each call
+  (`LiveDeps.spent`, `addSpend`), and finishing records only the remainder, so
+  nothing counts twice. A call still in flight when the platform kills the
+  worker is billed and lost, as before; batched runs are unchanged.
 
 **Immediate runs (12 October).** The pass-1 trial's batch was still processing
 after 20 minutes, where every earlier batch had finished in 2 to 10, and the
@@ -1167,7 +1182,7 @@ As at 12 October 2026, in the order worth doing:
 | **b** | **Finish Release C**: review the pass-2 re-run (done 12 Oct), then revision 10 with fresh numbers in the override; `pg:smoke` | Samuel and Kay; `pg:smoke` in Samuel's terminal |
 | **c** | **Unblock the second Admin.** A Deloitte address with no account, or a forgotten password | Samuel, on `/access` |
 | **d** | **Review**: 67 undecided pairs, the two flagged judgements, the Barrick action overdue since 30 Sep | Samuel and Kay |
-| **e** | **Run 3**, the remaining 225 companies, about US$22 batched for pass 1. Trial the cheaper pass 1 on ten tickers first (item 6) | Samuel starts both on `/runs`, after revision 10 |
+| **e** | **Re-run the ten trial companies, then Run 3** (about US$60 for pass 1 run immediately, US$41 batched; item 6) | Samuel starts both on `/runs`, after revision 10 |
 | **f** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
 | **g** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
 | **h** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |

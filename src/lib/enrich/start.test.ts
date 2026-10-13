@@ -89,11 +89,9 @@ test("the estimate blocks: over budget is refused, and a large scope needs its c
   assert.equal(big.exceedsBudget, false);
   assert.ok(big.estimatedMinutes >= 1);
 
-  // Live estimates are per pass. On Run 1 the fields pass cost about half the
-  // identity pass, so one flat figure over-refused pass 2 runs. Since
-  // discovery moved to Sonnet with four searches the two are quoted alike,
-  // until the trial measures pass 1 again (scope.ts).
-  assert.equal(estimate(10, 1000, "identity").estimatedUsd, 1.5);
+  // Live estimates are per pass, from Run 1: the fields pass costs about half
+  // the identity pass, so one flat figure over-refused pass 2 runs.
+  assert.equal(estimate(10, 1000, "identity").estimatedUsd, 3);
   assert.equal(estimate(10, 1000, "general").estimatedUsd, 1.5);
   assert.equal(estimate(10, 1000).estimatedUsd, 2.5, "replay keeps the design's figure");
 });
@@ -164,14 +162,14 @@ test("a batched run is discounted on its tokens, not on its searches", async () 
   // half of what it was is worse than no number, which is why /runs says
   // "Batched" too.
   //
-  // It does not halve the searches: pass 1 makes four per company and the
-  // Batch API charges for them in full. Quoting a flat half under-states Run
-  // 3's pass 1 by 229 x $0.02, and the budget gate halts on spend.
+  // It does not halve the searches: pass 1 makes six per company and the Batch
+  // API charges for them in full. Quoting a flat half under-states Run 3's
+  // pass 1 by 229 x $0.03, and the budget gate halts on spend.
   const live = estimate(229, 200, "identity");
   const batched = estimate(229, 200, "identity", true);
   assert.ok(live.estimatedUsd > 0);
-  assert.equal(live.estimatedUsd, 34.35, "229 companies at $0.15");
-  assert.equal(batched.estimatedUsd, 21.76, "$0.11 halved, plus four cents of search");
+  assert.equal(live.estimatedUsd, 68.70, "229 companies at $0.30");
+  assert.equal(batched.estimatedUsd, 41.22, "$0.24 halved, plus six cents of search");
   assert.ok(batched.estimatedUsd > live.estimatedUsd * 0.5,
             "a flat half would under-quote it");
   assert.equal(batched.count, live.count, "the same companies, at a different price");

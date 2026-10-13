@@ -16,7 +16,7 @@ import { evidenceStrength, type EvidenceInput } from "./evidence.ts";
 import { Cassettes, cassetteKey, type Mode } from "./cassette.ts";
 import { classifyError, type Classification } from "./client.ts";
 import {
-  claimJobs, claimSlot, ensureSlots, haltRun, recordSpend, releaseSlot, requeueLater, transition,
+  addSpend, claimJobs, claimSlot, ensureSlots, haltRun, recordSpend, releaseSlot, requeueLater, transition,
   WORKER_SLOTS, type ClaimedJob,
 } from "./ledger.ts";
 import {
@@ -251,8 +251,9 @@ async function priorCandidates(db: Sql, companyId: string): Promise<CandidateDoc
  */
 async function research(
   db: Sql, jobId: string, row: PublicCompanyRow, opts: RunOptions,
-  fieldGroup = "general"): Promise<{ body: CassetteBody; attempt: number }> {
-  if ((opts.mode ?? "replay") === "live") return researchLiveJob(db, jobId, row, opts, fieldGroup);
+  fieldGroup = "general", spent?: (usd: number) => Promise<void>,
+): Promise<{ body: CassetteBody; attempt: number }> {
+  if ((opts.mode ?? "replay") === "live") return researchLiveJob(db, jobId, row, opts, fieldGroup, spent);
   const route: Route = opts.route ?? "extract_general";
   const model = opts.model ?? DEFAULT_MODEL;
   const prompt = buildPrompt(route, row);
@@ -293,6 +294,7 @@ async function research(
  */
 async function researchLiveJob(
   db: Sql, jobId: string, row: PublicCompanyRow, opts: RunOptions, fieldGroup: string,
+  spent?: (usd: number) => Promise<void>,
 ): Promise<{ body: CassetteBody; attempt: number }> {
   if (!LIVE_ENABLED && !opts.live) {
     throw new Error(
@@ -300,7 +302,7 @@ async function researchLiveJob(
       "Enable it only after the risk and legal review under decision 1 is complete, " +
       "and with a key present.");
   }
-  const deps = opts.live ?? await defaultLiveDeps(db);
+  const deps = { ...(opts.live ?? await defaultLiveDeps(db)), ...(spent ? { spent } : {}) };
   const job = await liveJobFor(db, row, fieldGroup);
   const body = await researchLive(job, deps);
   const attempt = await nextAttempt(db, jobId);
@@ -511,6 +513,7 @@ async function unsaved(
  */
 async function finishJob(
   db: Sql, runId: string, job: ClaimedJob, body: CassetteBody, attempt: number, opts: RunOptions,
+  recorded = 0,
 ): Promise<ResearchOutcome> {
   let findings: ResearchOutcome["findings"];
   try {
@@ -518,7 +521,7 @@ async function finishJob(
   } catch (err) {
     throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
   }
-  return await finished(db, runId, job, body, findings);
+  return await finished(db, runId, job, body, findings, recorded);
 }
 
 /**
@@ -549,8 +552,10 @@ async function saveJob(
  */
 async function finished(
   db: Sql, runId: string, job: ClaimedJob, body: CassetteBody, findings: ResearchOutcome["findings"],
+  recorded = 0,
 ): Promise<ResearchOutcome> {
-  const budget = await recordSpend(db, runId, body.cost_usd ?? 0);
+  // Only what the calls did not already record; the budget is checked either way.
+  const budget = await recordSpend(db, runId, Math.max(0, (body.cost_usd ?? 0) - recorded));
   const state = (await db.get("select state from enrichment_jobs where id = ?", job.id) as { state: string }).state;
   return { runId, jobId: job.id, findings, spendUsd: budget.spend, jobState: state };
 }
@@ -863,14 +868,19 @@ export async function processJob(
   await transition(db, job.id, "researching", { chargeAttempt: true });
   const row = await publicRow(db, job.company_id, periodAsOf);
 
+  // Each call's cost goes on the run as it returns, so an attempt the platform
+  // cuts off, or one that fails, is still counted; finishing records the rest.
+  let recorded = 0;
+  const spent = async (usd: number) => { recorded += usd; await addSpend(db, runId, usd); };
+
   let body: CassetteBody, attempt: number;
   try {
-    ({ body, attempt } = await research(db, job.id, row, opts, job.field_group));
+    ({ body, attempt } = await research(db, job.id, row, opts, job.field_group, spent));
   } catch (err) {
     throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
   }
 
-  return await finishJob(db, runId, job, body, attempt, opts);
+  return await finishJob(db, runId, job, body, attempt, opts, recorded);
 }
 
 /** Drive one job from queued to completed. */

@@ -25,9 +25,9 @@ const base = {
 };
 
 test("route models match the design's per-route decisions", async () => {
-  // Discovery moved to Sonnet on 12 October 2026 (client.ts says why): the
-  // wrong company's filing is now refused in code, not avoided by the model.
-  assert.equal(ROUTE_CONFIG.discovery.model, "claude-sonnet-5");
+  // Discovery is Opus-tier deliberately: picking the wrong company's filing
+  // produces a confidently wrong, well-cited fee. Sonnet was trialled and lost.
+  assert.equal(ROUTE_CONFIG.discovery.model, "claude-opus-5");
   assert.equal(ROUTE_CONFIG.extract_general.model, "claude-sonnet-5");
   assert.equal(ROUTE_CONFIG.extract_fees.model, "claude-opus-5");
   assert.equal(ROUTE_CONFIG.adjudication.model, "claude-opus-5");

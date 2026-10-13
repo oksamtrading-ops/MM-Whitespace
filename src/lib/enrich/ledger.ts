@@ -158,10 +158,23 @@ export async function heartbeat(db: Sql, workerId: string): Promise<number> {
   return Number(r.changes);
 }
 
-/** Returns expired jobs to queued WITHOUT charging an attempt. */
+/**
+ * Returns expired jobs to queued WITHOUT charging an attempt -- unless the
+ * job has already been given every attempt it gets.
+ *
+ * Reaping charges nothing, but starting research does, so a job that is cut
+ * off every time climbs one attempt per try and nothing ever stopped it: on
+ * 12 October 2026 three trial jobs were cut off at the platform's limit three
+ * times each, paid for every time. One cut off on its last attempt is
+ * dead-lettered with the reason, for a person to look at.
+ */
 export async function reapExpiredLeases(db: Sql): Promise<number> {
   const r = await db.run(`update enrichment_jobs
-        set state = 'queued', leased_by = null, lease_expires_at = null, updated_at = ?
+        set state = case when attempts >= max_attempts then 'dead_letter' else 'queued' end,
+            last_error = case when attempts >= max_attempts
+              then 'cut off before finishing on every attempt it was given (' || attempts || ')'
+              else last_error end,
+            leased_by = null, lease_expires_at = null, updated_at = ?
       where state in ('claimed','researching','persisting') and lease_expires_at < ?`, stamp(), stamp());
   await db.run(`update worker_slots set leased_by = null, lease_expires_at = null
       where lease_expires_at < ?`, stamp());
@@ -195,6 +208,15 @@ export async function budgetState(db: Sql, runId: string): Promise<BudgetState> 
   const r = await db.get("select budget_usd, spend_usd from enrichment_runs where id = ?", runId) as { budget_usd: number; spend_usd: number };
   const pct = r.budget_usd > 0 ? r.spend_usd / r.budget_usd : 1;
   return { spend: r.spend_usd, budget: r.budget_usd, pct, warn: pct >= 0.8, halt: pct >= 1 };
+}
+
+/**
+ * Add to a run's spend without checking its budget: for the cost of one model
+ * call, recorded the moment it returns. The budget is checked when the job
+ * finishes (recordSpend), so a run is never halted halfway through a job.
+ */
+export async function addSpend(db: Sql, runId: string, usd: number): Promise<void> {
+  if (usd > 0) await db.run("update enrichment_runs set spend_usd = spend_usd + ? where id = ?", usd, runId);
 }
 
 export async function recordSpend(db: Sql, runId: string, usd: number): Promise<BudgetState> {

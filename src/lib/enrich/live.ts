@@ -154,13 +154,21 @@ export type LiveDeps = {
    */
   load: (hashes: readonly string[]) => Promise<FetchedDocument[]>;
   restrictions: RestrictionSet;
+  /**
+   * Told what each model call cost, as soon as it returns. A pass that is cut
+   * off before it finishes has still been billed for the calls it made, and
+   * without this none of them reached the run's spend.
+   */
+  spent?: (usd: number) => Promise<void>;
 };
 
 /** Every request passes the egress scan first; a hit throws and nothing is sent. */
 async function call(deps: LiveDeps, meter: Meter, request: Record<string, unknown>): Promise<VendorMessage> {
   egressScan(request, deps.restrictions);
   const msg = await deps.vendor.create(request);
+  const before = meter.cost;
   meter.add(String(request.model), msg.usage ?? {});
+  await deps.spent?.(meter.cost - before);
   // A refusal arrives as HTTP 200. Read nothing from it.
   if (msg.stop_reason === "refusal") {
     throw new Error(`the model declined (${msg.stop_details?.category ?? "no category given"})`);
