@@ -140,13 +140,12 @@ const MOVES: Array<{ table: string; column: string; unique?: string[] }> = [
   // Pursuits move whole, and BOTH survive when both companies had one. No
   // `unique` here on purpose: a pursuit carries notes and actions, and
   // discarding one to keep the merge tidy would delete somebody's judgement --
-  // which nothing else in this module does either. Two pursuits against one
-  // company after a merge is a fact about what happened: two people pursued
-  // what turned out to be one company. startPursuit goes on returning the
-  // earliest rather than making a third.
+  // which nothing else in this module does either.
   //
-  // pursuit_notes and pursuit_actions hang off pursuit_id, so they follow
-  // without being named here.
+  // The Pursuit feature was removed on 13 October 2026, and its tables and
+  // rows were kept, so a merge still moves them: otherwise a kept pursuit
+  // would point at a company that no longer stands. pursuit_notes and
+  // pursuit_actions hang off pursuit_id, so they follow without being named.
   { table: "pursuits", column: "company_id" },
 ];
 

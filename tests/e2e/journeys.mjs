@@ -197,45 +197,12 @@ function setActive(dbPath, email, active) {
   `], { cwd: ROOT, stdio: "ignore" });
 }
 
-function seedPursuit(dbPath, email, note) {
+function firstCompany(dbPath) {
   return execFileSync("node", ["--input-type=module", "-e", `
     import { DatabaseSync } from "node:sqlite";
     const db = new DatabaseSync(${JSON.stringify(dbPath)});
-    const id = () => db.prepare("select lower(hex(randomblob(16))) v").get().v;
     const co = db.prepare("select id, canonical_name from companies order by canonical_name limit 1").get();
-    const who = db.prepare("select id from app_users where email = ?").get(${JSON.stringify(email)});
-    const p = id();
-    db.prepare("insert into pursuits (id, company_id, priority, owner_id, created_at) values (?,?,?,?,?)")
-      .run(p, co.id, "High", who.id, "2026-09-13 09:00:00.000000");
-    db.prepare("insert into pursuit_notes (id, pursuit_id, body, author_id, created_at) values (?,?,?,?,?)")
-      .run(id(), p, ${JSON.stringify(note)}, who.id, "2026-09-13 09:05:00.000000");
-    db.prepare("insert into pursuit_actions (id, pursuit_id, description, due_date, owner_id, status, created_at) values (?,?,?,?,?,?,?)")
-      .run(id(), p, "Send the fee benchmark", "2026-10-01", who.id, "Open", "2026-09-13 09:06:00.000000");
-    process.stdout.write(JSON.stringify({ pursuitId: p, companyId: co.id, name: co.canonical_name }));
-  `], { cwd: ROOT, encoding: "utf8" });
-}
-
-function strandAction(dbPath, status) {
-  execFileSync("node", ["--input-type=module", "-e", `
-    import { DatabaseSync } from "node:sqlite";
-    const db = new DatabaseSync(${JSON.stringify(dbPath)});
-    db.prepare("update pursuit_actions set status = ?").run(${JSON.stringify(status)});
-  `], { cwd: ROOT, stdio: "ignore" });
-}
-
-function datePastDue(dbPath) {
-  execFileSync("node", ["--input-type=module", "-e", `
-    import { DatabaseSync } from "node:sqlite";
-    const db = new DatabaseSync(${JSON.stringify(dbPath)});
-    db.prepare("update pursuit_actions set due_date = '2000-01-01', status = 'Open'").run();
-  `], { cwd: ROOT, stdio: "ignore" });
-}
-
-function analystId(dbPath) {
-  return execFileSync("node", ["--input-type=module", "-e", `
-    import { DatabaseSync } from "node:sqlite";
-    const db = new DatabaseSync(${JSON.stringify(dbPath)});
-    process.stdout.write(db.prepare("select id from app_users where email = 'analyst@example.invalid'").get().id);
+    process.stdout.write(JSON.stringify({ companyId: co.id, name: co.canonical_name }));
   `], { cwd: ROOT, encoding: "utf8" });
 }
 
@@ -874,83 +841,31 @@ async function journeys(dbPath) {
   check("the tick is recorded on the run screen even though it did nothing",
         /Ticks, last 24 h/.test(afterTick) && !afterTick.includes("none recorded"));
 
-  /* ------------------------------ journey 8 — the pursuit workflow */
+  /* ------------------------ journey 8 — what stays Deloitte internal */
 
-  console.log("\njourney 8 — what the practice decided to do");
-  const PURSUIT_NOTE = "Partner met the CFO; audit tender expected in Q1.";
-  const seeded = JSON.parse(seedPursuit(dbPath, "analyst@example.invalid", PURSUIT_NOTE));
+  // The Pursuit feature was removed on 13 October 2026 (its tables were kept,
+  // unread). What this journey still holds is the other Deloitte-internal
+  // field: the Deloitte market, which a Viewer must never receive.
+  console.log("\njourney 8 — what stays Deloitte internal");
+  const seeded = JSON.parse(firstCompany(dbPath));
 
-  const pursuitList = await get("/pursuits", analyst.cookie);
-  check("an Analyst sees the pursuit list",
-        pursuitList.status === 200 && pursuitList.html.includes(seeded.name));
-  check("with its priority and its open action",
-        pursuitList.html.includes("High") && /1 open/.test(pursuitList.html));
-
-  const pursuitPage = await get(`/pursuits/${seeded.pursuitId}`, analyst.cookie);
-  check("the pursuit opens, with the note and the action on it",
-        pursuitPage.html.includes(PURSUIT_NOTE) &&
-        pursuitPage.html.includes("Send the fee benchmark"));
-  check("and it links back to the evidence, which is the company profile",
-        pursuitPage.html.includes(`/companies/${seeded.companyId}`));
-
-  // THE ONE THAT MATTERS. Pursuit content is Deloitte internal: a Viewer is a
-  // partner, and docs/design/11 keeps them out by policy rather than by
-  // whether a link is drawn.
-  const viewerList = await get("/pursuits", viewer.cookie);
-  check("a Viewer is refused the pursuit list",
-        !viewerList.html.includes(seeded.name) && /Not permitted/.test(viewerList.html));
-  const viewerPursuit = await get(`/pursuits/${seeded.pursuitId}`, viewer.cookie);
-  check("and refused one pursuit, without being told what is in it",
-        !viewerPursuit.html.includes(PURSUIT_NOTE) && /Not permitted/.test(viewerPursuit.html));
-
-  const viewerProfile = await get(`/companies/${seeded.companyId}`, viewer.cookie);
-  check("a Viewer's company profile offers no pursuit and does not say one exists",
-        !viewerProfile.html.includes("Start a pursuit") &&
-        !viewerProfile.html.includes("Open the pursuit"));
   const analystProfile = await get(`/companies/${seeded.companyId}`, analyst.cookie);
-  check("an Analyst's does, and it points at the one already open",
-        analystProfile.html.includes("Open the pursuit"));
-  // The Deloitte market is internal too (docs/design/11). The page's rail
-  // named it for every role until the read itself dropped it for a Viewer.
+  const viewerProfile = await get(`/companies/${seeded.companyId}`, viewer.cookie);
+  // The Deloitte market is internal (docs/design/11). The page's rail named it
+  // for every role until the read itself dropped it for a Viewer.
   check("an Analyst's company profile names the Deloitte market",
         analystProfile.html.includes("Deloitte market"));
   check("and a Viewer's does not, anywhere in the page",
         !viewerProfile.html.includes("Deloitte market") && !viewerProfile.html.includes("dtt_market"));
 
-  // The repair for a renamed status appears only when there is something to
-  // repair, and names what is stranded rather than asking the person to know.
-  check("with nothing stranded, the sweep section is not on the page",
-        !pursuitList.html.includes("no longer a status in use"));
-  strandAction(dbPath, "Superseded");
-  const stranded = await get("/pursuits", analyst.cookie);
-  check("a status the vocabulary no longer knows is named, with its count",
-        /One action carries .{1,12}Superseded.{1,12}, which is no longer a status in use/.test(stranded.html),
-        "the sweep section did not appear");
-  check("and it counts as open until it is moved",
-        /1 open/.test(stranded.html));
-
-  // A due date nothing ever mentions is not a date. The seeded action is due
-  // 2026-10-01, which is past by the time this suite runs on any later clock,
-  // so the assertion is on the mechanism rather than on a particular word.
-  datePastDue(dbPath);
-  const overdue = await get("/pursuits", analyst.cookie);
-  check("an action past its date is said, on the list, not only on the action",
-        /overdue/i.test(overdue.html), "nothing on /pursuits mentions it");
-
-  // Every narrowed view is its own address, so it can be sent to somebody.
-  const mine = await get(`/pursuits?owner=${analystId(dbPath)}`, analyst.cookie);
-  check("a narrowed view is a URL, and the server does the narrowing",
-        mine.status === 200 && mine.html.includes(seeded.name));
-  const nobodys = await get("/pursuits?owner=unassigned", analyst.cookie);
-  check("and it actually narrows: an unassigned filter hides an owned pursuit",
-        !nobodys.html.includes(seeded.name) && /Nothing open matches that/.test(nobodys.html));
-  const nonsense = await get("/pursuits?sort=nonsense", analyst.cookie);
-  check("a sort nobody asked for falls back rather than failing",
-        nonsense.status === 200 && nonsense.html.includes(seeded.name));
-
-  const signedOut = await get("/pursuits", null);
-  check("signed out, the pursuit list asks for a sign-in rather than rendering",
-        !signedOut.html.includes(seeded.name));
+  // Pursuits are gone: no page, no link in the rail, no button on a company.
+  const pursuits = await get("/pursuits", analyst.cookie);
+  check("the pursuit list no longer exists, for anyone", pursuits.status === 404,
+        `/pursuits answered ${pursuits.status}`);
+  check("and nothing offers one: not the rail, not the company page",
+        !analystProfile.html.includes('href="/pursuits"') &&
+        !analystProfile.html.includes("Start a pursuit") &&
+        !analystProfile.html.includes("Open the pursuit"));
 
   /* ---------------------------------------- accessibility, six routes */
 
@@ -976,9 +891,6 @@ async function journeys(dbPath) {
     ["/companies/merge (analyst)", "/companies/merge", analyst.cookie],
     ["/review/by-company (analyst)", "/review/by-company", analyst.cookie],
     [`/companies/{id} (viewer)`, `/companies/${idMatch?.[1]}`, viewer.cookie],
-    ["/pursuits (analyst)", "/pursuits", analyst.cookie],
-    [`/pursuits/{id} (analyst)`, `/pursuits/${seeded.pursuitId}`, analyst.cookie],
-    ["/pursuits (viewer, refused)", "/pursuits", viewer.cookie],
   ];
   for (const [name, path, cookie] of routes) {
     const { html } = await get(path, cookie);

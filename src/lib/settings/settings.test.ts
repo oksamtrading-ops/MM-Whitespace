@@ -93,8 +93,9 @@ test("a database a migration behind still commits, on the fallbacks", async () =
 
 
 test("EVERY setting the screen renders is one the action actually saves", async () => {
-  // The screen and the action behind it kept separate lists. Two pursuit
-  // vocabularies were added to the definitions and not to the action's list,
+  // The screen and the action behind it kept separate lists. Two vocabularies
+  // (for the Pursuit feature, since removed) were added to the definitions and
+  // not to the action's list,
   // so the form rendered both fields, accepted what was typed, and reported
   // "Nothing changed" -- which is the decorative screen this module's own note
   // at the top warns about.
@@ -112,12 +113,12 @@ test("EVERY setting the screen renders is one the action actually saves", async 
   assert.deepEqual(rendered, [...SETTING_KEYS]);
 });
 
-test("a saved vocabulary comes back changed, which is the whole point of the field", async () => {
+test("a saved list comes back changed, which is the whole point of the field", async () => {
   const sql = db();
   const changes = await putSettings(
-    sql, { pursuit_action_statuses: "Open, Done*, Superseded*" }, null);
+    sql, { allowed_email_domains: "deloitte.ca, example.com" }, null);
   assert.equal(changes.length, 1);
-  assert.equal(changes[0].to, "Open, Done*, Superseded*");
-  const after = (await readSettings(sql)).find((s) => s.key === "pursuit_action_statuses");
-  assert.equal(after?.value, "Open, Done*, Superseded*");
+  assert.equal(changes[0].to, "deloitte.ca, example.com");
+  const after = (await readSettings(sql)).find((s) => s.key === "allowed_email_domains");
+  assert.equal(after?.value, "deloitte.ca, example.com");
 });

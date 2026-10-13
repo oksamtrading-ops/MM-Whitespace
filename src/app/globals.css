@@ -1354,11 +1354,8 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .tag .icon { flex: 0 0 auto; }
 .tag.ok { background: var(--green-soft); color: var(--green-deep); }
 .tag.warn { background: var(--warn-soft); color: var(--warn); }
-.tag.conflict, .tag.alert { background: var(--alert-soft); color: var(--alert); }
+.tag.conflict { background: var(--alert-soft); color: var(--alert); }
 .tag.done { background: var(--surface-2); color: var(--ink-2); }
-/* A term the vocabulary has dropped. Quieter than the live ones, and the word
-   "retired" is in the text beside it -- the colour is never the only carrier. */
-.tag.retired { background: var(--surface-2); color: var(--ink-3); }
 
 .evidence { position: sticky; top: calc(var(--header-h) + var(--space-6)); padding-left: 28px; border-left: 1px solid var(--rule); min-height: 240px; min-width: 0; overflow-wrap: anywhere; }
 /* Stacked, the evidence sits under the grid, so the grid gives up height to
@@ -1537,7 +1534,7 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
 }
 .commit input:focus, .commit textarea:focus, .commit select:focus { border-color: var(--green-mark); }
 .commit .hint { display: block; font-size: var(--fs-body-sm); color: var(--ink-3); margin-top: var(--space-2); }
-.commit select, .desk select {
+.commit select {
   font: inherit; font-size: var(--fs-body); width: 100%; min-height: var(--row-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius);
   background: var(--input-bg); color: var(--ink);
@@ -1567,96 +1564,7 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
 .commit .check input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; accent-color: var(--green-mark); }
 .commit .check label { margin: 0; font-weight: 400; }
 
-/* The pursuit desk: the same field rules as commit, in a two-up row. */
-.desk .field { display: block; margin: 0 0 var(--space-5); }
-.desk .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
-@media (max-width: 860px) { .desk .row { grid-template-columns: 1fr; } }
-.desk label { display: block; font-size: var(--fs-body-sm); font-weight: 500; margin-bottom: var(--space-2); }
-.desk input:not([type="hidden"]), .desk textarea {
-  font: inherit; font-size: var(--fs-body); width: 100%; min-height: var(--row-h); padding: 0 var(--space-3);
-  border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
-}
-.desk textarea { padding: 10px var(--space-3); line-height: var(--lh-body); resize: vertical; margin-bottom: var(--space-2); }
-.desk .withunit { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-2); }
-.desk .withunit select, .desk .withunit input { width: auto; flex: 1 1 140px; }
-.desk .withunit .hint { margin: 0; }
-.desk .hint { display: block; font-size: var(--fs-body-sm); color: var(--ink-3); margin-top: var(--space-2); }
-
-/* -------------------------------------------------------------- access */
-
-/* The action column takes only what it needs, so the address column gets the
-   slack rather than a gulf opening between status and the control. */
-table.accounts td:last-child, table.accounts th:last-child { width: 1%; white-space: nowrap; }
-table.accounts td:first-child { overflow-wrap: anywhere; }
-.stale { color: var(--warn); }
-td .you { margin-left: var(--space-2); }
-form.inline { display: inline; }
-
-/* ------------------------------------------------------------ skeleton */
-
-.sk { background: var(--surface-2); border-radius: var(--radius-2); }
-.sk.line { height: 14px; }
-.sk.fig { height: 28px; width: 72px; }
-.sk-hero { height: 64px; width: 60%; margin: var(--space-2) 0 14px; }
-.sk-map { height: 320px; width: 100%; border-radius: var(--radius-4); margin: var(--space-6) 0; }
-.sk-panel { height: 84px; border-radius: var(--radius-4); margin: var(--space-8) 0; }
-.sk-rows > div { height: var(--row-h); border-bottom: 1px solid var(--rule); }
-
-/* ------------------------------------------------------------ triage */
-
-/* The queue. Equal cells inside a panel, ordered by what to do first, so the
-   sixth count cannot wrap onto a row of its own and a zero reads as dead
-   rather than merely small. */
-.queue { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); }
-@media (max-width: 1400px) { .withrail .queue { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 700px) { .queue { grid-template-columns: 1fr; } }
-/* A last tile on a row of its own stretches rather than leaving a hole. */
-.queue li:last-child:nth-child(3n - 2) { grid-column: span 3; }
-@media (max-width: 1400px) { .withrail .queue li:last-child:nth-child(3n - 2) { grid-column: auto; }
-  .withrail .queue li:last-child:nth-child(2n - 1) { grid-column: span 2; } }
-.queue li > a, .queue li > .cell {
-  display: flex; flex-direction: column; gap: 7px; padding: 14px 16px; min-height: 78px;
-  text-decoration: none; color: var(--ink); border-right: 1px solid var(--rule); border-top: 1px solid var(--rule);
-  transition: background var(--dur-1) var(--ease);
-}
-.queue li > a:hover { background: var(--surface-2); }
-.queue li > .cell { opacity: .45; }
-.queue .fig-lg { font-size: 24px; }
-.queue li.here > a { background: var(--green-soft); box-shadow: inset 2px 0 0 var(--green-mark); }
-.queue li.here .fig-lg { color: var(--green-deep); }
-.queue .lab { font-size: var(--fs-caption); color: var(--ink-3); line-height: 1.35; display: flex; gap: 6px; align-items: flex-start; }
-.queue .lab .icon { flex: 0 0 auto; margin-top: 1px; }
-.queue .start { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--green-deep); letter-spacing: .04em; text-transform: uppercase; }
-
-.gatelist { list-style: none; margin: 0; padding: 0; }
-.gateline { display: flex; gap: var(--space-3); align-items: center; padding: 11px 15px; border-bottom: 1px solid var(--rule); font-size: 14px; margin: 0; }
-.gateline:last-child { border-bottom: 0; }
-.gateline .mark { display: inline-flex; flex: 0 0 auto; }
-.gateline.no .mark { color: var(--alert); }
-.gateline.ok .mark { color: var(--green-text); }
-.gateline .what { flex: 1; min-width: 0; }
-.gateline .fig-sm { color: var(--ink-3); }
-
 input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
-
-/* Narrowing the pursuit list. NOT `.filters`, which is the review screen's row
-   of bucket chips and styles its links as chips -- a form dropped into that
-   class inherits a layout meant for something else, and nothing fails. Each
-   control keeps its label above it, so the row reads the same stacked on a
-   narrow screen as it does side by side. */
-.narrowing {
-  display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-4); align-items: flex-end;
-  padding: 14px var(--space-4); margin: 0 0 18px;
-  background: var(--surface-1); border: 1px solid var(--rule); border-radius: var(--radius-4);
-}
-.narrowing .field { display: flex; flex-direction: column; gap: 4px; margin: 0; min-width: 150px; }
-.narrowing .field.actions { flex-direction: row; align-items: center; gap: var(--space-3); min-width: 0; }
-.narrowing .hint { flex-basis: 100%; margin: 0; }
-.narrowing label { font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); }
-.narrowing input, .narrowing select {
-  font: inherit; font-size: var(--fs-body-sm); min-height: 40px; padding: 0 10px;
-  border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
-}
 
 /* ----------------------------------------------------------- the map */
 

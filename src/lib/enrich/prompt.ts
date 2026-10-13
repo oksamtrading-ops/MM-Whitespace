@@ -42,7 +42,6 @@ export type PublicCompanyRow = {
 export type InternalCompanyRow = PublicCompanyRow & {
   readonly dttMarket?: string | null;
   readonly comments?: string | null;
-  readonly pursuit?: unknown;
 };
 
 /**

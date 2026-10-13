@@ -7,9 +7,6 @@ import {
   findDuplicateCandidates, mergeCompanies, mergePreview, MergeRefused,
   nameStem, resolveCompanyId,
 } from "./merge.ts";
-import {
-  addAction, addNote, getPursuit, setPriority, startPursuit,
-} from "../pursuit/index.ts";
 
 async function seeded() {
   const db = memorySql();
@@ -184,41 +181,37 @@ test("the preview counts what will move and what will not", async () => {
 });
 
 
-test("a merge takes the pursuit with it, and both survive when both had one", async () => {
-  // pursuits was not in MOVES when the table was added, so the loser's pursuit
-  // went on pointing at a company that no longer exists: it showed under the
-  // old name, and startPursuit on the winner made a SECOND one because it
-  // could not see the first.
+test("a merge takes kept pursuit rows with it, and both survive when both had one", async () => {
+  // The Pursuit feature is gone but its tables and rows were kept. A merge
+  // that left them behind would leave a pursuit pointing at a company that no
+  // longer stands, so they still move, whole, with their notes and actions.
   const { db, company } = await seeded();
   const oldCo = await company("Northco Mining Corp.", "northco mining corp");
   const newCo = await company("Northco Metals Inc.", "northco metals inc");
   const actor = await db.get(
     "insert into app_users (email, role) values ('a@example.invalid','analyst') returning id") as { id: string };
 
-  const loserPursuit = await startPursuit(db, oldCo, actor.id);
-  await setPriority(db, loserPursuit, "High", actor.id);
-  await addNote(db, loserPursuit, "The partner already met them.", actor.id);
-  await addAction(db, loserPursuit, { description: "Send the benchmark" }, actor.id);
-  const winnerPursuit = await startPursuit(db, newCo, actor.id);
-  await addNote(db, winnerPursuit, "Separate team, same company as it turns out.", actor.id);
+  const pursuit = async (companyId: string, priority: string | null) => (await db.get(
+    "insert into pursuits (company_id, priority, owner_id) values (?, ?, ?) returning id",
+    companyId, priority, actor.id) as { id: string }).id;
+  const loser = await pursuit(oldCo, "High");
+  await db.run("insert into pursuit_notes (pursuit_id, body, author_id) values (?, ?, ?)",
+               loser, "The partner already met them.", actor.id);
+  await db.run("insert into pursuit_actions (pursuit_id, description, owner_id, status) values (?, ?, ?, 'Open')",
+               loser, "Send the benchmark", actor.id);
+  await pursuit(newCo, null);
 
   await mergeCompanies(db, { winnerId: newCo, loserId: oldCo, actorId: actor.id });
 
-  const rows = await db.all("select id, company_id from pursuits") as
-    Array<{ id: string; company_id: string }>;
+  const rows = await db.all("select id, company_id, priority from pursuits") as
+    Array<{ id: string; company_id: string; priority: string | null }>;
   assert.equal(rows.length, 2, "neither pursuit was discarded to keep the merge tidy");
-  assert.ok(rows.every((r) => r.company_id === newCo),
-            "both now point at the surviving company");
-
-  // And what each carried came with it.
-  const kept = await getPursuit(db, loserPursuit);
-  assert.equal(kept!.pursuit.priority, "High");
-  assert.equal(kept!.notes.length, 1);
-  assert.equal(kept!.actions.length, 1);
-  assert.equal(kept!.pursuit.companyName, (await db.get(
-    "select canonical_name from companies where id = ?", newCo) as { canonical_name: string }).canonical_name);
-
-  // Starting one again returns the earliest rather than making a third.
-  assert.equal(await startPursuit(db, newCo, actor.id), loserPursuit);
-  assert.equal((await db.get("select count(*) n from pursuits") as { n: number }).n, 2);
+  assert.ok(rows.every((r) => r.company_id === newCo), "both now point at the surviving company");
+  assert.equal(rows.find((r) => r.id === loser)?.priority, "High");
+  const carried = await db.get(`select
+      (select count(*) from pursuit_notes where pursuit_id = ?) as notes,
+      (select count(*) from pursuit_actions where pursuit_id = ?) as actions`, loser, loser) as
+    { notes: number; actions: number };
+  assert.equal(Number(carried.notes), 1, "what it carried came with it");
+  assert.equal(Number(carried.actions), 1);
 });

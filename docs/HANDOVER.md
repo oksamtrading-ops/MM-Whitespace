@@ -17,7 +17,7 @@
 > Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
 > Everything on `main` is deployed; migrations are applied through `0032`.
-> 159 commits on `main`. To start a new session, paste everything below the line.
+> 160 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -134,8 +134,6 @@ source" is true on screen.
     dollars".
   - **China Gold's auditor.** Lixin & Ethos for Canadian reporting, BDO for
     Hong Kong, Deloitte in the workbook.
-- The Barrick pursuit action, owned by `samowusuking@gmail.com`, has been
-  **overdue since 30 September**.
 
 **6. Re-run the ten trial companies, then Run 3.** Pass 1 is back on Opus
 with six searches (13 October); the cheaper Sonnet trial failed (see *Pass-1
@@ -232,8 +230,9 @@ is client information.
 ### Built on 9–12 October 2026 — the client's requests
 
 An email after a client conversation, 9 October 2026, asked for six things.
-Samuel excluded the sixth (*remove the Pursuit section*). The other five, and
-two instructions of his own, are built:
+Samuel first excluded the sixth (*remove the Pursuit section*), then had it
+done on 13 October (see *Pursuits removed* below). The other five, and two
+instructions of his own, are built:
 
 | # | Request | Where | State |
 |---|---|---|---|
@@ -385,6 +384,7 @@ and the cause was in how batched answers are saved.
 | Viewer market fix | 500 | 85 | 175 |
 | Cheaper pass 1 | 501 | 85 | 175 |
 | Opus restored, retries capped | 504 | 85 | 175 |
+| Pursuits removed | 452 | 85 | 158 |
 
 The auth, class and contrast checks and the build pass on both. Each new
 guard was watched failing against a planted bug, except where the traps below
@@ -446,6 +446,36 @@ Vercel. Two things to know:
   researched at once. A test covers both the answered and the handed-back
   case.
 
+**Pursuits removed (13 October).** The client's sixth request, at Samuel's
+instruction. The feature was self-contained: nothing outside it read its
+tables, and no other table points at them.
+- **Gone:** `/pursuits` and `/pursuits/[id]` (they now answer 404), the rail's
+  Pursuits item, the company page's "Start / Open the pursuit" button,
+  `src/lib/pursuit/`, the three pursuit vocabularies on `/settings`, the CSS
+  only those pages wore (`.desk`, `.narrowing`, `.tag.retired`, `.tag.alert`),
+  and the crosshair icon, whose one meaning was Pursuit.
+- **Kept on purpose:**
+  - **The tables and their rows** (`pursuits`, `pursuit_notes`,
+    `pursuit_actions`, `pursuit_closures`; migrations 0018–0023 untouched).
+    Production holds one pursuit (Barrick), two actions and one note. They
+    stay locked down as before. Dropping them is a later choice: export the
+    rows first, then add a migration with four separate `drop table if exists`
+    statements, children first.
+  - **The merge entry that moves pursuit rows** (`merge.ts`), so a kept
+    pursuit never points at a company that no longer stands. Its test now
+    inserts the rows directly.
+  - **The settings rows** for the three vocabularies, unread, and the
+    `pursuit_*` lines in the audit log, which is never edited.
+  - **The word "pursuit" where it means the tier or a partner's
+    conversation** ("Tier 6 is a watchlist rather than a pursuit").
+- **Tests:** `pursuit.test.ts` (52) went with the feature. The class-check
+  test that recreated the first `.filters` collision on the pursuit form now
+  uses the companies filter bar. The settings round-trip test uses the
+  sign-in domains. Journey 8 now holds the two Viewer Deloitte-market checks
+  and proves `/pursuits` is gone and offered nowhere.
+- **Docs not rewritten:** design docs 02, 05, 06, 11, 13 and 18 still describe
+  Pursuits as designed. Read them as history.
+
 **Flagged in passing, not fixed:**
 - ~~**A Viewer still sees the Deloitte market**~~ on a company's page —
   **fixed 12 October.** `readCompanyProfile` now drops Deloitte-internal fields
@@ -470,8 +500,8 @@ override and flag, bulk accept, the publish gate and override, the dashboard,
 company profiles and finder, identity merge, admin settings, the access review,
 and password sign-in. Routes: `/upload`, `/upload/[id]`, `/runs`, `/review`,
 `/review/[field]`, `/review/by-company`, `/publish`, `/dashboard`,
-`/companies`, `/companies/[id]`, `/companies/merge`, `/pursuits`,
-`/pursuits/[id]`, `/access`, `/settings`, `/styleguide`,
+`/companies`, `/companies/[id]`, `/companies/merge`, `/access`, `/settings`,
+`/styleguide`,
 `/signin`, `/password`, `/api/cron/tick`, `/api/export` (the workbook
 download), and two Python functions, `/api/parse` and `/api/workbook`.
 
@@ -630,7 +660,9 @@ seconds.
   re-writing their SQL. `pg_smoke` runs every rule as a dry run. It still has
   to be called by something (item 5).
 
-*Pursuits — the Phase 1 data model AND the Phase 2 workflow*
+*Pursuits — the Phase 1 data model AND the Phase 2 workflow* (**removed from the
+application on 13 October 2026**; what follows describes what was built, and
+the tables it names are kept)
 
 - **Three tables, empty and policied** (`0018`/`0019`), and **without doc 05's
   `lcsp` and `fy_tax_nsr`** — a person's name and Deloitte's revenue from a
@@ -1181,7 +1213,7 @@ As at 12 October 2026, in the order worth doing:
 | **a** | ~~Release B~~ — done 12 October, revision 9 published | — |
 | **b** | **Finish Release C**: review the pass-2 re-run (done 12 Oct), then revision 10 with fresh numbers in the override; `pg:smoke` | Samuel and Kay; `pg:smoke` in Samuel's terminal |
 | **c** | **Unblock the second Admin.** A Deloitte address with no account, or a forgotten password | Samuel, on `/access` |
-| **d** | **Review**: 67 undecided pairs, the two flagged judgements, the Barrick action overdue since 30 Sep | Samuel and Kay |
+| **d** | **Review**: 67 undecided pairs, the two flagged judgements | Samuel and Kay |
 | **e** | **Re-run the ten trial companies, then Run 3** (about US$60 for pass 1 run immediately, US$41 batched; item 6) | Samuel starts both on `/runs`, after revision 10 |
 | **f** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
 | **g** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
@@ -1202,10 +1234,10 @@ are as they are, still holds.
    ~~the pursuit data model~~, ~~the Phase 2 pursuit workflow~~ — all done.
    What follows is the work that has not been done.
 
-   Two things from the pursuit work a later session should not undo: **doc 05's
+   One thing from the pursuit work a later session should not undo: **doc 05's
    `lcsp` and `fy_tax_nsr` are deliberately not built**, and both doc 05 and
-   migration `0018` say so; and **a pursuit's own words must never reach a
-   prompt**, which `pursuit.test.ts` holds.
+   migration `0018` say so. The Pursuit feature itself was removed on 13
+   October 2026, its tables kept.
 
 2. ~~**Settle what a batched web search costs, before Run 3.**~~ **Done, and
    the suspicion was right — searches are NOT discounted.** Anthropic's web

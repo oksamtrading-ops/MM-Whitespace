@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata, Route } from "next";
 import { requireRole } from "../../../../lib/auth/context.ts";
-import PursuitLink from "./PursuitLink.tsx";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import {
   readCompanyProfile, SOURCE_LABEL, unpublishedChanges, type ProfileValue,
@@ -61,14 +60,6 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
 
   const { id } = await params;
   const canReview = ctx.user.role !== "viewer";
-  // A pursuit is Deloitte internal, so a Viewer is not offered one and is not
-  // told whether one exists (docs/design/11).
-  const canPursue = canReview;
-  const pursuitId = canPursue
-    ? ((await ctx.db.get(
-        "select id from pursuits where company_id = ? order by created_at limit 1", id) as
-        { id: string } | undefined)?.id ?? null)
-    : null;
   const p = await readCompanyProfile(ctx.db, id, { allowDraft: canReview, internal: canReview });
   if (!p) {
     return <Refusal title="No such company"
@@ -92,8 +83,7 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
   return (
     <Page title={p.name}
           back={{ href: "/companies", label: "Companies" }}
-          meta={p.ticker ? `${p.ticker}${p.exchange ? ` · ${p.exchange}` : ""}` : undefined}
-          actions={canPursue ? <PursuitLink companyId={id} pursuitId={pursuitId} /> : undefined}>
+          meta={p.ticker ? `${p.ticker}${p.exchange ? ` · ${p.exchange}` : ""}` : undefined}>
     <div className="withrail">
       <div className="reading">
 

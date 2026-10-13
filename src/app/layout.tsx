@@ -68,8 +68,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     items.push({ href: "/dashboard", label: "Dashboard", icon: "layout-dashboard", group: "product" });
     items.push({ href: "/companies", label: "Companies", icon: "building-2", group: "product" });
   }
-  // A pursuit is Deloitte internal, so it is never offered to a Viewer.
-  if (canReview) items.push({ href: "/pursuits", label: "Pursuits", icon: "crosshair", group: "product" });
   if (canReview) items.push({ href: "/upload", label: "Upload", icon: "upload", group: "period" });
   if (canReview) items.push({ href: "/runs", label: "Runs", icon: "play", group: "period" });
   if (canReview) items.push({ href: "/review", label: "Review", icon: "clipboard-check", group: "period" });

@@ -11,8 +11,7 @@ import type { Sql } from "../db/sql.ts";
 export type SettingKey =
   | "default_threshold_amount" | "default_threshold_currency"
   | "default_threshold_operator" | "default_proximity_band_pct"
-  | "default_run_budget_usd" | "allowed_email_domains"
-  | "pursuit_priorities" | "pursuit_action_statuses" | "pursuit_outcomes";
+  | "default_run_budget_usd" | "allowed_email_domains";
 
 export type Setting = {
   key: SettingKey;
@@ -47,23 +46,6 @@ const DEFINITIONS: Array<Pick<Setting, "key" | "label" | "help" | "kind">> = [
           "before that, to say something useful. Emptying it invites nobody " +
           "rather than everybody; people already on the roster keep their " +
           "access, and can still be deactivated." },
-  // The pursuit vocabularies live here rather than in a check constraint
-  // because nothing in the design specifies them, and a vocabulary invented in
-  // a migration is a decision made by whoever wrote the migration. Here the
-  // practice owns them and can change them without a deployment.
-  { key: "pursuit_priorities", label: "Pursuit priorities", kind: "list",
-    help: "In order, most urgent first. A pursuit already carrying a priority you " +
-          "remove keeps it and shows it as retired, because rewriting somebody's " +
-          "judgement to fit a new list is not a settings change." },
-  { key: "pursuit_outcomes", label: "Pursuit outcomes", kind: "list",
-    help: "How a pursuit ends. “This is over” is not worth recording; what " +
-          "happened is. A pursuit already closed under a word you remove keeps " +
-          "it and shows it as retired, and /pursuits offers to move them." },
-  { key: "pursuit_action_statuses", label: "Pursuit action statuses", kind: "list",
-    help: "The first is what a new action starts as. Put a star on any status that " +
-          "CLOSES an action — “Open, Done*, Superseded*” — so that finished and " +
-          "abandoned can both stop counting as open without pretending to be the " +
-          "same thing. At least one must close, and at least one must not." },
 ];
 
 /**
@@ -78,24 +60,9 @@ export const SETTING_KEYS: readonly SettingKey[] = DEFINITIONS.map((d) => d.key)
 
 export class InvalidSetting extends Error {}
 
-/** A comma-separated vocabulary, trimmed, with the blanks dropped. */
+/** A comma-separated list, trimmed, with the blanks dropped. */
 export function splitList(raw: string): string[] {
   return raw.split(",").map((t) => t.trim()).filter(Boolean);
-}
-
-/**
- * A vocabulary, or its fallback.
- *
- * Read rather than hardcoded, and it has to survive being unset: a database
- * that has not had 0020 yet returns null, and a screen that then renders no
- * options is a screen that cannot be used at all.
- */
-export async function getList(
-  db: Sql, key: SettingKey, fallback: readonly string[],
-): Promise<string[]> {
-  const raw = await getSetting(db, key);
-  const terms = raw === null ? [] : splitList(raw);
-  return terms.length > 0 ? terms : [...fallback];
 }
 
 /** Validation lives here, not in the form: the form is not the boundary. */
@@ -145,33 +112,6 @@ export function validate(key: SettingKey, raw: string): string {
         }
       }
       return terms.map((t) => t.toLowerCase()).join(", ");
-    }
-    case "pursuit_priorities":
-    case "pursuit_outcomes":
-    case "pursuit_action_statuses": {
-      const terms = splitList(value);
-      if (terms.length < 2) throw new InvalidSetting("A vocabulary of fewer than two terms is not a choice.");
-      if (terms.length > 8) throw new InvalidSetting("More than eight terms is a form nobody reads. Eight is already a lot.");
-      const bare = terms.map((t) => t.replace(/\*$/, "").trim());
-      if (bare.some((t) => t.length === 0)) throw new InvalidSetting("A star needs a status in front of it.");
-      if (bare.some((t) => t.length > 32)) throw new InvalidSetting("A term longer than 32 characters is a sentence, not a label.");
-      if (bare.some((t) => t.includes("*"))) throw new InvalidSetting("A star marks the END of a status that closes an action.");
-      const seen = new Set(bare.map((t) => t.toLowerCase()));
-      if (seen.size !== bare.length) throw new InvalidSetting("Two terms differing only in case are the same term.");
-      if (key !== "pursuit_action_statuses") {
-        if (terms.some((t) => t.endsWith("*"))) {
-          throw new InvalidSetting(
-            "A star closes an ACTION. Nothing else in these lists closes anything.");
-        }
-        return bare.join(", ");
-      }
-      // A status list that closes nothing leaves every action open for ever;
-      // one that closes everything leaves nowhere for an action to start.
-      const closing = terms.filter((t) => t.endsWith("*")).length;
-      if (closing === 0) throw new InvalidSetting("Star at least one status, or no action can ever be closed.");
-      if (closing === terms.length) throw new InvalidSetting("Star at least one fewer, or a new action is closed the moment it is made.");
-      if (terms[0].endsWith("*")) throw new InvalidSetting("The first status is where a new action starts, so it cannot be one that closes it.");
-      return terms.map((t, i) => (t.endsWith("*") ? `${bare[i]}*` : bare[i])).join(", ");
     }
   }
 }

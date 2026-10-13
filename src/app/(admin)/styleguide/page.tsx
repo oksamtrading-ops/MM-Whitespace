@@ -124,7 +124,7 @@ const ICON_TOUR: Array<[IconName, string]> = [
   ["check", "Accept"], ["pencil", "Override"], ["flag", "Flag"], ["list-checks", "Bulk accept"],
   ["undo-2", "Undo"], ["lock", "Frozen"], ["badge-check", "Publish"], ["gauge", "Coverage"],
   ["layers", "Tier"], ["map", "Footprint"], ["map-pin", "Jurisdiction"], ["landmark", "Auditor"],
-  ["building-2", "Company"], ["crosshair", "Pursuit"], ["pickaxe", "Mining stage"], ["mountain", "Production"],
+  ["building-2", "Company"], ["pickaxe", "Mining stage"], ["mountain", "Production"],
   ["gem", "Commodities"], ["hard-hat", "Development"], ["coins", "Royalty"], ["banknote", "Fees"],
   ["scroll-text", "Evidence"], ["quote", "Excerpt"], ["external-link", "Open source"], ["trending-up", "Improved"],
   ["trending-down", "Declined"], ["minus", "Unchanged"], ["play", "Run"], ["octagon-x", "Halted"],
@@ -260,7 +260,6 @@ export default async function Styleguide() {
             <span className="tag warn"><Icon name="shield-off" size={11} />not anchored</span>
             <span className="tag conflict"><Icon name="git-compare" size={11} />conflict</span>
             <span className="tag done"><Icon name="check" size={11} />accept</span>
-            <span className="tag retired">Won — retired</span>
           </div>
           <h3>Status callouts</h3>
           <p className="note" style={{ marginTop: 0 }}>

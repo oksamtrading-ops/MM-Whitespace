@@ -52,16 +52,17 @@ test("it catches the collision that shipped: the rail wearing .role", () => {
   assert.match(output, /SignInButtons\.tsx/, "and name both wearers, not just the new one");
 });
 
-test("and the first time this trap sprang: the pursuit form wearing .filters", () => {
-  // `.filters` is the review screen's row of bucket chips. The pursuit filter
-  // form was written with the same name and inherited a layout meant for
-  // something else.
+test("and the first time this trap sprang: a filter form wearing .filters", () => {
+  // `.filters` is the review screen's row of bucket chips. The first trap was
+  // the Pursuit filter form, written with the same name, inheriting a layout
+  // meant for something else; that form has since been removed. The companies
+  // table's filter bar is the same kind of form, so it stands in.
   const { failed, output } = withEdit(
-    "src/app/(analyst)/pursuits/Filters.tsx",
-    (s) => s.replace('className="narrowing"', 'className="filters"'));
+    "src/app/(viewer)/companies/Roster.tsx",
+    (s) => s.replace('className="filterbar"', 'className="filters"'));
   assert.equal(failed, true);
   assert.match(output, /\.filters/);
-  assert.match(output, /pursuits\/Filters\.tsx/);
+  assert.match(output, /companies\/Roster\.tsx/);
 });
 
 test("a colour is not a collision", () => {
