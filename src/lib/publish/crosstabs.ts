@@ -1,5 +1,5 @@
 /**
- * Two cross-tabs the dashboard draws, read from the frozen snapshot.
+ * Cross-tabs the dashboard draws, read from the frozen snapshot.
  *
  * These are not precomputed at publish. Every other aggregate is, because
  * doc 09 budgets a dashboard query at under a second and a group-by that
@@ -15,6 +15,8 @@
  */
 import { formatMoney } from "../format/fields.ts";
 import type { Sql } from "../db/sql.ts";
+import { TIER_TOKENS, tierToken } from "../profile/roster.ts";
+import { provinceCode } from "./jurisdictions.ts";
 
 /** The firms the matrix names, in fixed order. Deloitte first: it is the accent. */
 export const FIRMS = ["Deloitte", "PwC", "KPMG", "Ernst & Young"] as const;
@@ -210,4 +212,52 @@ export async function marketPenetration(
   const list = [...byMarket.values()].sort((a, b) =>
     Number(a.terminal) - Number(b.terminal) || b.companies - a.companies);
   return { rows: list, population: market.size };
+}
+
+/** The map's tier view: one tier's companies, by province or territory. */
+export type TierProvinces = {
+  /** The companies table's tier token: "1" to "6", or the reason there is none. */
+  token: string;
+  /** Companies in the tier with any Canadian property. */
+  companies: number;
+  /** Companies in the tier with a property in each province, most first. */
+  rows: Array<{ code: string; n: number }>;
+};
+
+/**
+ * The province footprint split by tier, for the map's tier view.
+ *
+ * Counted exactly as publish counts province_footprint -- each Canadian
+ * entry in a company's property regions, folded onto one code -- so a
+ * province's tiers always add up to the number the all-companies map shows
+ * for it. Tokens are the companies table's, so the map can link straight to
+ * the matching filter. Tiers with no Canadian ground still appear, at zero.
+ */
+export async function provincesByTier(db: Sql, publicationId: string): Promise<TierProvinces[]> {
+  const rows = await db.all(
+    `select t.tier, t.status, v.value
+       from published_period_tiers t
+       left join published_period_values v
+         on v.publication_id = t.publication_id and v.company_id = t.company_id
+        and v.field_key = 'property_regions'
+      where t.publication_id = ?`, publicationId) as
+    Array<{ tier: number | null; status: string; value: string | null }>;
+
+  const byToken = new Map<string, { companies: number; counts: Map<string, number> }>(
+    TIER_TOKENS.map((t) => [t, { companies: 0, counts: new Map<string, number>() }]));
+  for (const r of rows) {
+    const regions = (r.value === null ? null : parse(r.value)) as Record<string, string[] | null> | null;
+    const codes = (regions?.CANADA ?? []).map(provinceCode);
+    if (codes.length === 0) continue;
+    const token = tierToken({ tier: r.tier === null ? null : Number(r.tier), status: r.status });
+    const into = byToken.get(token);
+    if (!into) continue;
+    into.companies++;
+    for (const code of codes) into.counts.set(code, (into.counts.get(code) ?? 0) + 1);
+  }
+  return TIER_TOKENS.map((token) => {
+    const { companies, counts } = byToken.get(token)!;
+    return { token, companies,
+             rows: [...counts].map(([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n) };
+  });
 }

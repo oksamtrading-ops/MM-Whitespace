@@ -150,7 +150,7 @@ type Multi = typeof MULTI[number];
 const SORT_KEYS: readonly SortKey[] =
   ["name", "ticker", "tier", "stage", "footprint", "hq", "auditor", "auditFee", "erp", "marketCap"];
 
-const TIER_TOKENS = ["1", "2", "3", "4", "5", "6", "no_stage", "no_property", "conflicting", "unclassified"];
+export const TIER_TOKENS = ["1", "2", "3", "4", "5", "6", "no_stage", "no_property", "conflicting", "unclassified"];
 const STAGE_TOKENS = [...STAGE_ORDER, "none"];
 const FOOTPRINT_TOKENS = Object.keys(FOOTPRINT_WORD);
 

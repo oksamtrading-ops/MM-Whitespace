@@ -15,7 +15,9 @@ import Donut, { type Slice } from "../../_ui/Donut.tsx";
 import DotPlot from "../../_ui/DotPlot.tsx";
 import Heatmap from "../../_ui/Heatmap.tsx";
 import TierLadder, { type Rung } from "../../_ui/TierLadder.tsx";
-import { companyMarks, marketPenetration, UNKNOWN as UNKNOWN_FIRM, whitespaceMatrix } from "../../../lib/publish/crosstabs.ts";
+import {
+  companyMarks, marketPenetration, provincesByTier, UNKNOWN as UNKNOWN_FIRM, whitespaceMatrix,
+} from "../../../lib/publish/crosstabs.ts";
 import FootprintMap from "../../_ui/FootprintMap.tsx";
 import { foldProvinces, provinceName } from "../../../lib/publish/jurisdictions.ts";
 import Contents from "../../_ui/Contents.tsx";
@@ -137,6 +139,8 @@ export default async function Dashboard() {
   // Not for a picture any more — the by-value donut needs every company's
   // market cap and auditor, and this is the one pass that gets them.
   const tm = await companyMarks(ctx.db, snap.publication.id);
+  // The map's tier switch: the same province counts, split by tier.
+  const tierProvinces = await provincesByTier(ctx.db, snap.publication.id);
   const tierGate = gateFor("tier_distribution");
   const auditorGate = gateFor("auditor_crosstab");
   const money = (n: number) => formatMoney(n, period.threshold_currency, { compact: true });
@@ -232,7 +236,7 @@ export default async function Dashboard() {
             per province and do not sum to the population, which is why the
             footing is the footprint's and the caption says so. */}
         <div id="map" className="rise" style={{ "--i": 3 } as React.CSSProperties}>
-          <FootprintMap rows={provinceRows} hero twinHref="#province" />
+          <FootprintMap rows={provinceRows} tiers={tierProvinces} hero twinHref="#province" />
           <Composition parts={footprintParts(footprint)} proof={proofLine(footprint, population)} />
           <p className="note">
             The bar under the map is the footprint proof: every company holds properties in

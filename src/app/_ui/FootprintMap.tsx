@@ -4,7 +4,11 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CANADA_LABELS, CANADA_PATHS, CANADA_VIEWBOX } from "../../lib/publish/canada.ts";
+import type { TierProvinces } from "../../lib/publish/crosstabs.ts";
 import { provinceName } from "../../lib/publish/jurisdictions.ts";
+import {
+  companiesHref, companiesOf, groupRows, MAP_TIER_GROUPS, provinceMix,
+} from "../../lib/publish/maptiers.ts";
 
 export type MapRow = { code: string; n: number };
 
@@ -19,12 +23,21 @@ export type MapRow = { code: string; n: number };
  * and it settles on scroll or the first interaction. And the footing under
  * it is the footprint proof, because province counts count a company once
  * per province and do not sum to the population -- the caption says so.
+ *
+ * Given `tiers`, a dropdown above the map redraws it for one tier at a time,
+ * rescaling the ramp to that tier, and hovering a province on the full map
+ * gives its split by tier. In a tier view the bars below no longer match the
+ * map, so the same numbers are written under it instead, as its twin.
  */
-export default function FootprintMap({ rows, hero = false, twinHref = "#province" }: {
-  rows: MapRow[]; hero?: boolean; twinHref?: string;
+export default function FootprintMap({ rows, tiers, hero = false, twinHref = "#province" }: {
+  rows: MapRow[]; tiers?: TierProvinces[]; hero?: boolean; twinHref?: string;
 }) {
-  const counts = new Map(rows.map((r) => [r.code, r.n]));
-  const max = Math.max(1, ...rows.map((r) => r.n));
+  const [view, setView] = useState("all");
+  const group = tiers && view !== "all" ? MAP_TIER_GROUPS.find((g) => g.key === view) ?? null : null;
+  const shown = group && tiers ? groupRows(tiers, group) : null;
+  const active = shown ? shown.rows : rows;
+  const counts = new Map(active.map((r) => [r.code, r.n]));
+  const max = Math.max(1, ...active.map((r) => r.n));
   const bin = (n: number) => (n === 0 ? 0 : Math.max(1, Math.ceil((n / max) * 5)));
   const [hot, setHot] = useState<string | null>(null);
   const [tilted, setTilted] = useState(false);
@@ -52,15 +65,37 @@ export default function FootprintMap({ rows, hero = false, twinHref = "#province
     stage.current.style.setProperty("--py", `${dy.toFixed(1)}px`);
   };
 
-  const ordered = [...rows].sort((a, b) => b.n - a.n);
+  const ordered = [...active].sort((a, b) => b.n - a.n);
   const hotN = hot === null ? null : (counts.get(hot) ?? 0);
-  const steps = [1, 2, 3, 4, 5].map((q) => ({
-    q, lo: q === 1 ? 1 : Math.floor(((q - 1) / 5) * max) + 1, hi: Math.ceil((q / 5) * max),
-  }));
+  const mix = tiers && !group && hot !== null && hotN ? provinceMix(tiers, hot) : [];
+  const choose = (key: string) => { setView(key); setHot(null); };
+  // The legend names the counts each shade actually covers, read off the same
+  // bin() that fills the map: a tier whose largest province holds one company
+  // shows one shade for "1", not five shades each labelled 1.
+  const steps: Array<{ q: number; lo: number; hi: number }> = [];
+  for (let n = 1; n <= max; n++) {
+    const q = bin(n);
+    const step = steps.find((x) => x.q === q);
+    if (step) step.hi = n; else steps.push({ q, lo: n, hi: n });
+  }
 
   return (
     <div className={`map-hero${tilted ? " tilted" : ""}`} onMouseMove={onMove}
          onMouseLeave={() => setHot(null)} onPointerDown={() => setTilted(false)}>
+      {tiers && (
+        <div className="map-switch">
+          <label htmlFor="map-view">Show</label>
+          <select id="map-view" value={view} onChange={(e) => choose(e.target.value)}>
+            {/* Each label is one string, so the markup reads "Tier 4 (1)" whole. */}
+            <option value="all">
+              {`All companies (${MAP_TIER_GROUPS.reduce((a, g) => a + groupRows(tiers, g).companies, 0)})`}
+            </option>
+            {MAP_TIER_GROUPS.map((g) => (
+              <option key={g.key} value={g.key}>{`${g.label} (${groupRows(tiers, g).companies})`}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="map-stage" ref={stage}
            style={{ transform: tilted ? undefined : undefined, translate: tilted ? "var(--px, 0) var(--py, 0)" : "0 0" } as CSSProperties}>
         <svg className="map" viewBox={CANADA_VIEWBOX} aria-hidden="true" focusable="false">
@@ -85,12 +120,22 @@ export default function FootprintMap({ rows, hero = false, twinHref = "#province
         </svg>
       </div>
       <p className="map-readout" aria-live="polite">
-        {hot === null
-          ? <>Companies with a property in each province or territory. Hover a province; the bars below are the same numbers.</>
-          : hotN === 0
-            ? <><b>{provinceName(hot)}</b> — no company in the population holds a property here.</>
-            : <><b>{provinceName(hot)}</b> — <b>{hotN}</b> {hotN === 1 ? "company holds" : "companies hold"} a property here.{" "}
-                <Link href={`/companies?province=${hot}` as Route} prefetch={false}>See them →</Link></>}
+        {group && shown
+          ? hot === null
+            ? <><b>{companiesOf(group, shown.companies)}</b> {shown.companies === 1 ? "holds" : "hold"} a property in Canada.
+                Hover a province; the line under the map is the same numbers.</>
+            : hotN === 0
+              ? <><b>{provinceName(hot)}</b> — no {companiesOf(group, 1).replace(/^1 /, "")} holds a property here.</>
+              : <><b>{provinceName(hot)}</b> — <b>{companiesOf(group, hotN ?? 0)}</b> {hotN === 1 ? "holds" : "hold"} a property here.{" "}
+                  <Link href={companiesHref(hot, group) as Route} prefetch={false}>See them →</Link></>
+          : hot === null
+            ? <>Companies with a property in each province or territory.
+                {tiers ? " Hover a province for its tiers;" : " Hover a province;"} the bars below are the same numbers.</>
+            : hotN === 0
+              ? <><b>{provinceName(hot)}</b> — no company in the population holds a property here.</>
+              : <><b>{provinceName(hot)}</b> — <b>{hotN}</b> {hotN === 1 ? "company holds" : "companies hold"} a property here.{" "}
+                  {mix.length > 0 && <span className="map-mix">By tier: {mix.map((m) => `${m.label} · ${m.n}`).join(", ")}. </span>}
+                  <Link href={companiesHref(hot, null) as Route} prefetch={false}>See them →</Link></>}
       </p>
       <div className="map-legend" aria-hidden="true">
         <span className="step q0" /><span>none</span>
@@ -99,8 +144,16 @@ export default function FootprintMap({ rows, hero = false, twinHref = "#province
             <span className={`step q${s.q}`} /><span className="fig-sm">{s.lo === s.hi ? s.lo : `${s.lo}–${s.hi}`}</span>
           </span>
         ))}
-        <a href={twinHref} style={{ marginLeft: "auto" }}>As bars ↓</a>
+        {!group && <a href={twinHref} style={{ marginLeft: "auto" }}>As bars ↓</a>}
       </div>
+      {group && shown && (
+        <p className="map-twin">
+          {shown.rows.length === 0
+            ? <>No {companiesOf(group, 1).replace(/^1 /, "")} holds a property in Canada.</>
+            : <><b>{group.label}</b>, companies with a property in each:{" "}
+                {shown.rows.map((r) => `${provinceName(r.code)} ${r.n}`).join(" · ")}</>}
+        </p>
+      )}
     </div>
   );
 }

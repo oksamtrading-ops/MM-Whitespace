@@ -17,7 +17,7 @@
 > Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
 > Everything on `main` is deployed; migrations are applied through `0032`.
-> 160 commits on `main`. To start a new session, paste everything below the line.
+> 161 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -385,6 +385,7 @@ and the cause was in how batched answers are saved.
 | Cheaper pass 1 | 501 | 85 | 175 |
 | Opus restored, retries capped | 504 | 85 | 175 |
 | Pursuits removed | 452 | 85 | 158 |
+| Map tier switch | 457 | 85 | 159 |
 
 The auth, class and contrast checks and the build pass on both. Each new
 guard was watched failing against a planted bug, except where the traps below
@@ -475,6 +476,29 @@ tables, and no other table points at them.
   and proves `/pursuits` is gone and offered nowhere.
 - **Docs not rewritten:** design docs 02, 05, 06, 11, 13 and 18 still describe
   Pursuits as designed. Read them as history.
+
+**The map's tier switch (13 October).** Samuel asked to filter the dashboard
+map by tier, or toggle to a tier map. One map, with a dropdown above it
+("Show", a native select; Samuel preferred it to a row of eight buttons, which
+took three rows on a phone):
+- **All companies** is the map as it was. Hovering a province now also gives
+  its split by tier ("By tier: Tier 1 · 3, Unclassified · 7").
+- **Tier 1 to Tier 6 and Unclassified** redraw it for that tier, the ramp
+  rescaled to it; each option carries its count, as one string ("Tier 4 (1)")
+  so the markup is not split by React's text markers. Unclassified gathers the four
+  reasons for no tier, and its "See them" link carries all four tokens, so the
+  companies table shows exactly what the map counted. A tier view writes its
+  numbers under the map, since the bars below stay every company's.
+- **Counted as the snapshot counts.** `provincesByTier` (`crosstabs.ts`) reads
+  the frozen revision, as the other cross-tabs do, entry for entry the way
+  publish counts `province_footprint`, so a province's tiers add to its
+  all-companies number. Checked on revision 9: 112 entries both ways, 83
+  companies with Canadian ground.
+- **Today most are Unclassified** (67 of 83), because a tier needs stage
+  research. Tiers 1, 2, 4 and 5 hold 10, 2, 1 and 3. Run 3 changes that.
+- **The legend** now names the counts each shade really covers. It used to
+  show five shades labelled "1" when the top count was 1, and neighbouring
+  steps could overlap.
 
 **Flagged in passing, not fixed:**
 - ~~**A Viewer still sees the Deloitte market**~~ on a company's page —

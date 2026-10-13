@@ -1597,6 +1597,22 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .map-readout { font-size: 14px; color: var(--ink-2); margin: var(--space-2) 0 0; min-height: 22px; }
 .map-readout b { color: var(--ink); font-family: var(--font-figure); font-weight: 600; }
 
+/* The map's switch: every company, or one tier. A native select, not a row of
+   buttons: eight choices took a full row on a laptop and three on a phone,
+   and the browser's own picker is keyboard- and screen-reader-ready. */
+.map-switch { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); }
+.map-switch label { font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); }
+.map-switch select {
+  font: inherit; font-size: var(--fs-body-sm); min-height: 36px; padding: 0 var(--space-3);
+  border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
+}
+.map-switch select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.map-mix { color: var(--ink-2); }
+/* In a tier view the bars below are every company's, so the tier's own
+   numbers are written here: the map's twin, readable and printed. */
+.map-twin { font-size: var(--fs-body-sm); color: var(--ink-2); margin: var(--space-2) 0 0; }
+.map-twin b { color: var(--ink); }
+
 /* ------------------------------------------------------- new components */
 
 /* Tooltip: surface-3, never over data, never the only carrier of a value. */

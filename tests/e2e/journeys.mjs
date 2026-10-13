@@ -302,6 +302,14 @@ async function journeys(dbPath) {
   check("the override reason is printed on the header",
         dash.html.includes("Published through a blocked gate"));
   check("the proof line is present", /= \d+ ✓/.test(dash.html));
+  // The map's tier switch: a dropdown opening on every company, with one
+  // option per tier (and Unclassified), each carrying how many it would show.
+  const mapSwitch = dash.html.match(/<div class="map-switch"[\s\S]*?<\/div>/)?.[0] ?? "";
+  check("the map opens on every company, with a dropdown to one tier at a time",
+        /<select id="map-view"/.test(mapSwitch) &&
+        /<option value="all" selected="">All companies \(\d+\)/.test(mapSwitch) &&
+        ["Tier 1 (", "Tier 6 (", "Unclassified ("].every((t) => mapSwitch.includes(t)),
+        "the dropdown is missing, or does not start on all companies");
 
   // 2. A Viewer is refused the review workspace.
   console.log("\n2. a Viewer is refused the review workspace");
