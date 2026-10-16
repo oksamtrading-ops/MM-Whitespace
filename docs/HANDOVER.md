@@ -17,7 +17,7 @@
 > Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
 > Everything on `main` is deployed; migrations are applied through `0032`.
-> 161 commits on `main`. To start a new session, paste everything below the line.
+> 162 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -386,6 +386,7 @@ and the cause was in how batched answers are saved.
 | Opus restored, retries capped | 504 | 85 | 175 |
 | Pursuits removed | 452 | 85 | 158 |
 | Map tier switch | 457 | 85 | 159 |
+| Commodities | 462 | 85 | 161 |
 
 The auth, class and contrast checks and the build pass on both. Each new
 guard was watched failing against a planted bug, except where the traps below
@@ -499,6 +500,29 @@ took three rows on a phone):
 - **The legend** now names the counts each shade really covers. It used to
   show five shades labelled "1" when the top count was 1, and neighbouring
   steps could overlap.
+
+**Commodities in the table, and in research (16 October).** Samuel asked for
+the metals each company mines, from the workbook's B.02 tab (TSX's issuer list,
+from tsx.com's mining sector profile). They were never missing: the parser has
+always read B.02 and B.03's eighteen commodity flags and the "Other
+Properties" text into `commodities`, published for 254 of 259 companies (27
+names). They were only buried, one line on the company page.
+- **Shown:** a Commodities column in the Companies table, after Footprint, the
+  whole list wrapped (one company lists 14); a Commodity filter (OR within it,
+  like the others, options from what rows hold); search treats it as on
+  screen; sortable; in the Excel and CSV export; and in the company page's top
+  facts. The five TSX lists nothing for (Cambria Gold, Doubleview, Rusoro, San
+  Lorenzo, Selkirk Copper) read "Not listed".
+- **Researched in pass 2**, on Samuel's choice, as ERP was: the model lists the
+  commodities a filing's business description names, and `toFinding` keeps
+  only those the quoted passage names (`canonicalCommodities`,
+  `namesCommodity` in `fields.ts`, spelled as TSX spells them, "PGMs" as
+  Platinum/PGM); none named is an abstention. "Base metals" names nothing. The
+  business-description windows go last, like ERP's, so no fee is displaced.
+  Live rules move to `2026-10-16.1`. A researched list that differs from TSX's
+  lands in review's "extract disagrees" bucket, which bulk accept never takes.
+- **Which companies get it:** every pass 2 from now on. The ~34 already
+  through pass 2 only get it from a re-run (scope "Every company").
 
 **Flagged in passing, not fixed:**
 - ~~**A Viewer still sees the Deloitte market**~~ on a company's page —

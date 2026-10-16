@@ -226,6 +226,68 @@ export function namesSystem(excerpt: string, system: string): boolean {
   return excerpt.toLowerCase().includes(system.trim().toLowerCase());
 }
 
+/**
+ * Commodities, spelled as TSX's issuer list spells them (B.02 and B.03 of the
+ * workbook), so a researched list and the workbook's compare as equal when
+ * they agree. The first eighteen are TSX's flag columns; the rest are what
+ * its "Other Properties" text and filings name. Each pattern is what a filing
+ * says for it: "PGMs" is Platinum/PGM, "iron ore" is Iron.
+ *
+ * "Base & Precious Metals" is TSX's own catch-all column and never a
+ * researched value: "base metals" in a filing names no commodity.
+ */
+const COMMODITY_NAMES: Array<[RegExp, string]> = [
+  [/\bgold\b/i, "Gold"], [/\bsilver\b/i, "Silver"], [/\bcopper\b/i, "Copper"], [/\bnickel\b/i, "Nickel"],
+  [/\bdiamonds?\b/i, "Diamond"], [/\bmolybdenum\b|\bmoly\b/i, "Molybdenum"],
+  [/\bplatinum\b|\bpalladium\b|\bPGMs?\b|\bPGEs?\b/i, "Platinum/PGM"], [/\biron\b/i, "Iron"],
+  [/\blead\b/i, "Lead"], [/\bzinc\b/i, "Zinc"], [/\brare[- ]earths?\b|\bREEs?\b/i, "Rare Earths"],
+  [/\bpotash\b/i, "Potash"], [/\blithium\b/i, "Lithium"], [/\buranium\b/i, "Uranium"], [/\bcoal\b/i, "Coal"],
+  [/\btungsten\b/i, "Tungsten"], [/\boil and (natural )?gas\b|\bpetroleum\b/i, "Oil and Gas"],
+  [/\bgraphite\b/i, "Graphite"], [/\bcobalt\b/i, "Cobalt"], [/\bvanadium\b/i, "Vanadium"],
+  [/\bantimony\b/i, "Antimony"], [/\btin\b/i, "Tin"], [/\bmanganese\b/i, "Manganese"],
+  [/\btitanium\b/i, "Titanium"], [/\bphosphates?\b/i, "Phosphates"], [/\bnitrogen\b/i, "Nitrogen"],
+  [/\bniobium\b/i, "Niobium"], [/\btantalum\b/i, "Tantalum"], [/\bgermanium\b/i, "Germanium"],
+  [/\bgallium\b/i, "Gallium"], [/\bscandium\b/i, "Scandium"], [/\bbismuth\b/i, "Bismuth"],
+  [/\bfluorspar\b/i, "Fluorspar"], [/\bmagnesium\b/i, "Magnesium"], [/\bchromium\b|\bchromite\b/i, "Chromium"],
+  [/\bzirconium\b/i, "Zirconium"], [/\bhelium\b/i, "Helium"], [/\bsilica\b/i, "Silica"],
+];
+
+/** Not a commodity: the umbrella words a filing uses for many. */
+const COMMODITY_UMBRELLAS = /^(base|precious|critical|battery|industrial)( and (base|precious))? metals?$|^metals?$|^minerals?$/i;
+
+/** One commodity as the vocabulary spells it, or null for an umbrella word. */
+export function canonicalCommodity(name: string): string | null {
+  const t = name.trim().replace(/\s+/g, " ").replace(/^(and|or)\s+/i, "");
+  if (!t || COMMODITY_UMBRELLAS.test(t)) return null;
+  const known = COMMODITY_NAMES.find(([re]) => re.test(t));
+  if (known) return known[1];
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+}
+
+/**
+ * A comma list ("gold, copper and silver") as canonical commodities, each
+ * once, sorted the way the workbook's list is sorted, so the two compare.
+ */
+export function canonicalCommodities(text: string): string[] {
+  const out = new Set<string>();
+  // Two names carry their own "and": take them whole before splitting on it.
+  let rest = text.replace(/\boil and (natural )?gas\b/gi, () => { out.add("Oil and Gas"); return ","; })
+                 .replace(/\bbase\s*(?:&|and)\s*precious metals?\b/gi, ",");
+  rest = rest.replace(/\bprecious\s*(?:&|and)\s*base metals?\b/gi, ",");
+  for (const part of rest.split(/\s*(?:,|;|\/(?!PGM)|\band\b|&)\s*/i)) {
+    const c = canonicalCommodity(part);
+    if (c) out.add(c);
+  }
+  return [...out].sort();
+}
+
+/** Does a passage name this commodity, by any of the words a filing uses for it? */
+export function namesCommodity(excerpt: string, commodity: string): boolean {
+  const known = COMMODITY_NAMES.find(([, canonical]) => canonical === commodity);
+  if (known) return known[0].test(excerpt);
+  return excerpt.toLowerCase().includes(commodity.toLowerCase());
+}
+
 /** The first web address in some text, for an override that must cite its public source. */
 export function sourceUrlIn(text: string): string | null {
   const m = text.match(/https?:\/\/[^\s<>"')\]]+/i);

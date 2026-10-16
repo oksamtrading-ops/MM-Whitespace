@@ -40,6 +40,8 @@ export type RosterRow = {
   /** As stored: a Money, or a bare number from before currencies were kept. */
   auditFee: unknown;
   erp: string | null;
+  /** What the company mines, as stored: TSX's list from the workbook, or research once accepted. */
+  commodities: string[];
   /**
    * The stages this revision froze. null when the revision predates stage rows
    * (revisions 1-8): the table then says so rather than guessing from the tier.
@@ -61,7 +63,7 @@ export type RosterRow = {
 /** The fields a column shows. Everything else public is searched through `meta`. */
 export const COLUMN_FIELDS = new Set([
   "company_name", "root_ticker", "exchange", "tier", "footprint", "auditor", "market_cap_cad",
-  "head_office_region", "head_office_location", "audit_fee", "incumbent_erp",
+  "head_office_region", "head_office_location", "audit_fee", "incumbent_erp", "commodities",
 ]);
 
 /** Never searched: derived, or carried by a column under another name. */
@@ -121,7 +123,8 @@ export function cited(row: RosterRow, field: string): boolean {
 /* ----------------------------------------------------------- the filter */
 
 export type SortKey =
-  | "name" | "ticker" | "tier" | "stage" | "footprint" | "hq" | "auditor" | "auditFee" | "erp" | "marketCap";
+  | "name" | "ticker" | "tier" | "stage" | "footprint" | "commodities" | "hq" | "auditor" | "auditFee" | "erp"
+  | "marketCap";
 
 export type RosterFilter = {
   q: string;
@@ -130,6 +133,8 @@ export type RosterFilter = {
   stage: string[];
   auditor: string[];
   footprint: string[];
+  /** Any of these commodities: OR, as every other filter is within itself. */
+  commodity: string[];
   prop: string[];
   /** Whitespace only: companies Deloitte does not audit, unknown auditors included. */
   ws: boolean;
@@ -141,14 +146,15 @@ export type RosterFilter = {
 export const DEFAULT_SORT: { sort: SortKey; dir: 1 | -1 } = { sort: "marketCap", dir: -1 };
 
 export const EMPTY_FILTER: RosterFilter = {
-  q: "", tier: [], hq: [], stage: [], auditor: [], footprint: [], prop: [], ws: false, ...DEFAULT_SORT,
+  q: "", tier: [], hq: [], stage: [], auditor: [], footprint: [], commodity: [], prop: [], ws: false,
+  ...DEFAULT_SORT,
 };
 
-const MULTI = ["tier", "hq", "stage", "auditor", "footprint", "prop"] as const;
+const MULTI = ["tier", "hq", "stage", "auditor", "footprint", "commodity", "prop"] as const;
 type Multi = typeof MULTI[number];
 
 const SORT_KEYS: readonly SortKey[] =
-  ["name", "ticker", "tier", "stage", "footprint", "hq", "auditor", "auditFee", "erp", "marketCap"];
+  ["name", "ticker", "tier", "stage", "footprint", "commodities", "hq", "auditor", "auditFee", "erp", "marketCap"];
 
 export const TIER_TOKENS = ["1", "2", "3", "4", "5", "6", "no_stage", "no_property", "conflicting", "unclassified"];
 const STAGE_TOKENS = [...STAGE_ORDER, "none"];
@@ -209,7 +215,7 @@ function all(params: Params, key: string): string[] {
 /**
  * The filter in a URL. Repeated keys are the multi-select (?tier=1&tier=2),
  * OR within a key and AND across keys. Tokens with a fixed vocabulary are
- * checked against it; data-driven ones (head office, auditor, property) are
+ * checked against it; data-driven ones (head office, auditor, commodity, property) are
  * kept and checked against what the rows hold by dropUnknown.
  *
  * ?province=ON is the dashboard map's link, from before there was a property
@@ -243,6 +249,7 @@ export function parseRosterParams(params: Params): RosterFilter {
     stage: pick("stage", STAGE_TOKENS),
     auditor: pick("auditor"),
     footprint: pick("footprint", FOOTPRINT_TOKENS),
+    commodity: pick("commodity"),
     prop: [...new Set(prop)],
     ws: ["1", "true", "yes"].includes(all(params, "ws")[0] ?? ""),
     sort, dir,
@@ -286,6 +293,7 @@ function matchesStage(row: RosterRow, wanted: string[]): boolean {
 /** What the visible cells say, so a search for something on screen needs no hint. */
 function visibleText(row: RosterRow): string {
   return [row.name, row.ticker, row.exchange, hqWord(row), row.hqRegion, auditorWord(row.auditor), row.erp,
+          row.commodities.join(" "),
           row.auditFee === null || row.auditFee === undefined ? null : formatFee(row.auditFee)]
     .filter(Boolean).join(" ").toLowerCase();
 }
@@ -303,6 +311,7 @@ export function filterRows(rows: RosterRow[], f: RosterFilter): Shown[] {
     if (f.stage.length && !matchesStage(row, f.stage)) continue;
     if (f.auditor.length && !f.auditor.includes(auditorTokenOf(row))) continue;
     if (f.footprint.length && !f.footprint.includes(row.footprint)) continue;
+    if (f.commodity.length && !f.commodity.some((c) => row.commodities.includes(c))) continue;
     if (f.prop.length) {
       const held = propTokensOf(row);
       if (!f.prop.some((p) => held.includes(p))) continue;
@@ -343,6 +352,7 @@ export function sortRows(list: Shown[], sort: SortKey, dir: 1 | -1): Shown[] {
         return s ? STAGE_ORDER.indexOf(s) : null;
       }
       case "footprint": return FOOTPRINT_WORD[r.footprint] ?? r.footprint;
+      case "commodities": return r.commodities.length ? r.commodities.join(", ") : null;
       case "hq": return hqWord(r);
       case "auditor": return r.auditor ? auditorWord(r.auditor) : null;
       case "auditFee": return feeKey(r.auditFee);
@@ -392,6 +402,8 @@ export function facetOptions(rows: RosterRow[]): Facets {
   const tiers = tally(rows, (r) => [tierToken(r)]);
   const stages = tally(rows, (r) => r.stageEvidence === "none" ? ["none"] : stagesKnown(r));
   const footprints = tally(rows, (r) => [r.footprint]);
+  const commodities = tally(rows, (r) => r.commodities);
+  const commodityOrder = [...commodities.keys()].sort((a, b) => a.localeCompare(b, "en-CA"));
 
   const auditors = tally(rows, (r) => [auditorTokenOf(r)]);
   const firmOrder = [...auditors.keys()].filter((k) => k !== "unknown")
@@ -431,6 +443,7 @@ export function facetOptions(rows: RosterRow[]): Facets {
                (v) => v === "none" ? "Not researched" : STAGE_LABEL[v as Stage]),
     auditor: one("Auditor", auditors, firmOrder, (v) => v === "unknown" ? "Not known" : auditorWord(v)),
     footprint: one("Footprint", footprints, FOOTPRINT_TOKENS, (v) => FOOTPRINT_WORD[v]),
+    commodity: one("Commodity", commodities, commodityOrder, (v) => v),
     prop,
   };
 }
@@ -443,12 +456,12 @@ export function facetOptions(rows: RosterRow[]): Facets {
 export function dropUnknown(f: RosterFilter, facets: Facets): RosterFilter {
   const known = (key: Multi) => new Set(facets[key].flatMap((g) => g.options.map((o) => o.value)));
   const keep = (key: Multi) => f[key].filter((v) => known(key).has(v));
-  return { ...f, hq: keep("hq"), auditor: keep("auditor"), prop: keep("prop") };
+  return { ...f, hq: keep("hq"), auditor: keep("auditor"), commodity: keep("commodity"), prop: keep("prop") };
 }
 
 export const FILTER_LABEL: Record<Multi, string> = {
   tier: "Tier", hq: "Company HQ", stage: "Stage of operations", auditor: "Auditor",
-  footprint: "Footprint", prop: "Properties in",
+  footprint: "Footprint", commodity: "Commodity", prop: "Properties in",
 };
 
 /** The filter in words, for the export's header and the screen's status line. */
@@ -474,6 +487,7 @@ export const ROSTER_COLUMNS: Array<{ key: SortKey | Stage; label: string; numeri
   { key: "stage", label: "Stage" },
   ...STAGE_ORDER.map((s) => ({ key: s, label: STAGE_LABEL[s], stage: true })),
   { key: "footprint", label: "Footprint" },
+  { key: "commodities", label: "Commodities" },
   { key: "hq", label: "Company HQ" },
   { key: "auditor", label: "Auditor" },
   { key: "auditFee", label: "Audit fees" },

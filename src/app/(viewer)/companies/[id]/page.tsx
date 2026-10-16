@@ -214,6 +214,9 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
           ...p.values.filter((v) => ["market_cap_cad", "head_office_location", "head_office_region", "dtt_market"].includes(v.fieldKey))
             .map((v) => ({ label: v.label, value: v.display, figure: v.fieldKey === "market_cap_cad" })),
           { label: "Stage of operations", value: stageWords(p.stages, p.stageEvidence) },
+          // What it mines sits beside the stage, where a reader looks first,
+          // rather than only in the long list of every value below.
+          { label: "Commodities", value: commodityWords(p.values.find((v) => v.fieldKey === "commodities")) },
           { label: "Period", value: periodName(p.period.label).name },
           { label: p.publication ? "Published" : "Status",
             value: p.publication
@@ -271,6 +274,11 @@ function Glance({ values }: { values: ProfileValue[] }) {
 
 function tierWords(t: { tier: number | null; status: string }): string {
   return t.tier === null ? (UNCLASSIFIED[t.status] ?? "Unclassified") : `Tier ${t.tier}`;
+}
+
+/** TSX lists nothing for a few companies; say so rather than show a dash. */
+function commodityWords(v: ProfileValue | undefined): string {
+  return v && v.display && v.display !== "—" ? v.display : "Not listed";
 }
 
 function ValueRow({ v, showReasons }: { v: ProfileValue; showReasons: boolean }) {

@@ -45,12 +45,25 @@ test("the Deloitte market never reaches a row, so it can never reach the file", 
   assert.doesNotMatch(JSON.stringify(payload), /Ontario|Deloitte market|dtt_market/);
 });
 
+test("commodities reach the table and the export as a column of their own", async () => {
+  const { db } = await published();
+  const rows = await listCompanies(db, { allowDraft: false });
+  assert.deepEqual(rows[0].commodities, ["Gold"], "read from the published revision");
+  assert.ok(!rows[0].meta.some((m) => m.field === "commodities"), "a column, so not a hidden detail");
+  const payload = tablePayload({ rows, total: rows.length, filterWords: "Every company in the period",
+                                 basis: { label: "Q3-2026 (2026-05-31)", revision: 1 } });
+  const keys = payload.columns.map((c) => c.key);
+  assert.ok(keys.indexOf("commodities") === keys.indexOf("footprint") + 1, "beside footprint, as on screen");
+  assert.equal(payload.columns.filter((c) => c.label === "Commodities").length, 1, "once, not again as a detail");
+  assert.equal((payload.rows[0] as Record<string, unknown>).commodities, "Gold");
+});
+
 test("a link is written only for a cited value, and only if it is http(s)", () => {
   assert.equal(safeUrl("javascript:alert(1)"), null);
   assert.equal(safeUrl(" https://ok.example/a "), "https://ok.example/a");
   const row = {
     companyId: "c1", name: "Northco", ticker: "N", exchange: "TSX", tier: 4, status: "classified", footprint: "none",
-    auditor: "PwC", marketCap: 1, hqRegion: "Ontario, Canada", hqCity: null, erp: null,
+    auditor: "PwC", marketCap: 1, hqRegion: "Ontario, Canada", hqCity: null, erp: null, commodities: ["Gold"],
     auditFee: { amount: 10, currency: "CAD", fiscal_year: 2025 }, stages: [], stageEvidence: "complete" as const,
     regions: {}, meta: [], sources: { audit_fee: "ai_accepted", auditor: "extract", head_office_region: "manual_override" },
   };

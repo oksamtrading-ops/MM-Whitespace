@@ -422,6 +422,7 @@ export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Pro
       hqCity: text("head_office_location"),
       auditFee: get("audit_fee"),
       erp: text("incumbent_erp"),
+      commodities: listOfText(get("commodities")),
       stages: stageRows === null ? null : stageRows.get(id) ?? [],
       stageEvidence: evidence === "partial" || evidence === "complete" ? evidence : "none",
       regions: regionsOf(get("property_regions")),
@@ -429,6 +430,11 @@ export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Pro
       meta: metaFor([...vals].map(([k, v]) => ({ field: k, label: catalogue.get(k)?.label ?? k, value: v.value }))),
     };
   });
+}
+
+/** A stored list of words (commodities), or none: anything else is not a list. */
+function listOfText(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
 }
 
 /**

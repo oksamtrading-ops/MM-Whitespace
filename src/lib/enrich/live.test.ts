@@ -10,7 +10,7 @@ import { drain, settleReady } from "./drain.ts";
 import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
-  BATCH_DISCOUNT, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
+  BATCH_DISCOUNT, EXTRACTED_FIELDS, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
   canonicalAuditor, collectSearchUrls, discoveryRequest, kindFromUrl, linkedFilings, Meter, toFinding, windowsOf,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
@@ -31,6 +31,7 @@ const CIRCULAR = makePdf([
   "Appointment of Auditor\nDeloitte LLP, Chartered Professional Accountants, have been the auditors of the Corporation since 2015.",
   "External Auditor Service Fees\nAll amounts are expressed in thousands of Canadian dollars.\n" +
   "                        2025     2024\nAudit fees               412      388\nTax fees                 118      102",
+  "Description of the Business\nNorthco Mining Corp. is engaged in the exploration and development of gold and copper properties in Ontario.",
 ]);
 const SOMEONE_ELSE = makePdf(["Southco Resources Ltd.\nAnnual Information Form\nAudit fees 999"]);
 
@@ -1056,6 +1057,58 @@ test("an ERP named far from every other window is still read, when there is room
   const filler = "x ".repeat(5000);
   const text = `Cover page of Westco. ${filler} The Corporation operates Pronto Xi for finance. ${filler}`;
   assert.ok(windowsOf(text).includes("Pronto Xi"));
+});
+
+test("commodities are proposed only where the passage names them, spelled as TSX spells them", () => {
+  assert.ok((EXTRACTED_FIELDS as readonly string[]).includes("commodities"), "pass 2 asks for them");
+  const c = (text_value: string, evidence_excerpt: string) =>
+    toFinding({ ...erpBase, field_key: "commodities", text_value, evidence_excerpt }, [])!;
+
+  assert.deepEqual(c("gold and copper", "exploration of gold and copper properties").value, ["Copper", "Gold"],
+                   "sorted as the workbook sorts, so an agreeing list compares as equal");
+  assert.deepEqual(c("Gold, Copper, Lithium", "a gold and copper producer").value, ["Copper", "Gold"],
+                   "what the quote does not name is dropped");
+  assert.deepEqual(c("PGMs, iron ore", "platinum group metals (PGMs) and iron ore").value, ["Iron", "Platinum/PGM"],
+                   "a filing's words for them are TSX's names");
+  assert.deepEqual(c("oil and gas, potash", "potash and oil and gas interests").value, ["Oil and Gas", "Potash"],
+                   "a name with its own 'and' is kept whole");
+
+  const umbrella = c("base metals", "the exploration for base metals");
+  assert.equal(umbrella.abstained, true, "an umbrella word names no commodity");
+  assert.match(umbrella.abstention_reason ?? "", /No specific commodity/);
+  const unnamed = c("Uranium", "The Company holds mineral claims in Saskatchewan.");
+  assert.equal(unnamed.abstained, true);
+  assert.match(unnamed.abstention_reason ?? "", /does not name Uranium/);
+});
+
+test("the commodity windows never take the budget a fee needs, and are read when there is room", () => {
+  const gap = "x ".repeat(1500);
+  const parts = [`Cover page of Northco. ${gap}`,
+                 `${gap} is engaged in the exploration of gold ${gap}`, `${gap} Nature of the business: copper ${gap}`];
+  for (let i = 0; i < 6; i++) parts.push(`${gap} independent auditor ${i} ${gap}`);
+  for (let i = 0; i < 4; i++) parts.push(`${gap} exploration-stage property ${i} ${gap}`);
+  parts.push(`${gap} Audit fees 412,000 ${gap}`);
+  const w = windowsOf(parts.join(""));
+  assert.ok(w.includes("Audit fees 412,000"), "the fee survives");
+  assert.ok(w.length <= 30_000);
+
+  const filler = "x ".repeat(5000);
+  const far = `Cover page of Westco. ${filler} Westco is engaged in the production of uranium. ${filler}`;
+  assert.ok(windowsOf(far).includes("production of uranium"), "a business description far from the rest is read");
+});
+
+test("PASS 2: a commodities finding is anchored in the filing, with what the filing does not name dropped", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const extraction = { findings: [...EXTRACTION.findings, {
+    field_key: "commodities", document_index: 0, abstained: false, abstention_reason: null, self_confidence: 0.8,
+    evidence_excerpt: "is engaged in the exploration and development of gold and copper properties",
+    text_value: "Gold, Copper, Zinc", year_value: null, stage: null, auditor_change: null, fee: null,
+  }] } as typeof EXTRACTION;
+  const { v } = vendor({ extraction });
+  const { fetchDeps } = world();
+  const { by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.equal(by.commodities.state, "proposed", "the quote is in the circular");
+  assert.deepEqual(JSON.parse(by.commodities.proposed_value), ["Copper", "Gold"], "zinc is not in it");
 });
 
 test("a head office read from a French filing is stored as the workbook spells it; the quote is not", () => {

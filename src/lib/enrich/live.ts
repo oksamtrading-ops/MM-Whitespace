@@ -22,7 +22,9 @@
  * and never on any allowlist.
  */
 import { detectScale } from "./anchor.ts";
-import { canonicalErp, currencyCode, namesSystem } from "../format/fields.ts";
+import {
+  canonicalCommodities, canonicalErp, currencyCode, namesCommodity, namesSystem,
+} from "../format/fields.ts";
 import { canonicalRegion } from "../publish/jurisdictions.ts";
 import type { Mode } from "./cassette.ts";
 import { DISCOVERY_MAX_SEARCHES, ROUTE_CONFIG } from "./client.ts";
@@ -247,7 +249,7 @@ const REPORT_TOOL = {
  * Raise this whenever either rules block changes. promptVersionFor() composes
  * it with the prefix's version, so a stored value names both halves.
  */
-export const LIVE_RULES_VERSION = "2026-10-09.1";
+export const LIVE_RULES_VERSION = "2026-10-16.1";
 
 /**
  * What produced a finding, for the record: the prefix's version alone in
@@ -543,14 +545,23 @@ const ERP_PATTERN = /enterprise resource planning|\bERP\b|S\s*\/\s*4\s*HANA|\bSA
 const ERP_HITS = 2;
 
 /**
+ * Where a filing says what the company mines: its description of the business,
+ * usually near the start of an AIF or MD&A, and often already inside the cover
+ * window. Placed last, like the ERP windows, so it can only use what is left.
+ */
+const COMMODITY_PATTERN = /nature of (?:the|its|our) business|description of (?:the )?business|principal products|(?:is|are) engaged in|focused on the (?:exploration|development|production)|primary (?:metals?|commodit(?:y|ies))/gi;
+const COMMODITY_HITS = 2;
+
+/**
  * The cover and every window that matters, verbatim, merged and capped.
  *
- * The ERP windows are placed LAST, in whatever budget the other fields left.
- * The cap stops at the first window that will not fit, in document order, and
- * fee tables come late in a circular: an early internal-controls passage about
- * an ERP would otherwise push a fee out of the text the model sees. So adding
- * the field cannot take evidence from any other -- and a document that names
- * no ERP reads exactly as it did before the field existed.
+ * The ERP windows, then the business-description windows for commodities, are
+ * placed LAST, in whatever budget the other fields left. The cap stops at the
+ * first window that will not fit, in document order, and fee tables come late
+ * in a circular: an early internal-controls passage about an ERP would
+ * otherwise push a fee out of the text the model sees. So adding either field
+ * cannot take evidence from any other -- and a document that names no ERP and
+ * has no business description reads exactly as it did before they existed.
  */
 export function windowsOf(text: string): string {
   const spans: Array<[number, number]> = [[0, Math.min(text.length, 3000)]];
@@ -576,23 +587,25 @@ export function windowsOf(text: string): string {
     out += (out ? "\n[...]\n" : "") + piece;
     kept.push([a, b]);
   }
-  let erp = 0;
-  for (const m of text.matchAll(ERP_PATTERN)) {
-    if (erp >= ERP_HITS) break;
-    if (kept.some(([a, b]) => m.index! >= a && m.index! < b)) { erp++; continue; }   // already in view
-    const span: [number, number] = [Math.max(0, m.index! - WINDOW_CHARS), Math.min(text.length, m.index! + WINDOW_CHARS)];
-    const piece = text.slice(span[0], span[1]);
-    if (out.length + piece.length + 7 > MAX_CHARS_PER_DOCUMENT) break;
-    out += (out ? "\n[...]\n" : "") + piece;
-    kept.push(span);
-    erp++;
+  for (const [pattern, cap] of [[ERP_PATTERN, ERP_HITS], [COMMODITY_PATTERN, COMMODITY_HITS]] as const) {
+    let taken = 0;
+    for (const m of text.matchAll(pattern)) {
+      if (taken >= cap) break;
+      if (kept.some(([a, b]) => m.index! >= a && m.index! < b)) { taken++; continue; }   // already in view
+      const span: [number, number] = [Math.max(0, m.index! - WINDOW_CHARS), Math.min(text.length, m.index! + WINDOW_CHARS)];
+      const piece = text.slice(span[0], span[1]);
+      if (out.length + piece.length + 7 > MAX_CHARS_PER_DOCUMENT) break;
+      out += (out ? "\n[...]\n" : "") + piece;
+      kept.push(span);
+      taken++;
+    }
   }
   return out;
 }
 
 export const EXTRACTED_FIELDS = [
   "stage_evidence_state", "auditor", "auditor_since", "auditor_change", "fiscal_year_end",
-  "head_office_location", "head_office_region", "audit_fee", "tax_fee", "incumbent_erp",
+  "head_office_location", "head_office_region", "audit_fee", "tax_fee", "incumbent_erp", "commodities",
 ] as const;
 
 const EXTRACTION_SCHEMA = {
@@ -678,6 +691,10 @@ Return one finding for EVERY field listed, in this form:
   Edwards, Microsoft Dynamics 365, Pronto Xi...). The excerpt must name the system. A system the
   company sells, implements for others, or mentions as a supplier's or customer's does not count;
   "a new ERP system" with no name is not a value. Abstain unless a document names the company's own.
+- commodities: text_value, the commodities the company explores for, develops or produces, comma
+  separated, each named (gold, copper, lithium...). The excerpt must name every commodity you list,
+  so choose the passage that describes the company's business. "Base metals" or "precious metals"
+  alone names none. Commodities a company only buys, sells, trades or uses are not its own.
 
 evidence_excerpt must be copied character for character from the document it cites, at most 300
 characters, and document_index must name that document. If the documents do not state a value,
@@ -760,6 +777,21 @@ export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFind
                  abstention_reason: `The passage cited does not name the system ("${system}").` };
       }
       return { ...base, value: system };
+    }
+    case "commodities": {
+      if (!e.text_value) return null;
+      // The same rule as ERP, per commodity: the gate proves the quote is in
+      // the document, not that it names each thing listed. What the quote does
+      // not name is dropped; a list it names none of is an abstention.
+      const listed = canonicalCommodities(e.text_value);
+      const named = e.evidence_excerpt ? listed.filter((c) => namesCommodity(e.evidence_excerpt!, c)) : [];
+      if (named.length === 0) {
+        return { ...base, abstained: true,
+                 abstention_reason: listed.length
+                   ? `The passage cited does not name ${listed.join(", ")}.`
+                   : "No specific commodity was named." };
+      }
+      return { ...base, value: named };
     }
     case "audit_fee": case "tax_fee": {
       if (!e.fee) return null;

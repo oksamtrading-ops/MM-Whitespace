@@ -956,6 +956,9 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .roster { overflow: auto; max-height: calc(100vh - var(--header-h) - 190px); border: 1px solid var(--rule-raised); border-radius: var(--radius); background: var(--surface-1); }
 .roster table { min-width: 940px; }
 .roster th, .roster td { height: var(--row-h-dense); white-space: nowrap; }
+/* Commodities run long (one company lists 14), and the whole list is the point,
+   so this one column wraps rather than truncating. */
+.roster td.wrap { white-space: normal; min-width: 24ch; max-width: 34ch; line-height: 1.35; padding-block: 6px; }
 .roster thead th { position: sticky; top: 0; z-index: var(--z-sticky); }
 .roster th:first-child, .roster td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface-1); max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
 .roster thead th:first-child { z-index: 3; background: var(--surface-2); }

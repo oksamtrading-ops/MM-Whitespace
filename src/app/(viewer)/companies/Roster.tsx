@@ -12,7 +12,7 @@ import { formatFee, formatMoney, STAGE_ORDER, type Stage } from "../../../lib/fo
 import Icon from "../../_ui/Icon.tsx";
 import MultiSelect from "../../_ui/MultiSelect.tsx";
 
-const PICKERS = ["tier", "stage", "hq", "auditor", "footprint", "prop"] as const;
+const PICKERS = ["tier", "stage", "hq", "auditor", "footprint", "commodity", "prop"] as const;
 
 /**
  * Every company, full width, narrowed by any combination of filters, sorted on
@@ -148,6 +148,9 @@ export default function Roster({ rows, deloitteAudits, initial }: {
                     <td>{r.tier === null ? <span className="meta">—</span> : STAGE_LABEL[STAGE_OF_TIER[r.tier]]}</td>
                     <StageCells row={r} />
                     <td>{FOOTPRINT_WORD[r.footprint] ?? r.footprint}</td>
+                    <td className="wrap">
+                      <Cite row={r} field="commodities" value={r.commodities.length ? r.commodities.join(", ") : null} />
+                    </td>
                     <td><Cite row={r} field="head_office_region" value={hqWord(r)} /></td>
                     <td>
                       {r.auditor === "Deloitte"

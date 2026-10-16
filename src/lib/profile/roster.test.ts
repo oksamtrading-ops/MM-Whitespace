@@ -9,7 +9,7 @@ function row(over: Partial<RosterRow> & { name: string }): RosterRow {
   return {
     companyId: over.name.toLowerCase().replace(/\W+/g, "-"),
     ticker: null, exchange: "TSX", tier: null, status: "unclassified_no_stage_evidence", footprint: "abroad",
-    auditor: null, marketCap: null, hqRegion: null, hqCity: null, auditFee: null, erp: null,
+    auditor: null, marketCap: null, hqRegion: null, hqCity: null, auditFee: null, erp: null, commodities: [],
     stages: [], stageEvidence: "none", regions: {}, sources: {}, meta: [],
     ...over,
   };
@@ -21,18 +21,17 @@ const ROWS: RosterRow[] = [
         stages: ["exploration", "production"], stageEvidence: "complete",
         regions: { CANADA: ["ON", "QC"], "LATIN AMERICA": ["Mexico"] },
         auditFee: { amount: 8_052_000, currency: "CAD", fiscal_year: 2025 },
-        sources: { audit_fee: "ai_accepted" },
-        meta: [{ field: "commodities", label: "Commodities", text: "gold, silver" }] }),
+        sources: { audit_fee: "ai_accepted" }, commodities: ["Gold", "Silver"] }),
   row({ name: "Wheaton Precious", ticker: "WPM", tier: 4, status: "classified", footprint: "abroad",
         auditor: "Deloitte", marketCap: 60e9, hqRegion: "British Columbia, Canada",
         stages: ["royalty_streaming"], stageEvidence: "complete", regions: { USA: ["NV"] },
         auditFee: { amount: 517_116, currency: "USD", fiscal_year: 2025 } }),
   row({ name: "Altius Minerals", ticker: "ALS", tier: null, status: "unclassified_no_property_evidence",
         footprint: "none", auditor: "__other_unnamed__", marketCap: 3e9, hqRegion: "Newfoundland and Labrador, Canada",
-        stages: ["royalty_streaming"], stageEvidence: "partial",
-        meta: [{ field: "commodities", label: "Commodities", text: "lithium, potash" }] }),
+        stages: ["royalty_streaming"], stageEvidence: "partial", commodities: ["Lithium", "Potash"],
+        meta: [{ field: "fiscal_year_end", label: "Fiscal year end", text: "31 December" }] }),
   row({ name: "Arizona Sonoran", ticker: "ASCU", marketCap: 2e9, hqRegion: "Arizona, United States",
-        regions: { CANADA: ["NWT"] } }),
+        regions: { CANADA: ["NWT"] }, commodities: ["Copper", "Gold"] }),
   row({ name: "Aclara Resources", ticker: "ARA", marketCap: 1e9, hqRegion: "Chile",
         auditFee: { amount: 2_000_000, currency: "CAD", fiscal_year: 2025 },
         sources: { incumbent_erp: "ai_accepted" } }),
@@ -97,9 +96,32 @@ test("search finds what is on screen with no hint, and a hidden value with one",
   const onScreen = filterRows(ROWS, { ...EMPTY_FILTER, q: "toronto" });
   assert.deepEqual(names(onScreen), ["Agnico Eagle"]);
   assert.equal(onScreen[0].matched, null);
-  const hidden = filterRows(ROWS, { ...EMPTY_FILTER, q: "lithium" });
+  const hidden = filterRows(ROWS, { ...EMPTY_FILTER, q: "december" });
   assert.deepEqual(names(hidden), ["Altius Minerals"]);
-  assert.equal(hidden[0].matched?.label, "Commodities");
+  assert.equal(hidden[0].matched?.label, "Fiscal year end");
+  // Commodities have a column now, so a search for one is a search for what is on screen.
+  const metal = filterRows(ROWS, { ...EMPTY_FILTER, q: "lithium" });
+  assert.deepEqual(names(metal), ["Altius Minerals"]);
+  assert.equal(metal[0].matched, null);
+});
+
+test("the commodity filter keeps any company holding any chosen commodity, and its options are what rows hold", () => {
+  const either = filterRows(ROWS, { ...EMPTY_FILTER, commodity: ["Silver", "Copper"] });
+  assert.deepEqual(names(either).sort(), ["Agnico Eagle", "Arizona Sonoran"], "OR within the filter");
+  const andTier = filterRows(ROWS, { ...EMPTY_FILTER, commodity: ["Gold"], tier: ["3"] });
+  assert.deepEqual(names(andTier), ["Agnico Eagle"], "AND across filters");
+
+  const facets = facetOptions(ROWS);
+  assert.deepEqual(facets.commodity[0].options.map((o) => [o.label, o.count]),
+    [["Copper", 1], ["Gold", 2], ["Lithium", 1], ["Potash", 1], ["Silver", 1]],
+    "alphabetical, each with how many companies hold it, and none that nobody holds");
+
+  const f = parseRosterParams(new URLSearchParams("commodity=Gold&commodity=Lithium&commodity=Unobtainium"));
+  assert.deepEqual(f.commodity, ["Gold", "Lithium", "Unobtainium"], "kept as typed until checked against the rows");
+  assert.deepEqual(dropUnknown(f, facets).commodity, ["Gold", "Lithium"], "a commodity nobody holds is dropped");
+  assert.equal(toRosterParams(dropUnknown(f, facets)).toString(), "commodity=Gold&commodity=Lithium", "and it round-trips");
+  assert.match(describeFilter({ ...EMPTY_FILTER, commodity: ["Gold", "Lithium"] }, facets),
+               /Commodity: Gold or Lithium/);
 });
 
 test("whitespace only keeps every company Deloitte does not audit, unknown auditors included", () => {

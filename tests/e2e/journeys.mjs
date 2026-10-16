@@ -552,6 +552,11 @@ async function journeys(dbPath) {
   check("the table shows the four stages of operations", narrowedText.includes("Stage of operations") &&
         narrowedText.includes(">Royalty / streaming</th>"));
   check("and no Deloitte market column", !narrowedText.includes(">Deloitte market<"));
+  // The commodities TSX lists for each company (B.02 and B.03 of the workbook)
+  // are a column of their own, with a filter beside the others.
+  check("and a Commodities column, filled, with a Commodity filter",
+        /<th[^>]*>(?:<button[^>]*>)?Commodities</.test(narrowedText) &&
+        /<td class="wrap">/.test(tableBody) && narrowedText.includes('name="commodity"'));
 
   const tableCsv = await fetch(`${BASE}/api/companies/export?tier=4&format=csv`, { headers: { cookie: viewer.cookie } });
   const tableText = await tableCsv.text();
@@ -865,6 +870,10 @@ async function journeys(dbPath) {
         analystProfile.html.includes("Deloitte market"));
   check("and a Viewer's does not, anywhere in the page",
         !viewerProfile.html.includes("Deloitte market") && !viewerProfile.html.includes("dtt_market"));
+  const rail = viewerProfile.html.slice(viewerProfile.html.indexOf('<aside class="rail'),
+                                        viewerProfile.html.indexOf("</aside>"));
+  check("the company's commodities are in its top facts, not only in the long list",
+        rail.includes("Commodities"));
 
   // Pursuits are gone: no page, no link in the rail, no button on a company.
   const pursuits = await get("/pursuits", analyst.cookie);
