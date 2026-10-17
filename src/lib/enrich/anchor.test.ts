@@ -414,3 +414,42 @@ test("the labels real filings actually use", async () => {
     { value: 200_000, scale: "millions", fiscalYear: 2025, fieldKey: "tax_fee", currency: "USD" },
     barrickTax).mode, "proximity");
 });
+
+/** A mid-tier producer's statements, as they are printed: a loss in brackets. */
+const STATEMENTS = `
+CONSOLIDATED STATEMENTS OF LOSS AND COMPREHENSIVE LOSS
+(Expressed in thousands of United States dollars)
+                                          2025          2024
+Revenue                                 84,512        61,230
+Cost of sales                          (70,118)      (55,904)
+Net loss for the year                  (12,345)       (8,901)
+
+CONSOLIDATED STATEMENTS OF FINANCIAL POSITION
+                                          2025          2024
+Total assets                           512,870       498,112
+`;
+
+test("the other two fee lines anchor in the same table as audit and tax", async () => {
+  const related = anchorNumeric(
+    { value: 45_000, scale: "thousands", fiscalYear: 2025, fieldKey: "audit_related_fee", currency: "CAD" },
+    doc(FEE_TABLE));
+  assert.equal(related.mode, "proximity");
+  assert.equal(related.matched?.label, "audit-related fees");
+  // "All other fees -" is nil: no figure to find, so it is held for a person, as a nil tax fee is.
+  const nil = gate({ fieldKey: "other_fee", numeric: { value: 0, scale: "thousands", fiscalYear: 2025,
+                     fieldKey: "other_fee" }, document: doc(FEE_TABLE) });
+  assert.equal(nil.state, "anchor_mismatch");
+});
+
+test("revenue, a net loss and total assets anchor in the statements, at their scale and currency", async () => {
+  const at = (fieldKey: string, value: number, currency = "USD") =>
+    anchorNumeric({ value, scale: "thousands", fiscalYear: 2025, fieldKey, currency }, doc(STATEMENTS));
+  assert.equal(at("total_revenue", 84_512_000).mode, "proximity");
+  // A loss is stored negative; the gate is given the figure as printed.
+  assert.equal(at("net_income", 12_345_000).mode, "proximity");
+  assert.equal(at("net_income", 12_345_000).matched?.label, "net loss");
+  assert.equal(at("total_assets", 512_870_000).mode, "proximity");
+  assert.equal(at("total_assets", 512_870_000, "CAD").mode, "label_only",
+               "claimed in Canadian dollars where the statements are in US dollars");
+  assert.equal(at("total_assets", 512_870).mode, "label_only", "a thousandfold error is still caught");
+});

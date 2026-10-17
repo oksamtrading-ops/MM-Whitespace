@@ -250,6 +250,33 @@ export const FIELD_LABELS: Record<string, string[]> = {
     "honoraires fiscaux", "honoraires pour services fiscaux",
     "frais fiscaux", "honoraires de services fiscaux", "services fiscaux",
   ],
+  // The two other lines of the same fee table, worded as the audit and tax
+  // lines are.
+  audit_related_fee: [
+    "audit-related fees", "audit related fees", "audit-related services", "audit related services",
+    "fees for audit-related services", "audit-related",
+    "honoraires pour services liés à l'audit", "honoraires liés à l'audit", "services liés à l'audit",
+    "honoraires pour services liés a l'audit", "honoraires lies a l'audit",
+  ],
+  other_fee: [
+    "all other fees", "other fees", "all other services", "other services", "fees for all other services",
+    "tous les autres honoraires", "autres honoraires", "autres services",
+  ],
+  // The statements' own line items, and the selected annual information's.
+  total_revenue: [
+    "total revenue", "total revenues", "revenue", "revenues", "net revenue", "metal sales", "sales",
+    "revenue from mining operations", "royalty revenue", "stream revenue",
+    "produits des activités ordinaires", "chiffre d'affaires", "revenus", "produits",
+  ],
+  net_income: [
+    "net income", "net loss", "net income (loss)", "net (loss) income", "net earnings", "net earnings (loss)",
+    "net loss and comprehensive loss", "net income and comprehensive income", "loss for the year",
+    "income for the year", "profit for the year", "loss and comprehensive loss",
+    "résultat net", "perte nette", "bénéfice net", "perte de l'exercice", "bénéfice de l'exercice",
+  ],
+  total_assets: [
+    "total assets", "total de l'actif", "actif total", "total des actifs",
+  ],
   auditor: [
     "auditor", "independent auditor", "chartered professional accountants",
     "auditeur", "verificateur", "vérificateur", "auditeur independant",

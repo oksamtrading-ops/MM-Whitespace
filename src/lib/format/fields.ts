@@ -16,7 +16,10 @@
  * No node imports: client components use this too.
  */
 
-/** A fee as research records it: the amount in units, its currency, its year. */
+/**
+ * An amount as research records it -- a fee, revenue, net income or total
+ * assets: the amount in units (negative for a loss), its currency, its year.
+ */
 export type Money = { amount: number; currency: string | null; fiscal_year: number | null };
 
 export type Stage = "exploration" | "development" | "production" | "royalty_streaming";
@@ -357,7 +360,8 @@ function parseRegions(text: string): Parsed {
 export function formatFieldValue(fieldKey: string, raw: unknown): string {
   if (raw === null || raw === undefined) return "—";
   switch (fieldKey) {
-    case "audit_fee": case "tax_fee":
+    case "audit_fee": case "tax_fee": case "audit_related_fee": case "other_fee":
+    case "total_revenue": case "net_income": case "total_assets":
       return formatFee(raw);
     case "market_cap_cad":
       return typeof raw === "number" ? formatMoney(raw, "CAD") : String(raw);
@@ -405,7 +409,14 @@ export function parseFieldInput(fieldKey: string, text: string): Parsed {
   const t = text.trim();
   switch (fieldKey) {
     case "stage_evidence_state": return parseStages(t);
-    case "audit_fee": case "tax_fee": return parseMoney(t);
+    case "audit_fee": case "tax_fee": case "audit_related_fee": case "other_fee":
+    case "total_revenue": case "net_income": case "total_assets":
+      return parseMoney(t);
+    case "reporting_currency": {
+      const code = currencyCode(t);
+      return code ? { ok: true, value: code }
+        : { ok: false, message: `"${t}" is not a currency. Write its code: CAD, USD, AUD.` };
+    }
     case "market_cap_cad": {
       const m = parseMoney(t, { requireCurrency: false });
       if (!m.ok) return m;

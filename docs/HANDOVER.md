@@ -20,8 +20,13 @@
 > TSX's "List of Mining Companies on TSX & TSXV" rolls the last published
 > period forward (item 7). Its migration, `0033`, was applied on 17 October.
 >
-> Everything on `main` is deployed; migrations are applied through `0033`.
-> 163 commits on `main`. To start a new session, paste everything below the line.
+> **Pass 2 now researches six more fields** (17 October): revenue, net income
+> and total assets, the audit-related and all-other fee lines, and the
+> reporting currency. See *Financials, the other fee lines and reporting
+> currency* below. Its migration, `0034`, was applied on 17 October.
+>
+> Everything on `main` is deployed; migrations are applied through `0034`.
+> 164 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -169,7 +174,8 @@ trial* below).
    Goldfields). Every proof total ties.
 4. Commit it as `Q4-2026 (2026-08-31)`. Q4 becomes the Analysts' working
    period; **Viewers keep Q3 until Q4 is published**.
-5. Then research. A run's "Not yet researched" scope counts per period, so in
+5. Then research; pass 2 now collects the six new fields too. A run's "Not
+   yet researched" scope counts per period, so in
    Q4 it offers all 266 for pass 1, including companies researched in Q3. To
    pay only for what is new, narrow the run to the 24 newcomers' tickers, or
    decide first whether research done in one quarter should count in the next
@@ -414,6 +420,7 @@ and the cause was in how batched answers are saved.
 | Map tier switch | 457 | 85 | 159 |
 | Commodities | 462 | 85 | 161 |
 | Next quarter from TSX's list | 476 | 91 | 172 |
+| Financials, fee lines, currency | 482 | 94 | 172 |
 
 The auth, class and contrast checks and the build pass on both. Each new
 guard was watched failing against a planted bug, except where the traps below
@@ -596,6 +603,41 @@ implies**.
 - **Checked on real data**, in a scratch copy of the workbook's database, with
   the September list: plan, commit through the form (37 ms for 266 companies),
   and publish, with all 3,990 values cited.
+
+**Financials, the other fee lines and reporting currency (17 October).**
+Samuel asked for the three research additions recommended from the workbook,
+before Run 3 so pass 2 collects everything at once. Six fields (migration
+`0034`, none bulk-acceptable):
+
+| Field | Read from | Stored as |
+|---|---|---|
+| `total_revenue`, `net_income`, `total_assets` | the MD&A's selected annual information, or the statements | `{amount, currency, fiscal_year}`, as filed; a loss is negative |
+| `audit_related_fee`, `other_fee` | the same fee table as audit and tax | `{amount, currency, fiscal_year}`, as the fees are |
+| `reporting_currency` | the sentence that says what the statements are presented in | an ISO code |
+
+- **Checked as the fees are:** the figure, a label from the field's list in
+  `FIELD_LABELS` (`anchor.ts`), the year, the scale and the currency, all
+  close together in the filing. A loss is stored negative but printed
+  "(12,345)", so the check is given the figure as printed. A reporting currency
+  whose quote does not name it is an abstention, as for ERP.
+- **The windows go last.** The currency sentence and the financial-statement
+  windows sit after ERP's and commodities', in whatever room the other fields
+  left. Adding them cannot push a fee or an auditor out of what the model reads.
+  A long filing may therefore leave no room for them, and those companies
+  abstain. The first run will show how often.
+- **Shown** on the company page and the review screens, both of which read the
+  catalogue, and searchable and in the table export as the other fields with
+  no column are. Not given table columns, which is a choice to make once values
+  exist.
+- **The Excel export's A.02** has its "Financial Metrics" block back (columns
+  8–12: Total Revenue, Net Income, Total Assets, Period Ended, Currency). The
+  source workbook filled it "in USD thousands" from a licensed database, and
+  the export used to leave it out so nobody would reattach that lookup. It now
+  holds only researched values, in the filing's own currency, never a formula.
+  **B.04** gains the two fee lines after Website (columns 14–19), so every
+  source column keeps its letter.
+- **Rules version** `2026-10-17.1`. The ~34 companies already through pass 2
+  only get these from a re-run.
 
 **Flagged in passing, not fixed:**
 - ~~**A Viewer still sees the Deloitte market**~~ on a company's page —

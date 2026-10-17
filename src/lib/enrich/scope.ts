@@ -62,10 +62,15 @@ export type Estimate = {
  * mean plus about 20%, because the start form refuses a run whose estimate
  * exceeds its budget and a run that halts part-way is wasted. Spend is
  * recorded per run, not per company, so these are means, not a p95.
+ *
+ * Pass 2 rose from 0.15 to 0.18 on 17 October, when it took six more fields
+ * (revenue, net income, total assets, two fee lines, reporting currency):
+ * about a thousand more output tokens and a few more windows on Sonnet, some
+ * three cents a company. An estimate, until a run measures it.
  */
 export const ESTIMATED_USD_PER_COMPANY_BY_PASS: Record<Pass, number> = {
   identity: 0.30,
-  general: 0.15,
+  general: 0.18,
 };
 /**
  * What of that is web search, which the Batch API does NOT discount -- "Web

@@ -92,7 +92,7 @@ test("the estimate blocks: over budget is refused, and a large scope needs its c
   // Live estimates are per pass, from Run 1: the fields pass costs about half
   // the identity pass, so one flat figure over-refused pass 2 runs.
   assert.equal(estimate(10, 1000, "identity").estimatedUsd, 3);
-  assert.equal(estimate(10, 1000, "general").estimatedUsd, 1.5);
+  assert.equal(estimate(10, 1000, "general").estimatedUsd, 1.8, "six more fields since 17 October");
   assert.equal(estimate(10, 1000).estimatedUsd, 2.5, "replay keeps the design's figure");
 });
 

@@ -240,6 +240,24 @@ def money_format(currency: Optional[str]) -> str:
     return CURRENCY_FORMATS.get((currency or "").upper(), PLAIN_MONEY)
 
 
+def put_financials(ws, row, values):
+    """Revenue, net income and total assets, then their year and currency.
+
+    The source workbook's A.02 held these "in USD Thousands", from a licensed
+    database. These are researched from the company's own filings and written
+    as the filing states them -- in units, in its own currency, a loss
+    negative -- so nothing here is converted at a rate nobody chose. The year
+    and currency are the revenue's, or the first of the three that has one.
+    """
+    figures = [values.get(k) for k in ("total_revenue", "net_income", "total_assets")]
+    for col, value in zip((8, 9, 10), figures):
+        put(ws, row, col, money(value), number_format=money_format(currency_of(value)))
+    first = next((f for f in figures if money(f) is not None), None)
+    year = first.get("fiscal_year") if isinstance(first, dict) else None
+    put(ws, row, 11, "FY%s" % year if year else None)
+    put(ws, row, 12, values.get("reporting_currency") or currency_of(first))
+
+
 def put_fee(ws, row, columns, value, as_of: Optional[str] = None):
     """Currency, amount, amount in CAD, fiscal year -- the four fee columns.
 
@@ -549,6 +567,7 @@ def _matrix(wb, data):
 
     groups = {
         2: "Classification", 3: "Company Inputs - TSX/TSXV",
+        8: "Financial Metrics - as reported",
         13: "Management Location - TSX/TSXV Data",
         16: "Stage of Operations",
         21: "Location of Properties",
@@ -562,6 +581,7 @@ def _matrix(wb, data):
 
     headers = {
         2: "Tier", 3: "#", 4: "Company", 5: "Exchange", 6: "Marketcap\n(in CAD)",
+        8: "Total Revenue", 9: "Net Income", 10: "Total Assets", 11: "Period Ended", 12: "Currency",
         13: "Head Office", 14: "DTT Market",
         16: "Exploration", 17: "Development", 18: "Production", 19: "Royalty / Streaming",
         21: "Canada vs Abroad", 22: "Properties in Canada?", 23: "Properties Abroad?",
@@ -597,6 +617,7 @@ def _matrix(wb, data):
         put(ws, row, 4, c["name"])
         put(ws, row, 5, v.get("exchange"))
         put(ws, row, 6, v.get("market_cap_cad"), number_format=CURRENCY_FORMATS["CAD"])
+        put_financials(ws, row, v)
         put(ws, row, 13, v.get("head_office_location"))
         put(ws, row, 14, v.get("dtt_market"))
 
@@ -654,7 +675,8 @@ def _matrix(wb, data):
     finish_sheet(
         ws, header_row=MATRIX_HEADER_ROW, first_data_row=MATRIX_FIRST_DATA_ROW,
         last_data_row=MATRIX_FIRST_DATA_ROW + len(companies) - 1, last_column=56,
-        widths={2: 13, 3: 5, 4: 36, 5: 11, 6: 18, 13: 22, 14: 16, 21: 18, 22: 16, 23: 16,
+        widths={2: 13, 3: 5, 4: 36, 5: 11, 6: 18, 8: 17, 9: 17, 10: 17, 11: 12, 12: 10,
+                13: 22, 14: 16, 21: 18, 22: 16, 23: 16,
                 37: 18, 38: 18, 40: 10, 41: 15, 42: 15, 43: 11,
                 45: 10, 46: 15, 47: 15, 48: 11, 49: 9, 51: 40, 55: 10, 56: 8},
         freeze_column=5, tab_color="86BC25")
@@ -755,7 +777,9 @@ def _auditor(wb, data):
     ws = wb.create_sheet("B.04 Auditor & Fees")
     headers = {2: "#", 3: "Company", 4: "Entity ID (S&P)", 5: "Big 4 Firms", 6: "Others",
                7: "Audit_Currency", 8: "Audit_Fees", 9: "Audit_Fiscal Year",
-               10: "Tax_Currency", 11: "Tax_Fees", 12: "Tax_Fiscal Year", 13: "Website"}
+               10: "Tax_Currency", 11: "Tax_Fees", 12: "Tax_Fiscal Year", 13: "Website",
+               14: "Audit-Related_Currency", 15: "Audit-Related_Fees", 16: "Audit-Related_Fiscal Year",
+               17: "Other_Currency", 18: "Other_Fees", 19: "Other_Fiscal Year"}
     for col, label in headers.items():
         _header(ws, 5, col, label)
 
@@ -773,11 +797,16 @@ def _auditor(wb, data):
         put_fee(ws, row, (7, 8, None, 9), v.get("audit_fee"), as_of)
         put_fee(ws, row, (10, 11, None, 12), v.get("tax_fee"), as_of)
         put(ws, row, 13, v.get("website"))
+        # The table's other two lines, after the website so every column the
+        # source workbook had keeps its letter.
+        put_fee(ws, row, (14, 15, None, 16), v.get("audit_related_fee"), as_of)
+        put_fee(ws, row, (17, 18, None, 19), v.get("other_fee"), as_of)
 
     finish_sheet(ws, header_row=5, first_data_row=6,
-                 last_data_row=5 + len(data["companies"]), last_column=13,
+                 last_data_row=5 + len(data["companies"]), last_column=19,
                  widths={2: 5, 3: 36, 4: 16, 5: 18, 6: 18, 7: 12, 8: 16, 9: 12,
-                         10: 12, 11: 16, 12: 12, 13: 40},
+                         10: 12, 11: 16, 12: 12, 13: 40, 14: 12, 15: 16, 16: 12,
+                         17: 12, 18: 16, 19: 12},
                  freeze_column=4, tab_color="C6E29A")
 
 

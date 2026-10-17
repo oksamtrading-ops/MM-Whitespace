@@ -111,6 +111,31 @@ def _build_export(tmp):
     return xlsx, flat
 
 
+class Financials(unittest.TestCase):
+    def test_amounts_are_written_as_filed_with_their_year_and_currency(self):
+        from openpyxl import Workbook
+        from mmparser.export import put_financials
+        ws = Workbook().active
+        put_financials(ws, 6, {
+            "total_revenue": {"amount": 1_200_000_000, "currency": "USD", "fiscal_year": 2025},
+            "net_income": {"amount": -34_000_000, "currency": "USD", "fiscal_year": 2025},
+            "reporting_currency": "USD",
+        })
+        self.assertEqual(ws.cell(row=6, column=8).value, 1_200_000_000)
+        self.assertEqual(ws.cell(row=6, column=9).value, -34_000_000, "a loss stays a loss")
+        self.assertIsNone(ws.cell(row=6, column=10).value, "no total assets accepted: blank, not zero")
+        self.assertEqual(ws.cell(row=6, column=11).value, "FY2025")
+        self.assertEqual(ws.cell(row=6, column=12).value, "USD")
+        self.assertEqual(ws.cell(row=6, column=8).number_format, '"US$"#,##0', "never converted, never a bare $")
+
+    def test_a_company_with_nothing_researched_is_blank(self):
+        from openpyxl import Workbook
+        from mmparser.export import put_financials
+        ws = Workbook().active
+        put_financials(ws, 6, {})
+        self.assertEqual([ws.cell(row=6, column=c).value for c in range(8, 13)], [None] * 5)
+
+
 @unittest.skipIf(shutil.which("node") is None,
                  "node is required to commit a period before exporting")
 class ExportEndToEnd(unittest.TestCase):
@@ -263,12 +288,26 @@ class ExportEndToEnd(unittest.TestCase):
         self.assertTrue(all(v is None for v in values),
                         "client data must never be exported")
 
-    def test_the_financial_metrics_block_is_omitted_entirely(self):
-        # Omitted rather than exported empty: an empty block invites someone to
-        # reattach a broken lookup.
+    def test_the_financial_metrics_are_researched_values_never_a_lookup(self):
+        # The source workbook's block was a lookup into a licensed database,
+        # broken in the copy handed over, and was left out rather than
+        # exported empty so nobody would reattach it. It is back holding only
+        # what research read from the company's own filings: values, never a
+        # formula, blank where nothing has been accepted.
         ws = self.wb["A.02 Matrix"]
-        for column in (8, 9, 10, 11):
-            self.assertIsNone(ws.cell(row=5, column=column).value)
+        self.assertEqual([ws.cell(row=5, column=c).value for c in range(8, 13)],
+                         ["Total Revenue", "Net Income", "Total Assets", "Period Ended", "Currency"])
+        for r in range(MATRIX_FIRST_DATA_ROW, ws.max_row + 1):
+            for c in range(8, 13):
+                v = ws.cell(row=r, column=c).value
+                self.assertFalse(isinstance(v, str) and v.startswith("="),
+                                 "a lookup at %s" % ws.cell(row=r, column=c).coordinate)
+
+    def test_the_fee_sheet_carries_all_four_lines_of_the_fee_table(self):
+        ws = self.wb["B.04 Auditor & Fees"]
+        self.assertEqual(ws.cell(row=5, column=13).value, "Website", "the source's columns keep their letters")
+        self.assertEqual([ws.cell(row=5, column=c).value for c in (15, 18)],
+                         ["Audit-Related_Fees", "Other_Fees"])
 
     def test_no_broken_reference_survives_anywhere(self):
         for ws in self.wb.worksheets:

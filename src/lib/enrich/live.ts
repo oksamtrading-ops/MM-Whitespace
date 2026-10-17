@@ -21,7 +21,7 @@
  * SEDAR+ is legally excluded (decision 1). It is blocked in the search tool,
  * and never on any allowlist.
  */
-import { detectScale } from "./anchor.ts";
+import { currenciesMentioned, detectScale } from "./anchor.ts";
 import {
   canonicalCommodities, canonicalErp, currencyCode, namesCommodity, namesSystem,
 } from "../format/fields.ts";
@@ -249,7 +249,7 @@ const REPORT_TOOL = {
  * Raise this whenever either rules block changes. promptVersionFor() composes
  * it with the prefix's version, so a stored value names both halves.
  */
-export const LIVE_RULES_VERSION = "2026-10-16.1";
+export const LIVE_RULES_VERSION = "2026-10-17.1";
 
 /**
  * What produced a finding, for the record: the prefix's version alone in
@@ -553,10 +553,33 @@ const COMMODITY_PATTERN = /nature of (?:the|its|our) business|description of (?:
 const COMMODITY_HITS = 2;
 
 /**
+ * The sentence that says what currency the statements are in -- "presented in
+ * United States dollars" -- usually in the basis of presentation or on the
+ * MD&A's first page. One is enough.
+ */
+const CURRENCY_PATTERN = /(?:presented|expressed|reported|stated) in (?:thousands of |millions of )?(?:canadian|united states|u\.s\.|us|australian) dollars|presentation currency|reporting currency/gi;
+const CURRENCY_HITS = 1;
+
+/**
+ * Revenue, net income and total assets: best of all the MD&A's selected
+ * annual information, which prints all three for the year in one table; then
+ * the balance sheet's total assets and the statement of income or loss.
+ */
+const FINANCIALS_PATTERN = /selected (?:annual|financial|consolidated) (?:information|data|highlights|results)|summary of (?:annual|financial) results|financial highlights|total assets|consolidated statements? of (?:income|operations|earnings|loss|comprehensive (?:income|loss))/gi;
+const FINANCIALS_HITS = 3;
+
+/** The windows placed last, in this order, each only in what the rest left. */
+const LAST: ReadonlyArray<readonly [RegExp, number]> = [
+  [ERP_PATTERN, ERP_HITS], [COMMODITY_PATTERN, COMMODITY_HITS],
+  [CURRENCY_PATTERN, CURRENCY_HITS], [FINANCIALS_PATTERN, FINANCIALS_HITS],
+];
+
+/**
  * The cover and every window that matters, verbatim, merged and capped.
  *
- * The ERP windows, then the business-description windows for commodities, are
- * placed LAST, in whatever budget the other fields left. The cap stops at the
+ * The ERP windows, then the business-description windows for commodities, then
+ * the reporting currency's and the financial statements', are placed LAST, in
+ * whatever budget the other fields left. The cap stops at the
  * first window that will not fit, in document order, and fee tables come late
  * in a circular: an early internal-controls passage about an ERP would
  * otherwise push a fee out of the text the model sees. So adding either field
@@ -587,7 +610,7 @@ export function windowsOf(text: string): string {
     out += (out ? "\n[...]\n" : "") + piece;
     kept.push([a, b]);
   }
-  for (const [pattern, cap] of [[ERP_PATTERN, ERP_HITS], [COMMODITY_PATTERN, COMMODITY_HITS]] as const) {
+  for (const [pattern, cap] of LAST) {
     let taken = 0;
     for (const m of text.matchAll(pattern)) {
       if (taken >= cap) break;
@@ -606,7 +629,12 @@ export function windowsOf(text: string): string {
 export const EXTRACTED_FIELDS = [
   "stage_evidence_state", "auditor", "auditor_since", "auditor_change", "fiscal_year_end",
   "head_office_location", "head_office_region", "audit_fee", "tax_fee", "incumbent_erp", "commodities",
+  "audit_related_fee", "other_fee", "total_revenue", "net_income", "total_assets", "reporting_currency",
 ] as const;
+
+/** The researched amounts: each {amount, currency, fiscal_year}, read and checked as a fee is. */
+const MONEY_FIELDS = new Set(["audit_fee", "tax_fee", "audit_related_fee", "other_fee",
+                              "total_revenue", "net_income", "total_assets"]);
 
 const EXTRACTION_SCHEMA = {
   type: "object",
@@ -686,6 +714,18 @@ Return one finding for EVERY field listed, in this form:
   GBP, EUR) the amount is in: from its own symbol (C$, US$), the table heading, or the document's
   statement of reporting currency. A Canadian issuer's plain "$" with no other currency stated is
   CAD. null only if nothing in the documents says.
+- audit_related_fee, other_fee: fee, the same table's "audit-related fees" and "all other fees" lines,
+  read exactly as audit_fee is. Abstain where the table has no such line.
+- total_revenue, net_income, total_assets: fee (it holds any amount), for the most recent fiscal
+  YEAR, never a quarter or a six-month period: total revenue (or sales) for the year; net income
+  or loss for the year as the statement of income totals it, a loss as a NEGATIVE amount ("(12,345)"
+  is -12345); total assets at the year end. From the consolidated statements or the MD&A's selected
+  annual information, the amount EXACTLY as printed with the scale and currency they state.
+  fiscal_year is the year the figure is for. A company with no revenue line abstains on revenue.
+- reporting_currency: text_value, the ISO code (CAD, USD, AUD, GBP, EUR) of the currency the
+  financial statements are presented in, quoting the sentence that says so ("presented in United
+  States dollars", "expressed in thousands of Canadian dollars"). The excerpt must name the
+  currency. A subsidiary's functional currency is not the reporting currency.
 - incumbent_erp: text_value, the enterprise resource planning (ERP) system the COMPANY ITSELF runs
   for its own finance and operations, named as the document names it (SAP S/4HANA, Oracle JD
   Edwards, Microsoft Dynamics 365, Pronto Xi...). The excerpt must name the system. A system the
@@ -732,6 +772,12 @@ type Extracted = {
 export function unescapeModelText(s: string | null): string | null {
   if (s === null) return null;
   return s.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+/** Whether a quote names this currency: its code, its symbol or its words. */
+export function namesCurrency(excerpt: string, code: string): boolean {
+  const t = excerpt.toLowerCase();
+  return currenciesMentioned(t).includes(code) || new RegExp(`\\b${code.toLowerCase()}\\b`).test(t);
 }
 
 /** One extraction item as a proposed finding, citing the document it names. */
@@ -793,17 +839,29 @@ export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFind
       }
       return { ...base, value: named };
     }
-    case "audit_fee": case "tax_fee": {
-      if (!e.fee) return null;
-      const units = e.fee.amount * SCALE[e.fee.scale];
-      // The fee keeps its currency and year: "C$8,052,000 (FY2025)" and
-      // "US$517,116" are different amounts, and Run 1's "$353,190" was a 2024
-      // fee on a 2025 period. The gate checks the currency where the
-      // document states one.
-      const currency = currencyCode(e.fee.currency);
-      return { ...base, value: { amount: units, currency, fiscal_year: e.fee.fiscal_year ?? null },
-               numeric: { value: units, scale: e.fee.scale, fiscalYear: e.fee.fiscal_year ?? undefined, currency } };
+    case "reporting_currency": {
+      const code = currencyCode(e.text_value);
+      if (!code) return null;
+      // As for ERP: the gate proves the quote is in the document, not that it
+      // says THIS currency. A quote that does not name it is no evidence of it.
+      if (!e.evidence_excerpt || !namesCurrency(e.evidence_excerpt, code)) {
+        return { ...base, abstained: true,
+                 abstention_reason: `The passage cited does not name the currency (${code}).` };
+      }
+      return { ...base, value: code };
     }
+  }
+  if (MONEY_FIELDS.has(e.field_key)) {
+    if (!e.fee) return null;
+    const units = e.fee.amount * SCALE[e.fee.scale];
+    // An amount keeps its currency and year: "C$8,052,000 (FY2025)" and
+    // "US$517,116" are different amounts, and Run 1's "$353,190" was a 2024
+    // fee on a 2025 period. The gate checks the currency where the document
+    // states one, and looks for the figure as printed -- a loss is stored
+    // negative but printed "(12,345)", so it looks for 12,345.
+    const currency = currencyCode(e.fee.currency);
+    return { ...base, value: { amount: units, currency, fiscal_year: e.fee.fiscal_year ?? null },
+             numeric: { value: Math.abs(units), scale: e.fee.scale, fiscalYear: e.fee.fiscal_year ?? undefined, currency } };
   }
   return null;
 }

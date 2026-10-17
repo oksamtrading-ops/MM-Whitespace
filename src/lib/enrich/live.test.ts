@@ -1117,3 +1117,61 @@ test("a head office read from a French filing is stored as the workbook spells i
   assert.equal(f.value, "Quebec, Canada");
   assert.equal(f.evidence_excerpt, "siège social : Montréal (Québec) Canada", "the quote keeps the filing's words");
 });
+
+/* --------------------------------- financials, the other fee lines, currency */
+
+test("pass 2 asks for the financials, the other two fee lines and the reporting currency", () => {
+  for (const f of ["audit_related_fee", "other_fee", "total_revenue", "net_income", "total_assets", "reporting_currency"]) {
+    assert.ok((EXTRACTED_FIELDS as readonly string[]).includes(f), f);
+  }
+});
+
+test("an amount keeps its sign, scale, currency and year; the gate is given the figure as printed", () => {
+  const loss = toFinding({ ...erpBase, field_key: "net_income", text_value: null,
+    evidence_excerpt: "Net loss for the year (12,345)",
+    fee: { amount: -12345, scale: "thousands", fiscal_year: 2025, currency: "US$" } }, [])!;
+  assert.deepEqual(loss.value, { amount: -12_345_000, currency: "USD", fiscal_year: 2025 }, "a loss is negative");
+  assert.equal(loss.numeric?.value, 12_345_000, "printed (12,345), so the gate looks for 12,345");
+  assert.equal(loss.numeric?.currency, "USD");
+
+  const revenue = toFinding({ ...erpBase, field_key: "total_revenue", text_value: null, evidence_excerpt: "Revenue 84,512",
+    fee: { amount: 84.512, scale: "millions", fiscal_year: 2025, currency: "CAD" } }, [])!;
+  assert.deepEqual(revenue.value, { amount: 84_512_000, currency: "CAD", fiscal_year: 2025 });
+
+  const related = toFinding({ ...erpBase, field_key: "audit_related_fee", text_value: null, evidence_excerpt: "Audit-related fees 45",
+    fee: { amount: 45, scale: "thousands", fiscal_year: 2025, currency: "CAD" } }, [])!;
+  assert.deepEqual(related.value, { amount: 45_000, currency: "CAD", fiscal_year: 2025 });
+  assert.equal(toFinding({ ...erpBase, field_key: "other_fee", text_value: null, evidence_excerpt: "x", fee: null }, []),
+               null, "an amount with no amount is nothing");
+});
+
+test("a reporting currency is proposed only from a passage that names it", () => {
+  const c = (text_value: string, evidence_excerpt: string) =>
+    toFinding({ ...erpBase, field_key: "reporting_currency", text_value, evidence_excerpt }, [])!;
+  assert.equal(c("USD", "These consolidated financial statements are presented in United States dollars").value, "USD");
+  assert.equal(c("US dollars", "expressed in thousands of U.S. dollars, except per share amounts").value, "USD");
+  assert.equal(c("CAD", "All amounts are in Canadian dollars unless otherwise stated").value, "CAD");
+  const unnamed = c("USD", "The functional currency of the parent is determined by its primary economic environment.");
+  assert.equal(unnamed.abstained, true, "a quote that names no currency is no evidence of which");
+  assert.match(unnamed.abstention_reason ?? "", /does not name the currency \(USD\)/);
+  assert.equal(c("dollars", "presented in dollars"), null, "a word that is not a currency is no value");
+});
+
+test("the financial windows never take the budget a fee needs, and are read when there is room", () => {
+  const gap = "x ".repeat(1500);
+  const parts = [`Cover page of Northco. ${gap}`,
+                 `${gap} Selected annual information: revenue 84,512 ${gap}`,
+                 `${gap} presented in United States dollars ${gap}`];
+  for (let i = 0; i < 6; i++) parts.push(`${gap} independent auditor ${i} ${gap}`);
+  for (let i = 0; i < 4; i++) parts.push(`${gap} exploration-stage property ${i} ${gap}`);
+  parts.push(`${gap} Audit fees 412,000 ${gap}`);
+  const w = windowsOf(parts.join(""));
+  assert.ok(w.includes("Audit fees 412,000"), "the fee survives");
+  assert.ok(!w.includes("Selected annual information"), "and the financials got only what was left: here, nothing");
+  assert.ok(w.length <= 30_000);
+
+  const filler = "x ".repeat(5000);
+  const far = `Cover page of Westco. ${filler} Total assets 512,870 ${filler} expressed in thousands of Canadian dollars ${filler}`;
+  assert.ok(windowsOf(far).includes("Total assets 512,870"), "a balance sheet far from the rest is read");
+  assert.ok(windowsOf(far).includes("expressed in thousands of Canadian dollars"), "and so is the currency sentence");
+});
