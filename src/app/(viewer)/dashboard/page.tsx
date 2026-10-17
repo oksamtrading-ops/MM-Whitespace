@@ -1,3 +1,4 @@
+import { newestPeriod, newestPublishedPeriod } from "../../../lib/db/periods.ts";
 import Link from "next/link";
 import type { Metadata, Route } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
@@ -75,11 +76,10 @@ export default async function Dashboard() {
   }
   const canReview = ctx.user.role !== "viewer";
 
-  const period = await ctx.db.get("select id, label, market_cap_as_of, threshold_amount, threshold_currency, proximity_band_pct " +
-    "from periods order by market_cap_as_of desc limit 1") as {
-    id: string; label: string; market_cap_as_of: string;
-    threshold_amount: number; threshold_currency: string; proximity_band_pct: number;
-  } | undefined;
+  // The dashboard reads only frozen snapshots, so it shows the newest PUBLISHED
+  // period to everyone; a draft of next quarter leaves it as it was. With no
+  // published period at all, the newest one names what is still in draft.
+  const period = await newestPublishedPeriod(ctx.db) ?? await newestPeriod(ctx.db);
   if (!period) {
     return <Refusal title="No period yet" body="Nothing has been committed. The dashboard appears once a workbook is ingested and a period is published." />;
   }

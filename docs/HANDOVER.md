@@ -16,8 +16,12 @@
 > C's re-run).
 > Kay uses the tool unaided. A second Admin exists and cannot sign in.
 >
-> Everything on `main` is deployed; migrations are applied through `0032`.
-> 162 commits on `main`. To start a new session, paste everything below the line.
+> **Next quarter starts from TSX's list** (built 17 October): an upload of
+> TSX's "List of Mining Companies on TSX & TSXV" rolls the last published
+> period forward (item 7). Its migration, `0033`, was applied on 17 October.
+>
+> Everything on `main` is deployed; migrations are applied through `0033`.
+> 163 commits on `main`. To start a new session, paste everything below the line.
 
 ---
 
@@ -148,6 +152,28 @@ trial* below).
   about US$41 batched. Put `MM_ENRICH_BATCH=1` back in Vercel and redeploy for
   the saving, at the price of waiting, sometimes much longer than the usual
   minutes. Run 3 follows revision 10.
+
+**7. Next quarter: roll Q3-2026 forward from TSX's list.** Built 17 October
+(see *Next quarter from TSX's list* below; the procedure is section 4 of
+`docs/RUNBOOK.md`). In order:
+
+1. ~~Apply migration `0033` and push~~ — **done 17 October**. `0033` adds
+   one column, `periods.source_kind`; Q3-2026 reads `workbook`.
+2. Finish Q3: decide what is in review and **publish revision 10** (item 1).
+   Only the published revision is carried; the report warns about anything
+   left behind, and committing leaves it with Q3.
+3. Upload TSX's list on `/upload`. The September 2026 file (as of 31 August)
+   was checked against a local copy of the real data: **266 companies at or
+   above C$200M; 242 continuing, 24 new, 17 leaving** (8 now under the line,
+   9 off the list, among them Almonty, Orla, Osisko Development and G2
+   Goldfields). Every proof total ties.
+4. Commit it as `Q4-2026 (2026-08-31)`. Q4 becomes the Analysts' working
+   period; **Viewers keep Q3 until Q4 is published**.
+5. Then research. A run's "Not yet researched" scope counts per period, so in
+   Q4 it offers all 266 for pass 1, including companies researched in Q3. To
+   pay only for what is new, narrow the run to the 24 newcomers' tickers, or
+   decide first whether research done in one quarter should count in the next
+   (not built).
 
 **The roster, as at 12 October 2026** (read the live state from `/access`):
 
@@ -387,6 +413,7 @@ and the cause was in how batched answers are saved.
 | Pursuits removed | 452 | 85 | 158 |
 | Map tier switch | 457 | 85 | 159 |
 | Commodities | 462 | 85 | 161 |
+| Next quarter from TSX's list | 476 | 91 | 172 |
 
 The auth, class and contrast checks and the build pass on both. Each new
 guard was watched failing against a planted bug, except where the traps below
@@ -523,6 +550,52 @@ names). They were only buried, one line on the company page.
   lands in review's "extract disagrees" bucket, which bulk accept never takes.
 - **Which companies get it:** every pass 2 from now on. The ~34 already
   through pass 2 only get it from a re-run (scope "Every company").
+
+**Next quarter from TSX's list (17 October).** Samuel asked to use TSX's
+issuer list for the next quarter's period rather than research what it already
+says. He chose to download it from tsx.com, to carry **everything else, marked
+with its age**, and to give a newcomer the Deloitte market **its head office
+implies**.
+- **Parsed** by `mmparser/tsxlist.py`. It recognises the list as two issuer sheets
+  and no matrix, reads every issuer at any market cap (1,075 in September), and
+  ties each sheet to its own "Number of Issuers" and "Total Market Cap". The
+  payload says `kind: "tsx_list"`. Fixture: `tests/fixtures/build_tsx_fixture.py`,
+  built at test time, never committed.
+- **Planned** by `src/lib/ingest/tsx.ts`, read by both the report and the
+  commit:
+  - The threshold is applied from `/settings` (CAD only).
+  - Companies are matched by open ticker on either exchange first, then by name
+    or alias through merges.
+  - It lists newcomers, leavers (under the line, or off the list), exchange,
+    ticker and name moves, and near-the-line companies.
+- **Committed** by `commitTsxPeriod` (`src/lib/db/committsx.ts`), in one
+  transaction, as a new **draft** period with `source_kind = 'tsx_list'`:
+  - Name, ticker, exchange and market cap always come from the list.
+    Commodities, venture graduate, head office and regions come from it too,
+    unless review settled them last period.
+  - Where the list says nothing, last period's value stands. Five companies mark
+    no region, and each is one of the workbook's five analyst-added regions.
+  - Everything else is copied from the last published revision as `inherited`,
+    with `source_period_id` set to the period it first came from, so a second
+    quarter still dates it from the first. Stage rows come with it. Tiers are
+    recomputed by `classifyResolved`, now shared with review's `retier`.
+- **Cited and dated.** A carried value cites "Carried from Q3 2026" plus what it
+  cited there (the filing, the quote), frozen with it at publish, so its "92d
+  old" mark survives publishing. A value read from the list says "From TSX's
+  list" and cites it by date and file hash.
+- **Undo** on a carried field goes back to the carried value, not to empty
+  (`inheritedOrigin` in `resolve.ts`).
+- **Viewers read the newest *published* period** (`src/lib/db/periods.ts`):
+  the companies table, company page, dashboard and the rail. Before this, a
+  committed draft would have emptied every Viewer's screens until it was
+  published.
+- **Also fixed in passing:**
+  - A workbook commit under a label already used for another date is now
+    refused; before, it re-dated that period.
+  - The upload form said "up to 25 MB"; the limit is 4 MB.
+- **Checked on real data**, in a scratch copy of the workbook's database, with
+  the September list: plan, commit through the form (37 ms for 266 companies),
+  and publish, with all 3,990 values cited.
 
 **Flagged in passing, not fixed:**
 - ~~**A Viewer still sees the Deloitte market**~~ on a company's page —
@@ -1032,6 +1105,13 @@ disagree, these govern.
   `api/parse.py`. `to_payload()` in `mmparser/cli.py` builds its output for both.
 
 ## Traps that each cost real time
+
+**"The newest period" is two periods now.** Since a TSX list can commit a draft
+after a published period, a Viewer's read must take the newest *published*
+period and an Analyst's the newest of all: `shownPeriod`, `newestPublishedPeriod`
+and `newestPeriod` in `src/lib/db/periods.ts`. A new screen that writes
+`order by market_cap_as_of desc limit 1` for a Viewer shows them nothing, or a
+draft.
 
 **Transactions only through `db.tx(async (db) => …)`.** A bare
 `db.exec("begin")` works on SQLite and silently does not on a Postgres pool.

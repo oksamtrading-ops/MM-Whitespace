@@ -27,7 +27,7 @@ const db = new DatabaseSync(dbPath);
 const TABLES = [
   ["periods", ["id", "label", "market_cap_as_of", "threshold_amount", "threshold_operator",
                "threshold_currency", "proximity_band_pct", "status", "revision",
-               "source_file_sha256", "rule_set_version"]],
+               "source_file_sha256", "rule_set_version", "source_kind"]],
   ["companies", ["id", "canonical_name", "name_normalized", "first_seen_period_id", "status"]],
   ["company_identifiers", ["id", "company_id", "scheme", "value", "exchange", "valid_from",
                            "valid_to", "source"]],

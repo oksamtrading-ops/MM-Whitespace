@@ -52,9 +52,9 @@ export function normName(name: string): string {
   return t.replace(/[^a-z0-9 ]/g, "").trim();
 }
 
-/** A period whose as-of date is already published must not be re-committed. */
 /**
- * Why this period may not be committed, or null. Exported so the validation
+ * Why this period may not be committed, or null. A period whose as-of date is
+ * already published must not be re-committed. Exported so the validation
  * report can say so BEFORE the Analyst fills in a commit form, rather than
  * letting them find out by pressing the button.
  */
@@ -67,6 +67,21 @@ export async function periodAdmissibility(db: Sql, asOf: string): Promise<string
   const later = await db.get("select label, market_cap_as_of from periods where status = 'published' and market_cap_as_of > ?", asOf) as { label: string; market_cap_as_of: string } | undefined;
   if (later) {
     return `period ${asOf} predates the published period "${later.label}" (${later.market_cap_as_of}).`;
+  }
+  return null;
+}
+
+/**
+ * Why a period may not take this name, or null. A label names one period:
+ * the commit's `on conflict (label)` would otherwise re-commit a workbook
+ * dated one day into a period dated another, under the first period's date.
+ */
+export async function labelAdmissibility(db: Sql, label: string, asOf: string): Promise<string | null> {
+  const named = await db.get("select market_cap_as_of from periods where label = ?", label) as
+    { market_cap_as_of: string } | undefined;
+  if (named && String(named.market_cap_as_of).slice(0, 10) !== asOf) {
+    return `A period is already named "${label}", as of ${String(named.market_cap_as_of).slice(0, 10)}. ` +
+      "Name this one differently.";
   }
   return null;
 }
@@ -85,6 +100,8 @@ export async function commitPeriod(
   await assertPeriodAdmissible(db, asOf);
 
   const label = opts.label ?? asOf;
+  const misnamed = await labelAdmissibility(db, label, asOf);
+  if (misnamed) throw new Error(misnamed);
   const result: CommitResult = {
     periodId: "", label, companies: 0, identifiers: 0, facts: 0, values: 0,
     stages: 0, tiers: 0, traces: 0, graduations: 0, preserved: 0,

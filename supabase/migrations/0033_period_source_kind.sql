@@ -1,0 +1,11 @@
+-- Where a period came from: the practice's workbook, or TSX's own list of
+-- mining issuers, which rolls the last published period forward to the next
+-- quarter (src/lib/db/committsx.ts). A value read from the file cites the
+-- file, and "Q4-2026 source workbook" would be the wrong name for TSX's list.
+--
+-- Not a check constraint: the two values are the code's, and a third kind of
+-- source should not need a migration to be recorded.
+--
+-- Idempotent on purpose: this file creates no table, so the ledger's adoption
+-- rule cannot recognise it as applied and may replay it.
+alter table periods add column if not exists source_kind text not null default 'workbook';

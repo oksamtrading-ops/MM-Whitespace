@@ -51,6 +51,8 @@ export function isParseId(id: string): boolean {
 export type ParseFinding = { kind: string; code: string; detail: string };
 
 export type ParsedPayload = {
+  /** The practice's workbook, or TSX's own list of mining issuers (ingest/tsx.ts). */
+  kind?: "workbook" | "tsx_list";
   period: string | null;
   companies: unknown[];
   report: {

@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { commitPeriod } from "../../../lib/db/commit.ts";
+import { commitTsxPeriod } from "../../../lib/db/committsx.ts";
+import { baseLeftovers, isTsxPayload, loadTsxPlan } from "../../../lib/ingest/tsx.ts";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { dropParse, ParseFailed, parseUpload, readParse } from "../../../lib/ingest/quarantine.ts";
 
@@ -52,14 +54,27 @@ export async function commitParsed(_prev: CommitResultMessage | null, form: Form
   if (!label) {
     return { ok: false, message: "Name the period before committing." };
   }
-  if (parse.payload.report.warnings.length > 0 && form.get("acknowledged") !== "yes") {
+  // TSX's list is planned against the database as it stands, so its own
+  // refusals and warnings are read again here, as the report read them.
+  const tsx = isTsxPayload(parse.payload);
+  let warnings = parse.payload.report.warnings.length;
+  if (tsx) {
+    const plan = await loadTsxPlan(db, parse.payload);
+    if (plan.blocking.length > 0) return { ok: false, message: plan.blocking[0] };
+    warnings += (await baseLeftovers(db, plan.base)).length;
+  }
+  if (warnings > 0 && form.get("acknowledged") !== "yes") {
     return { ok: false, message: "Acknowledge the warnings before committing." };
   }
 
   try {
-    await commitPeriod(db, parse.payload as Parameters<typeof commitPeriod>[1], {
-      label, sourceSha256: parse.sha256, actorId: user.id,
-    });
+    if (tsx) {
+      await commitTsxPeriod(db, parse.payload, { label, sourceSha256: parse.sha256, actorId: user.id });
+    } else {
+      await commitPeriod(db, parse.payload as Parameters<typeof commitPeriod>[1], {
+        label, sourceSha256: parse.sha256, actorId: user.id,
+      });
+    }
   } catch (err) {
     return { ok: false, message: (err as Error).message };
   }

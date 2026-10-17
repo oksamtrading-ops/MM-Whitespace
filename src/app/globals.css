@@ -1465,6 +1465,9 @@ table.provenance .cite { display: block; margin-top: 3px; color: var(--ink-2); }
 table.provenance .citedoc { display: block; }
 table.provenance .cite a { color: var(--ink); }
 table.provenance .cite .dim { color: var(--ink-3); }
+/* A carried value's own source, on the line that says where it was carried from. */
+table.provenance .cite .cite { display: inline; margin-top: 0; }
+table.provenance .cite .cite .citedoc { display: inline; }
 /* Arrived at from the companies table's link: say which row it was. */
 table.provenance tr { scroll-margin-top: 80px; }
 table.provenance tr:target > th, table.provenance tr:target > td { background: var(--surface-2); }

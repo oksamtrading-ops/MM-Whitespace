@@ -28,15 +28,18 @@ export default async function Upload() {
   const latest = await ctx.db.get("select label, status, market_cap_as_of from periods order by market_cap_as_of desc limit 1") as { label: string; status: string; market_cap_as_of: string } | undefined;
 
   return (
-    <Page title="Upload a workbook"
+    <Page title="Upload"
           meta={latest ? `Latest: ${periodName(latest.label).name} · ${latest.status}` : undefined}>
     <div className="withrail">
       <div className="reading">
         <p className="sub rise">
-          The quarter starts here. The workbook is read and checked; nothing reaches the
-          database until you have seen what it found.
+          The quarter starts here, with the practice&rsquo;s workbook or with TSX&rsquo;s
+          list of mining issuers. A list rolls the last published period forward: it brings
+          this quarter&rsquo;s market caps, tickers and listings, and everything else is
+          carried from that period, marked with its age. Either file is read and checked;
+          nothing reaches the database until you have seen what it found.
         </p>
-        <Section id="choose" title="Choose the workbook" index={1}>
+        <Section id="choose" title="Choose the file" index={1}>
           <UploadForm />
         </Section>
       </div>
@@ -44,7 +47,7 @@ export default async function Upload() {
       <aside className="rail rise" aria-label="What happens next">
         <p className="k">What happens</p>
         <ol className="steps">
-          <li><b>Read</b><span>The workbook is parsed in place and deleted. Nothing is stored.</span></li>
+          <li><b>Read</b><span>The file is parsed in place and deleted. Nothing is stored.</span></li>
           <li><b>Check</b><span>A validation report: blocking findings, warnings, and proof totals that must tie.</span></li>
           <li><b>Commit</b><span>You name the period and confirm. Only then is anything written.</span></li>
         </ol>

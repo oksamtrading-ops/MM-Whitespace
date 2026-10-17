@@ -10,9 +10,12 @@
  * may look at the draft, and is told that is what they are looking at.
  */
 import type { Sql } from "../db/sql.ts";
+import { shownPeriod } from "../db/periods.ts";
 import { formatFieldValue, STAGE_ORDER, type Stage } from "../format/fields.ts";
 import { metaFor, type RosterRow, type StageEvidence } from "./roster.ts";
-import { citationsForPeriod, safeHref, type Citation } from "./citations.ts";
+import { citationOf, citationsForPeriod, type Citation } from "./citations.ts";
+
+export { citationOf };
 import { resolveCompanyId } from "../identity/merge.ts";
 
 export type Provenance =
@@ -104,7 +107,7 @@ export async function readCompanyProfile(
     { id: string; canonical_name: string } | undefined;
   if (!company) return null;
 
-  const period = await db.get("select id, label, market_cap_as_of from periods order by market_cap_as_of desc limit 1") as { id: string; label: string; market_cap_as_of: string } | undefined;
+  const period = await shownPeriod(db, opts);
   if (!period) return null;
 
   const pub = await db.get(`select id, revision, published_at from period_publications
@@ -138,10 +141,16 @@ export async function readCompanyProfile(
 
   const values: ProfileValue[] = rows.map((r) => {
     const value = parseJson(r.value);
-    const from = r.source === "inherited" && r.source_period_id
-      ? periods.get(r.source_period_id) ?? null : null;
     const resolved = liveCites?.get(`${companyId}|${r.field_key}`) ?? null;
     const citation = resolved ? resolved.citation : citationOf(parseJson(r.sources));
+    // Where a carried value came from: the working row says so in a draft,
+    // and the frozen citation does once published, so its age outlives the
+    // publish that would otherwise have dropped it.
+    const fromId = r.source !== "inherited" ? null
+      : r.source_period_id ?? (citation?.kind === "prior_period" ? citation.periodId ?? null : null);
+    const from = fromId ? periods.get(fromId) ?? null : null;
+    const documents = citation?.kind === "document" ? citation.documents
+      : citation?.kind === "prior_period" && citation.origin?.kind === "document" ? citation.origin.documents : [];
     const strength = resolved ? resolved.strength : r.evidence_strength;
     return {
       fieldKey: r.field_key,
@@ -152,8 +161,7 @@ export async function readCompanyProfile(
       evidenceState: r.evidence_state ?? "unknown",
       strength: strength === null || strength === undefined ? null : Number(strength),
       excerpt: resolved ? resolved.excerpt : r.excerpt ?? null,
-      sources: citation?.kind === "document"
-        ? citation.documents.map((d) => d.url).filter((u): u is string => Boolean(u)) : [],
+      sources: documents.map((d) => d.url).filter((u): u is string => Boolean(u)),
       citation,
       inheritedFrom: from
         ? { label: from.label, asOf: from.market_cap_as_of,
@@ -218,25 +226,6 @@ async function stagesOfCompany(db: Sql, publicationId: string | null, periodId: 
     Array<{ stage: string }>;
   const stages = STAGE_ORDER.filter((s) => rows.some((r) => r.stage === s));
   return { stages, stageEvidence };
-}
-
-/**
- * A citation as frozen. Revisions 1-8 froze none (null). Anything older than
- * the citation kinds -- a bare list of addresses -- reads as documents.
- */
-export function citationOf(raw: unknown): Citation | null {
-  if (raw && typeof raw === "object" && !Array.isArray(raw) && typeof (raw as { kind?: unknown }).kind === "string") {
-    const c = raw as Citation;
-    if (c.kind === "document") {
-      return { kind: "document", documents: (c.documents ?? []).map((d) => ({ ...d, url: safeHref(d.url) })) };
-    }
-    if (c.kind === "review") return { ...c, url: safeHref(c.url) };
-    return c;
-  }
-  if (Array.isArray(raw) && raw.length > 0) {
-    return { kind: "document", documents: raw.map((u) => ({ url: safeHref(u), title: null, docType: null, retrievedAt: null, contentHash: null })) };
-  }
-  return null;
 }
 
 /**
@@ -365,7 +354,7 @@ type ValueRow = { company_id: string; field_key: string; value: unknown; source:
  * dropped here, before anything reaches the browser, not hidden in a cell.
  */
 export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Promise<CompanyRow[]> {
-  const period = await db.get("select id from periods order by market_cap_as_of desc limit 1") as { id: string } | undefined;
+  const period = await shownPeriod(db, opts);
   if (!period) return [];
   const pub = await db.get(`select id from period_publications where period_id = ? order by revision desc limit 1`, period.id) as { id: string } | undefined;
   if (!pub && !opts.allowDraft) return [];
@@ -478,14 +467,13 @@ function regionsOf(v: unknown): Record<string, string[]> {
 
 /**
  * Which period and revision the companies table is showing, for the export's
- * header. The same choice listCompanies makes: the latest period, its latest
- * revision, or its draft for a role allowed one.
+ * header. The same choice listCompanies makes (shownPeriod): the newest period
+ * for a role allowed a draft, the newest published one for everyone else.
  */
 export async function rosterBasis(db: Sql, opts: { allowDraft: boolean }): Promise<{
   periodId: string; label: string; revision: number | null; publishedAt: string | null; publicationId: string | null;
 } | null> {
-  const period = await db.get("select id, label from periods order by market_cap_as_of desc limit 1") as
-    { id: string; label: string } | undefined;
+  const period = await shownPeriod(db, opts);
   if (!period) return null;
   const pub = await db.get(`select id, revision, published_at from period_publications where period_id = ?
       order by revision desc limit 1`, period.id) as { id: string; revision: number; published_at: string } | undefined;

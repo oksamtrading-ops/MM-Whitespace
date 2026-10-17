@@ -25,11 +25,13 @@ export type Setting = {
 
 const DEFINITIONS: Array<Pick<Setting, "key" | "label" | "help" | "kind">> = [
   { key: "default_threshold_amount", label: "Market-cap threshold", kind: "money",
-    help: "The line a company must reach to be in the population. The workbook is " +
-          "filtered at ingest, so changing this does not add or remove companies " +
-          "from a period already committed — it sets the line for the next one." },
+    help: "The line a company must reach to be in the population. The practice's " +
+          "workbook arrives already filtered; TSX's list of every mining issuer is " +
+          "filtered here, at this line, when it rolls the next period forward. Changing " +
+          "it does not add or remove companies from a period already committed." },
   { key: "default_threshold_currency", label: "Currency", kind: "currency",
-    help: "Three letters. The workbook reports in Canadian dollars." },
+    help: "Three letters. The workbook and TSX's list both report in Canadian dollars, " +
+          "and a list is refused against a threshold in any other currency." },
   { key: "default_threshold_operator", label: "Operator", kind: "operator",
     help: "Decision 9 settled this at “at or above”. Two companies sit less than " +
           "1% above the line, so the comparison is not academic." },

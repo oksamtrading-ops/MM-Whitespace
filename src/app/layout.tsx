@@ -76,13 +76,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   if (!gated && user?.role === "admin") items.push({ href: "/settings", label: "Settings", icon: "settings", group: "admin" });
   if (!gated && user?.role === "admin") items.push({ href: "/styleguide", label: "Styleguide", icon: "palette", group: "admin" });
 
-  // The period, in the rail's foot. A Viewer is shown one only once it is
-  // published; draft state is the workstation's business.
+  // The period, in the rail's foot. A Viewer is shown the newest PUBLISHED one,
+  // the one every page they can open is reading; draft state is the
+  // workstation's business.
   const period = user
     ? await ctx.db.get(
         `select p.label, p.status,
                 (select max(revision) from period_publications where period_id = p.id) as revision
-           from periods p order by p.market_cap_as_of desc limit 1`,
+           from periods p
+          where ? = 1 or exists (select 1 from period_publications pp where pp.period_id = p.id)
+          order by p.market_cap_as_of desc limit 1`, canReview ? 1 : 0,
       ) as { label: string; status: string; revision: number | null } | undefined
     : undefined;
   const showPeriod = period && (period.revision !== null || canReview);

@@ -113,6 +113,13 @@ def parse_extract(ws, header_row, findings):
         rows[key] = {
             "ticker": key[0], "exchange": key[1], "row": r,
             "name": cell(ws, r, cols.get("name")).value,
+            # Read for TSX's own list, which carries no consolidated tab: its
+            # company id, its head office, and when it listed.
+            "co_id": cell(ws, r, cols.get("co id")).value,
+            "ho_location": cell(ws, r, cols.get("ho location")).value,
+            "ho_region": cell(ws, r, cols.get("ho region")).value,
+            "listing_type": cell(ws, r, cols.get("listing type")).value,
+            "listing_date": cell(ws, r, cols.get("listing date")).value,
             "market_cap": parse_money(cell(ws, r, mcap_col)),
             "regions": regions, "region_present": region_present,
             "commodities": sorted(set(commodities)),
@@ -333,6 +340,11 @@ def ingest(path):
 
     wb = openpyxl.load_workbook(path, data_only=True)
     roles = bind_sheets(wb, findings)
+    # TSX's own list of mining issuers: only issuer-list sheets, none of the
+    # workbook's own tabs. It builds next quarter's period (tsxlist.py).
+    if roles.get("extract") and not any(r in roles for r in ("matrix", "consolidated", "auditor")):
+        from .tsxlist import ingest_tsx_list
+        return ingest_tsx_list(wb, roles, findings)
     for role in ("matrix", "consolidated", "auditor", "extract"):
         if role not in roles:
             findings.append(Finding("blocking", "sheet_missing",
@@ -546,8 +558,9 @@ def _proofs(companies, matrix, consolidated, auditor, extracts, filters, period,
             "population": population, "period": period}
 
 
-def _report(findings, proofs, extra, period):
+def _report(findings, proofs, extra, period, kind="workbook"):
     return {
+        "kind": kind,
         "period": period,
         "blocking": [f for f in findings if f.kind == "blocking"],
         "warnings": [f for f in findings if f.kind == "warning"],

@@ -4,7 +4,7 @@ import { useActionState, useRef, useState } from "react";
 import { uploadWorkbook } from "./actions.ts";
 import Callout from "../../_ui/Callout.tsx";
 
-/** Choose a workbook, or drop one on the same target. */
+/** Choose a workbook or TSX's list, or drop one on the same target. */
 export default function UploadForm() {
   const [state, action, pending] = useActionState(uploadWorkbook, null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -28,13 +28,13 @@ export default function UploadForm() {
                  take(e.dataTransfer.files);
                }
              }}>
-        <span className="lab">Workbook</span>
+        <span className="lab">Workbook or TSX list</span>
         <input ref={inputRef} type="file" name="workbook" accept=".xlsx"
                onChange={(e) => take(e.target.files)} />
         <span className="hint">
           {chosen
             ? <>{chosen.name} · <span className="fig-sm">{(chosen.size / 1048576).toFixed(2)}</span> MB</>
-            : "An .xlsx workbook, up to 25 MB. Drop one here or choose a file."}
+            : "An .xlsx file, up to 4 MB: the practice’s workbook, or TSX’s list of mining companies. Drop one here or choose a file."}
         </span>
       </label>
 
@@ -45,7 +45,7 @@ export default function UploadForm() {
       </div>
 
       <button type="submit" className="btn primary" disabled={pending}>
-        {pending ? "Reading the workbook…" : "Read this workbook"}
+        {pending ? "Reading the file…" : "Read this file"}
       </button>
       <p className="meta" style={{ marginTop: 12 }}>
         Reading it writes nothing. You will see the validation report first, and commit from there.

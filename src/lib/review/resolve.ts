@@ -117,6 +117,34 @@ async function fact(db: Sql, periodId: string, companyId: string, fieldKey: stri
   return { value: row.assertion === "asserted" ? parse(row.typed_value) : null, assertion: row.assertion };
 }
 
+/**
+ * What a field held when it was carried into this period from an earlier one:
+ * that period's last published revision, the copy it was carried from. Undo
+ * restores it, as it restores the file's word for a field the file carried --
+ * without it, undoing an accept on a carried auditor would leave the auditor
+ * empty. Stage rows come with the stage state, from the same revision.
+ */
+export async function inheritedOrigin(
+  db: Sql, periodId: string, companyId: string, fieldKey: string,
+): Promise<{ value: unknown; evidenceState: string; stages: Stage[] | null } | undefined> {
+  const row = await db.get(`select source_period_id from company_period_field_values
+      where period_id = ? and company_id = ? and field_key = ?`, periodId, companyId, fieldKey) as
+    { source_period_id: string | null } | undefined;
+  if (!row?.source_period_id) return undefined;
+  const pub = await db.get(`select id from period_publications where period_id = ?
+      order by revision desc limit 1`, row.source_period_id) as { id: string } | undefined;
+  if (!pub) return undefined;
+  const v = await db.get(`select value, evidence_state from published_period_values
+      where publication_id = ? and company_id = ? and field_key = ?`, pub.id, companyId, fieldKey) as
+    { value: string | null; evidence_state: string | null } | undefined;
+  if (!v) return undefined;
+  const stages = fieldKey === "stage_evidence_state"
+    ? (await db.all(`select stage from published_period_stages where publication_id = ? and company_id = ?`,
+                    pub.id, companyId) as Array<{ stage: Stage }>).map((r) => r.stage)
+    : null;
+  return { value: parse(v.value), evidenceState: v.evidence_state ?? "unknown", stages };
+}
+
 /** Is this a proposed set of stage flags, as research and the override form produce? */
 export function asStageFlags(v: unknown): Partial<Record<Stage, boolean | null>> | null {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
@@ -136,6 +164,7 @@ export async function resolveAfterDecision(
   let value: unknown;
   let source: string;
   let evidenceState: string;
+  let restoreStages: Stage[] | null = null;
   if (standing) {
     value = standing.decision === "override"
       ? parse(standing.override_value)
@@ -146,9 +175,18 @@ export async function resolveAfterDecision(
   } else {
     // Nothing stands: back to what the file said.
     const f = await fact(db, periodId, companyId, fieldKey);
+    const origin = f === undefined ? await inheritedOrigin(db, periodId, companyId, fieldKey) : undefined;
     if (f !== undefined) {
       value = f.value;
       evidenceState = f.assertion === "asserted" ? "asserted" : "unknown";
+      source = "extract";
+    } else if (origin) {
+      // Carried from an earlier period, and the file never carried it: back
+      // to the value that was carried, not to nothing.
+      value = origin.value;
+      evidenceState = origin.evidenceState;
+      source = "inherited";
+      restoreStages = origin.stages;
     } else {
       // The file said nothing about this field -- a researched field such as
       // fiscal year-end, which no workbook column carries. An undone accept
@@ -159,8 +197,8 @@ export async function resolveAfterDecision(
       if (!current || current.source === "extract" || current.source === "derived") return;
       value = null;
       evidenceState = "unknown";
+      source = "extract";
     }
-    source = "extract";
   }
 
   // A head office resolves to the workbook's spelling, whichever finding,
@@ -168,7 +206,7 @@ export async function resolveAfterDecision(
   if (fieldKey === "head_office_region" && typeof value === "string") value = canonicalRegion(value);
 
   if (fieldKey === "stage_evidence_state") {
-    await resolveStage(db, periodId, companyId, value, source, actorId);
+    await resolveStage(db, periodId, companyId, value, source, actorId, restoreStages);
   } else {
     await writeValue(db, periodId, companyId, fieldKey, value, source, evidenceState, actorId);
   }
@@ -199,6 +237,7 @@ async function writeValue(
  */
 async function resolveStage(
   db: Sql, periodId: string, companyId: string, value: unknown, source: string, actorId: string | null,
+  restoreStages: Stage[] | null = null,
 ): Promise<void> {
   let evidence: Evidence;
   let present: Stage[];
@@ -207,10 +246,11 @@ async function resolveStage(
     present = STAGES.filter((s) => flags[s] === true);
     evidence = STAGES.every((s) => typeof flags[s] === "boolean") ? "complete" : "partial";
   } else {
-    // Restoring the file: its state, and the rows it had.
+    // Restoring the file (or the period it was carried from): its state, and
+    // the rows it had.
     evidence = (typeof value === "string" && ["none", "partial", "complete"].includes(value)
       ? value : "none") as Evidence;
-    const rows = (await fact(db, periodId, companyId, "stages"))?.value;
+    const rows = restoreStages ?? (await fact(db, periodId, companyId, "stages"))?.value;
     present = Array.isArray(rows) ? rows.filter((s): s is Stage => STAGES.includes(s as Stage)) : [];
   }
 
@@ -223,24 +263,39 @@ async function resolveStage(
                    evidence === "none" ? "unknown" : "asserted", actorId);
 }
 
+/**
+ * The tier of one company's resolved inputs, as stored: the stage state and
+ * rows, the property regions, and the property evidence a company with no
+ * region falls back on. Pure, so a commit holding the inputs in memory
+ * (db/committsx.ts) classifies exactly as retier does after a decision.
+ */
+export function classifyResolved(input: {
+  stageEvidence: Evidence | null; stages: Stage[];
+  regions: Record<string, string[]> | null; storedPropertyEvidence: Evidence | null;
+}) {
+  const regions = input.regions ?? {};
+  const anyRegion = Object.values(regions).some((v) => Array.isArray(v) && v.length > 0);
+  const propertyEvidence: Evidence = anyRegion ? "complete" : (input.storedPropertyEvidence ?? "none");
+  const propsCanada = (regions.CANADA ?? []).length > 0;
+  const propsAbroad = ABROAD.some((k) => (regions[k] ?? []).length > 0);
+  const footprint = deriveFootprint(propsCanada, propsAbroad, propertyEvidence);
+  const cls = classify({ stages: input.stages, stageEvidence: input.stageEvidence ?? "none", footprint, propertyEvidence });
+  return { propertyEvidence, cls };
+}
+
 /** Classify one company from its resolved inputs, exactly as commit does. */
 export async function retier(db: Sql, periodId: string, companyId: string): Promise<void> {
   const read = async (key: string) => parse((await db.get(`select value from company_period_field_values
       where period_id = ? and company_id = ? and field_key = ?`, periodId, companyId, key) as
       { value: string } | undefined)?.value ?? null);
 
-  const stageEvidence = ((await read("stage_evidence_state")) ?? "none") as Evidence;
-  const stages = (await db.all(`select stage from company_period_stages
-      where period_id = ? and company_id = ?`, periodId, companyId) as Array<{ stage: Stage }>).map((r) => r.stage);
-  const regions = ((await read("property_regions")) ?? {}) as Record<string, string[]>;
-  const anyRegion = Object.values(regions).some((v) => Array.isArray(v) && v.length > 0);
-  const storedPropertyEvidence = (await read("property_evidence_state")) as Evidence | null;
-  const propertyEvidence: Evidence = anyRegion ? "complete" : (storedPropertyEvidence ?? "none");
-
-  const propsCanada = (regions.CANADA ?? []).length > 0;
-  const propsAbroad = ABROAD.some((k) => (regions[k] ?? []).length > 0);
-  const footprint = deriveFootprint(propsCanada, propsAbroad, propertyEvidence);
-  const cls = classify({ stages, stageEvidence, footprint, propertyEvidence });
+  const { propertyEvidence, cls } = classifyResolved({
+    stageEvidence: (await read("stage_evidence_state")) as Evidence | null,
+    stages: (await db.all(`select stage from company_period_stages
+        where period_id = ? and company_id = ?`, periodId, companyId) as Array<{ stage: Stage }>).map((r) => r.stage),
+    regions: (await read("property_regions")) as Record<string, string[]> | null,
+    storedPropertyEvidence: (await read("property_evidence_state")) as Evidence | null,
+  });
 
   await db.run(`insert into tiers (period_id, company_id, tier, status, footprint, rule_set_version)
        values (?, ?, ?, ?, ?, ?)

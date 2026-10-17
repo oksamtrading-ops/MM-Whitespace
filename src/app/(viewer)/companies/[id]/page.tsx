@@ -301,7 +301,9 @@ function ValueRow({ v, showReasons }: { v: ProfileValue; showReasons: boolean })
         )}
       </td>
       <td className="meta wrap">
-        {SOURCE_LABEL[v.source] ?? v.source}
+        {v.source === "extract" && v.citation?.kind === "workbook" && v.citation.source === "tsx_list"
+          ? "From TSX’s list"
+          : SOURCE_LABEL[v.source] ?? v.source}
         <CitationLine citation={v.citation} showReasons={showReasons} />
       </td>
       <td>
@@ -363,10 +365,24 @@ function CitationLine({ citation: c, showReasons }: { citation: Citation | null;
         </span>
       );
     case "workbook":
-      return <span className="cite">{periodName(c.period).name} source workbook{c.sha256 ? <span className="dim">{` · file ${c.sha256.slice(0, 8)}`}</span> : null}</span>;
+      return (
+        <span className="cite">
+          {c.source === "tsx_list"
+            ? <>TSX&rsquo;s list of mining issuers{c.asOf ? `, ${fmtDate(c.asOf)}` : ""}</>
+            : <>{periodName(c.period).name} source workbook</>}
+          {c.sha256 ? <span className="dim">{` · file ${c.sha256.slice(0, 8)}`}</span> : null}
+        </span>
+      );
     case "prior_period":
-      return <span className="cite">Carried from {c.period ? periodName(c.period).name : "an earlier period"}</span>;
+      // The source it was published under there, after where it was carried from.
+      return (
+        <span className="cite">
+          Carried from {c.period ? periodName(c.period).name : "an earlier period"}
+          {c.origin && c.origin.kind !== "prior_period" && <> · <CitationLine citation={c.origin} showReasons={showReasons} /></>}
+        </span>
+      );
     case "rule":
+      if (c.basis) return <span className="cite">Derived from {c.basis}</span>;
       return <span className="cite">Rule set {c.ruleSetVersion ?? "—"}</span>;
   }
 }

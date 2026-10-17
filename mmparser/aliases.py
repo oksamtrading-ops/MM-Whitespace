@@ -118,7 +118,9 @@ US_STATE_NAMES = {
 }
 
 # A head office's country, where the workbook abbreviates it.
-COUNTRY_NAMES = {"UK": "United Kingdom", "USA": "United States", "US": "United States"}
+# TSX writes a few countries as initials; TSX's August 2026 list has "UAE".
+COUNTRY_NAMES = {"UK": "United Kingdom", "USA": "United States", "US": "United States",
+                 "UAE": "United Arab Emirates"}
 
 # The workbook's "HO Region" groups, and the country a subdivision code in
 # each group belongs to. A code is read only against its region: WA is

@@ -83,6 +83,39 @@ test("a Viewer's company page never receives the Deloitte market; an Analyst's d
                "an Analyst or Admin still sees it");
 });
 
+/*
+ * Next quarter's period is created as a draft while this quarter's is the
+ * published one. Every read used to take the newest period outright, so the
+ * draft took the companies table and every company page away from Viewers.
+ */
+test("a Viewer keeps reading the published period while a newer one is a draft", async () => {
+  const db = memorySql();
+  const co = (market_cap: number) => ({
+    ticker: "NRTH", exchange: "TSX", name: "Northco Mining Corp.", ordinal: 1, market_cap,
+    stages: [], stage_evidence: "none", property_evidence: "complete",
+    regions: { CANADA: ["ON"] }, region_provenance: { CANADA: "extract" },
+    commodities: ["Gold"], venture_graduate: false, auditor: null, auditor_class: null,
+    entity_id: null, website: null, tier_workbook: 4, footprint_workbook: "Canada only",
+  } as ParsedCompany);
+  await commitPeriod(db, { period: "2026-05-31", companies: [co(5_000_000_000)] }, { label: "Q3-2026 (2026-05-31)" });
+  const q3 = (await db.get("select id from periods where market_cap_as_of like '2026-05-31%'") as { id: string }).id;
+  await publishPeriod(db, q3, { overrideReason: "test" });
+  await commitPeriod(db, { period: "2026-08-31", companies: [co(7_000_000_000)] }, { label: "Q4-2026 (2026-08-31)" });
+  const companyId = (await db.get("select id from companies") as { id: string }).id;
+
+  const [viewerRow] = await listCompanies(db, { allowDraft: false });
+  assert.equal(viewerRow?.marketCap, 5_000_000_000, "the Viewer's table is the published quarter's, not empty");
+  const viewerPage = await readCompanyProfile(db, companyId, { allowDraft: false });
+  assert.equal(viewerPage?.period.label, "Q3-2026 (2026-05-31)");
+  assert.equal(viewerPage?.publication?.revision, 1, "read from its published revision");
+
+  const [analystRow] = await listCompanies(db, { allowDraft: true });
+  assert.equal(analystRow?.marketCap, 7_000_000_000, "an Analyst works on the newest period, the draft");
+  const analystPage = await readCompanyProfile(db, companyId, { allowDraft: true });
+  assert.equal(analystPage?.period.label, "Q4-2026 (2026-08-31)");
+  assert.equal(analystPage?.publication, null);
+});
+
 test("a company that does not exist is absent, not an error", async () => {
   const db = memorySql();
   assert.equal(await readCompanyProfile(db, "0".repeat(32), { allowDraft: true }), null);

@@ -85,6 +85,8 @@ def to_payload(companies, report):
     """
     proofs = report.get("proofs") or {}
     return {
+        # "workbook", or "tsx_list" for TSX's own list of mining issuers.
+        "kind": report.get("kind", "workbook"),
         "period": report.get("period"),
         # region_provenance is exported: the commit step needs it to write
         # the fact assertion, which is what makes a re-upload safe.

@@ -2,6 +2,8 @@
 
 Three things will go wrong first. Each has a diagnosis you can run and a fix you
 can apply, because "restart it and see" is how a quarter close turns into a day.
+The fourth section is the quarter itself: rolling the next period forward from
+TSX's list.
 
 Every command assumes the repository root and a period database at `./period.db`.
 
@@ -208,6 +210,75 @@ Do not map by column letter to get past it. **The column shift between the two
 extract tabs is not a uniform offset** — it runs +1, then 0, then −1, because one
 tab drops a column and collapses another. Letter mapping appears to work and is
 wrong for a third of the columns.
+
+---
+
+## 4. Next quarter: roll forward from TSX's list
+
+The practice's workbook arrived once. Each quarter after that starts from
+**TSX's own list of mining issuers**, which rolls the last *published* period
+forward. The list brings the quarter's market caps, tickers, exchanges,
+commodities, head offices and property regions. Everything else (stages,
+auditor, fees, website, research) is carried from the last published revision,
+marked "inherited" with its age, and cites what it cited there.
+
+### Before
+
+1. **Finish the current period.** Decide what is waiting in review and publish a
+   new revision. Only the *published* revision is carried. The validation report
+   warns about unpublished changes (`base_unpublished_changes`) and undecided
+   proposals (`base_review_waiting`), but committing leaves both behind with the
+   old period.
+2. **Download the list**, "List of Mining Companies on TSX & TSXV" (an `.xlsx`
+   of about 200 KB), from
+   <https://www.tsx.com/en/listings/listing-with-us/sector-and-product-profiles/mining>. Its market-cap date is the period's date: the September 2026
+   file is as of 31 August. It is TSX Inc.'s copyright. Like the workbook, it is
+   read and discarded, and never committed to the repository.
+
+### Upload, read, commit
+
+On **/upload**, choose the file. The parser recognises the list by its two
+issuer sheets, and the report says **TSX list**. It checks each sheet's issuer
+count and total market cap against the figures printed above the table. Then
+**The next period** section lists, before anything is written:
+
+| List | What it means |
+|---|---|
+| New to the population | At or above the threshold, and not in the last period. Created with the list's fields only. Its Deloitte market comes from its head office (BC, Ontario, Quebec & NCR, Prairies for AB/SK, Atlantic for NS/NL). |
+| Left: now under the line | Still listed, but under the threshold |
+| Left: not on TSX's list | Delisted, acquired, moved off TSX, or reclassified out of mining |
+| Moved exchange / New ticker / New name | Matched to the same company: by ticker first, then by name (GGA → GORO was found by name) |
+| Near the line | Within the proximity band, on either side |
+| No region on TSX's list | The list marks none, so last period's regions stand (the workbook's five analyst-added regions) |
+| No Deloitte market yet | A head office in MB, NB, PE or the territories, which the practice has never assigned. Set it in review. |
+
+Commit with the suggested name (for example `Q4-2026 (2026-08-31)`). The new
+period is a **draft**: Analysts and Admins work on it from then on (review, runs,
+publish). **Viewers keep the last published period until the new one is
+published.** Publishing the draft will need the gate override until research
+catches up with the newcomers.
+
+### What the commit refuses, and why
+
+| Refusal | Fix |
+|---|---|
+| No period has been published yet | The first period comes from the workbook |
+| The threshold is set in another currency | Set the currency to CAD on `/settings`; the list is in Canadian dollars |
+| `"…" is already committed after …` | A draft newer than the last published period exists. Publish it, or roll forward from it once it is published |
+| Revision N was published before stage rows were frozen | Publish a new revision of the base period first (revisions from 9 on carry stages) |
+| Two companies would share a name | An issuer matched by ticker took the name a new issuer carries. Merge the two on `/companies/merge`, or correct the list |
+| `proof_total` (blocking) | The sheet's rows do not add to its printed totals. The download is incomplete; download it again |
+
+### What not to do
+
+- **Do not upload the list as a workbook replacement for the period that is
+  already published.** It is refused for that date ("already published") and
+  would carry nothing.
+- **Do not expect research to be redone.** Accepted research and overrides are
+  carried, and outrank the list's own value for the fields both hold
+  (commodities, head office, regions). A run's "Not yet researched" scope still
+  counts per period, so in a new period it offers every company again. Narrow it
+  by ticker to the newcomers if you only want those.
 
 ---
 

@@ -884,6 +884,49 @@ async function journeys(dbPath) {
         !analystProfile.html.includes("Start a pursuit") &&
         !analystProfile.html.includes("Open the pursuit"));
 
+  /* ------------------------- 13. next quarter, rolled forward from TSX's list */
+
+  // Last, because it commits a draft period, and every journey above reads
+  // the published one as the newest.
+  console.log("\n13. next quarter, from TSX's list of mining issuers");
+  const listPath = join(mkdtempSync(join(tmpdir(), "mm-tsx-")), "tsx-list.xlsx");
+  execFileSync("python3", ["tests/fixtures/build_tsx_fixture.py", listPath], { cwd: ROOT, stdio: "ignore" });
+  const listDb = new SqliteSql(new DatabaseSync(dbPath));
+  const listParse = await parseUpload(listDb, new Uint8Array(readFileSync(listPath)), "tsx-list.xlsx");
+  const listReport = await get(`/upload/${listParse.id}`, analyst.cookie);
+  check("a TSX list is read as a list, and planned against the published period",
+        listReport.html.includes("The next period") && listReport.html.includes("Rolls forward") &&
+        listReport.html.includes("Issuers on the list"));
+  check("its newcomers, leavers and moves are named before the commit",
+        listReport.html.includes("Newco Copper Corp. (NEWC, TSX)") &&
+        listReport.html.includes("Blankco Holdings Inc.") &&
+        listReport.html.includes("Southco Resources Ltd.: STHC to SOCO, matched by name") &&
+        listReport.html.includes("Carryco Minerals Inc.: TSXV to TSX") &&
+        listReport.html.includes("Devco Development Ltd. (DEVL, TSXV)"));
+  check("a head office in a province with no market yet is named, not guessed",
+        listReport.html.includes("Edgeco Metals Inc. (EDGE, TSXV) — Manitoba, Canada"));
+  check("the list can be committed, after its warnings are acknowledged",
+        /name="label"/.test(listReport.html) && !listReport.html.includes("Cannot be committed"),
+        listReport.html.match(/Cannot be committed[^<]*<\/[^>]+>[^<]*<[^>]+>([^<]+)/)?.[1] ?? "");
+
+  const { commitTsxPeriod } = await import("../../src/lib/db/committsx.ts");
+  const rolled = await commitTsxPeriod(listDb, listParse.payload, { label: "Q4-2026 (2026-08-31)", sourceSha256: listParse.sha256 });
+  const northco = (await listDb.get("select id from companies where canonical_name = 'Northco Mining Corp.'")).id;
+  await listDb.close();
+  check("committing it makes the next period: newcomers in, leavers out",
+        rolled.entrants === 2 && rolled.dropOuts === 2, JSON.stringify({ entrants: rolled.entrants, dropOuts: rolled.dropOuts }));
+
+  const viewerTable = await get("/companies", viewer.cookie);
+  const analystTable = await get("/companies", analyst.cookie);
+  check("a Viewer keeps the published quarter while the next is a draft",
+        viewerTable.html.includes("Blankco Holdings Inc.") && !viewerTable.html.includes("Newco Copper Corp."));
+  check("an Analyst works on the draft",
+        analystTable.html.includes("Newco Copper Corp.") && !analystTable.html.includes("Blankco Holdings Inc."));
+  const carried = await get(`/companies/${northco}`, analyst.cookie);
+  check("a carried value says where it came from and how old it is",
+        carried.html.includes("Carried from") && carried.html.includes("inherited · "));
+  check("a value read from the list cites the list", carried.html.includes("list of mining issuers"));
+
   /* ---------------------------------------- accessibility, six routes */
 
   console.log("\naccessibility obligations on six routes");
@@ -908,6 +951,8 @@ async function journeys(dbPath) {
     ["/companies/merge (analyst)", "/companies/merge", analyst.cookie],
     ["/review/by-company (analyst)", "/review/by-company", analyst.cookie],
     [`/companies/{id} (viewer)`, `/companies/${idMatch?.[1]}`, viewer.cookie],
+    [`/upload/{id}, a TSX list (analyst)`, `/upload/${listParse.id}`, analyst.cookie],
+    [`/companies/{id}, carried values (analyst)`, `/companies/${northco}`, analyst.cookie],
   ];
   for (const [name, path, cookie] of routes) {
     const { html } = await get(path, cookie);
