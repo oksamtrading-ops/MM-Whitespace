@@ -1,32 +1,30 @@
 # Handover — Market Assessment Tool
 
-> **Status at 12 October 2026.** The product is now the **Market Assessment
-> Tool** (formerly the Mining Whitespace Intelligence Tool). Since 12 October
-> every sign-in lands on a landing page that says how its information was
-> produced. All three releases built for the client's requests are deployed:
-> **A** (landing page, rename), **B** (the new companies table, with sources on
-> every value — complete with **revision 9**, published 12 October) and **C**
-> (Incumbent ERP). C's pass-2 re-run finished on 12 October; what it needs
-> now is review, then revision 10 (item 1 below). That run found a bug in how
-> batch answers are saved, and **the fix is deployed** the same day.
+> **Status at 18 October 2026.** The product is the **Market Assessment
+> Tool** (formerly the Mining Whitespace Intelligence Tool), live at
+> https://mm-whitespace.vercel.app. Releases A, B and C, built for the
+> client's requests, have been deployed since 12 October. Since then, also
+> on `main` and deployed:
 >
-> Q3-2026 is at **revision 9**: 4,030 values frozen, every one with a citation,
-> stage rows for the 40 researched companies, and a head office for all 259.
-> 240 decisions, 34 companies researched, US$13.2333 spent (US$1.477 of it on
-> C's re-run).
-> Kay uses the tool unaided. A second Admin exists and cannot sign in.
+> - the batch fix; Viewers no longer receive the Deloitte market; runs are
+>   immediate (batching off); pass 1 is back on Opus after a cheaper Sonnet
+>   trial failed; Pursuits removed (their tables kept); a tier dropdown on the
+>   dashboard map; commodities in the companies table and in pass 2;
+> - **next quarter from TSX's list** (17 October, migration `0033`): an
+>   upload of TSX's "List of Mining Companies on TSX & TSXV" rolls the last
+>   published period forward;
+> - **six more pass-2 fields** (17 October, migration `0034`): revenue, net
+>   income, total assets, audit-related and all-other fees, reporting currency.
 >
-> **Next quarter starts from TSX's list** (built 17 October): an upload of
-> TSX's "List of Mining Companies on TSX & TSXV" rolls the last published
-> period forward (item 7). Its migration, `0033`, was applied on 17 October.
->
-> **Pass 2 now researches six more fields** (17 October): revenue, net income
-> and total assets, the audit-related and all-other fee lines, and the
-> reporting currency. See *Financials, the other fee lines and reporting
-> currency* below. Its migration, `0034`, was applied on 17 October.
+> Q3-2026 is still at **revision 9** (12 October). Since then, 28 values have
+> been accepted (13 October) and not yet published, 15 items in the review
+> brief are left, and the ten trial companies' pass 2 of 13 October left about
+> 60 undecided findings. **Revision 10 is next** (item 1). October's recorded
+> research spend is US$7.75 across four runs.
 >
 > Everything on `main` is deployed; migrations are applied through `0034`.
-> 164 commits on `main`. To start a new session, paste everything below the line.
+> 164 commits on `main`, ending at `3795178`. To start a new session, paste
+> everything below the line.
 
 ---
 
@@ -47,69 +45,94 @@ anything.
    the guide in `node_modules/next/dist/docs/` before writing Next.js code).
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
-5. Releases A, B and C are all on `main`; the `release-*` branches on
-   Samuel's Mac are spent and can be deleted.
+5. Releases A, B and C are all on `main`. The `release-*`, `tsx-next-period`,
+   `research-financials` and `handover-*` branches on Samuel's Mac are merged
+   and can be deleted.
 
 ## What is waiting on Samuel
 
-**1. Finish Release C: research the ERP, review it, publish revision 10.**
-Release C is deployed (12 October) and migration `0032` is applied. What it
-needs now is data:
+In order. Items 1 to 3 are one sequence: finish Q3, roll forward to Q4, then
+research Q4.
 
-1. ~~**The pass-2 re-run**~~ — **done 12 October**. Run `496db939…`: 28 of 28
-   jobs, US$1.477, 272 findings (191 proposed, 62 abstained, 10 anchor
-   mismatches, 9 unsupported).
-   - It stalled once, on the bug described under *The batch fix* below,
-     cleared by hand and since fixed in code.
-   - **Franco-Nevada was researched twice** because of it. Its first attempt
-     left two findings behind (an auditor abstention and an unsupported stage);
-     its second attempt has the full set. Review FNV from attempt 2.
-2. **Review the ERP findings** on `/review/incumbent_erp`. As expected, few
-   values and many abstentions: **one value, Cameco's SAP S/4HANA** (evidence
-   0.79), and **26 abstentions**. A company names its ERP mostly when it
-   changes internal controls. Also look at each field's **Newer research**
-   tab (values accepted, then researched again), where this run may disagree
-   with what was already accepted. A quote that does not name the system arrives as an
-   abstention by design. An override must type the public page after the
-   system (`SAP S/4HANA https://…`) — refused otherwise, because an ERP known
-   from an engagement is client information.
-3. **Publish revision 10** on `/publish`, with an amendment reason; it will
-   need the blocked-gate override as 6–9 did. **The override's reason needs new
-   numbers.** This run has 9 unsupported claims out of 210, so the line used
-   for 6–9, that the three most recent runs have none, is no longer true.
-4. `pg:smoke` from Samuel's own terminal — never yet run against this code:
+**1. Finish Q3-2026: decide the 15 items left, then publish revision 10.**
+- **The brief** is `reference/review-brief-revision-10.md` (git-ignored) and
+  Kay's private page, https://claude.ai/artifact/9GeAaanYEu1VK4g9AS12qq. Both
+  were refreshed on 18 October from production, read-only. The 15 items are 7
+  on Newer research, 4 on Need review and 4 on Quarantined, each with its
+  quote, a suggestion and a link to where to decide it.
+- **The review screen has no reject button.** "Leave it" means press nothing:
+  the stored value stands, and the row stays on its tab without blocking
+  publish.
+- **Settled on 18 October by reading the stored filings** (`documents.text_content`):
+  - Barrick's fees are in US dollars; its AIF says every amount in it is. That
+    answers the Barrick audit-fee currency question, open since September:
+    US$10.3 million.
+  - Kinross's fee table is headed "C$", so its C$75,000 tax fee is right.
+  - Wesdome's 2025 nil tax fee and Ivanhoe's 2024 one are confirmed by their
+    tables' column order.
+- **Also undecided:** about 60 findings from the ten trial companies' pass 2
+  on 13 October (run `3924fe88`, US$0.99): 34 anchored, 5 quarantined and 23
+  "not found". They are first values, not corrections; deciding them before
+  revision 10 is optional.
+- **Still open from September:** China Gold's auditor. Lixin & Ethos audits
+  its Canadian reporting and BDO its Hong Kong reporting; the workbook says
+  Deloitte.
+- **Publish** on `/publish` with an amendment reason and the blocked-gate
+  override, as for revisions 6 to 9. **The override's reason needs "9
+  unsupported claims out of 210"** (run `496db939`); the line used before, that
+  the three most recent runs had none, is no longer true. Revision 10 also
+  carries the 28 values Samuel accepted on 13 October: 14 fiscal year ends, 8
+  websites and 6 SEC registrants.
 
-   ```bash
-   read -rs MM_DATABASE_URL && export MM_DATABASE_URL
-   ```
+**2. Roll Q3-2026 forward to Q4 from TSX's list.** Built on 17 October; see
+*Next quarter from TSX's list* below, and the procedure in section 4 of
+`docs/RUNBOOK.md`.
+1. Only after revision 10. Only the published revision is carried, and the
+   validation report warns about anything that would be left behind.
+2. Download the list from
+   <https://www.tsx.com/en/listings/listing-with-us/sector-and-product-profiles/mining>
+   and upload it on `/upload`. The September 2026 file (as of 31 August) was
+   checked against a local copy of the real data: **266 companies at or above
+   C$200M; 242 continuing, 24 new, 17 leaving** (8 now under the line and 9 off
+   the list, among them Almonty, Orla, Osisko Development and G2 Goldfields).
+   Every proof total ties. GGA→GORO and NFG→NFGC are found by name.
+3. Commit it as `Q4-2026 (2026-08-31)`. Q4 becomes the Analysts' working
+   period for review, runs and publish. **Viewers keep Q3 until Q4 is
+   published.**
+4. TSX's terms of use restrict the download to personal, non-commercial use
+   without TMX's consent. The practice already uses the same data through the
+   workbook's B.02 and B.03, but whoever downloads it each quarter should know.
 
-   then `npm run pg:smoke`. **Never type the address after `!` in a Claude
-   session**: that lands it in the transcript.
+**3. Research Q4 (Run 3).** The ten trial companies were re-run on 13
+October: pass 1 on Opus (run `33e98b7f`, US$2.35) and pass 2 (run `3924fe88`,
+US$0.99).
+- **Decide the scope first.** A run's "Not yet researched" counts per period,
+  so in Q4 it offers all 266 companies for pass 1, including the roughly 40
+  researched in Q3. That is about US$70–80 for all of them. Narrow the run by
+  ticker to the newcomers to save, or decide whether research done in one
+  quarter should count in the next. That rule is not built.
+- **Pass 1** costs about US$0.25–0.30 a company (Opus, six searches). Then
+  accept the websites, then run **pass 2**, which now asks for 17 fields. It is
+  estimated at US$0.18 a company; the 13 October pass 2 measured US$0.10 a
+  company before the six new fields.
+- **Runs are immediate** (batching is off). Setting `MM_ENRICH_BATCH=1` in
+  Vercel and redeploying halves the token cost, at the price of waiting,
+  sometimes much longer than the usual minutes.
+- **Spend:** the API workspace's monthly limit is US$100. October has recorded
+  US$7.75 so far.
+- **Companies already through pass 2** in Q3, about 34, only get commodities
+  and the six new fields from a pass 2 re-run (scope "Every company").
 
-**2. Release B — done 12 October, and how.** Migrations `0030`/`0031`
-applied and verified; code pushed; then:
+**4. `pg:smoke` from Samuel's own terminal**, never yet run against this code:
 
-- **The head-office backfill ran through the Supabase connector, not Samuel's
-  shell**, on his instruction — the logic of `scripts/backfill_head_office.mjs`
-  with its guards rebuilt in one SQL transaction (revision must be 8; every one
-  of 259 market caps equal to the committed fact). It wrote 259 facts and 234
-  values, and left the 25 research and review values alone. Audited as
-  `head_office_backfilled`, with the workbook's hash.
-- **"Québec" became "Quebec".** Research had copied French filings' spelling
-  for G Mining, Nouveau Monde and Radisson; Samuel decided the stored value
-  uses the workbook's spelling. Corrected before revision 9, source and
-  citation unchanged (audited as `head_office_spelling_normalised`), and
-  Release C's `canonicalRegion` keeps it so for research, review and undo. The
-  finding's QUOTE keeps the filing's spelling: it is the citation.
-- **Revision 9** froze 4,030 values, all cited (211 to a filing, 7 searches that
-  found nothing, 7 review entries, 3,028 to the workbook, 777 to the rules),
-  76 stage rows and 259 head offices.
-- **Four head offices disagree with the workbook** and are worth a reviewer's
-  eye — research stands, but one of the two sources is stale: China Gold
-  (research BC, workbook China), First Quantum (Ontario / BC), G Mining
-  (Quebec / BC), Lundin Mining (BC / Ontario).
+```bash
+read -rs MM_DATABASE_URL && export MM_DATABASE_URL
+```
 
-**3. The second Admin cannot sign in, and the reason has changed.**
+then `npm run pg:smoke`. **Never type the address after `!` in a Claude
+session**: that lands it in the transcript.
+
+**5. The second Admin cannot sign in.**
 `hasaleem@r8dius.ca` (Hasan Saleem) was invited as Admin on 25 September and
 set a password on 1 October.
 - **2 October:** four `bad password` refusals.
@@ -121,9 +144,10 @@ The fix is Samuel's choice:
   R8dius account, or
 - issue the R8dius account a new password and tell Hasan which address to use.
 
-The client's email asks Hasan to check in with Samuel this week.
+The client's email of 9 October asked Hasan to check in with Samuel. No
+sign-in attempt from either address since 9 October.
 
-**4. Confirm the AI notice's wording with the practice.** It is a draft, in one
+**6. Confirm the AI notice's wording with the practice.** It is a draft, in one
 constant (`AI_NOTICE`, in `src/lib/publish/notices.ts` and `mmparser/export.py`,
 held in step by `notices.test.ts`):
 
@@ -136,60 +160,16 @@ It must stay generic, because more than one AI tool may be used, and a test
 refuses any tool or vendor name in it. Since revision 9, "each one shows the
 source" is true on screen.
 
-**5. Review has not been touched since 13 September.**
-- 67 company/field pairs carry a finding and no decision.
-- The two flagged judgements are still open:
-  - **Barrick's audit fee currency.** The table says only "In millions of
-    dollars".
-  - **China Gold's auditor.** Lixin & Ethos for Canadian reporting, BDO for
-    Hong Kong, Deloitte in the workbook.
-
-**6. Re-run the ten trial companies, then Run 3.** Pass 1 is back on Opus
-with six searches (13 October); the cheaper Sonnet trial failed (see *Pass-1
-trial* below).
-- **First, the ten trial tickers again**, on `/runs`: pass 1, scope "Every
-  company", budget US$5: ABX, DPM, ELE, NOU, CGG, OM, AII, PDN, VMET, SCZ. The
-  trial left thin results for seven (Paladin and China Gold found no filings),
-  and pass 2 reads a company's newest pass-1 result. AII, DPM and NOU are
-  halted in the trial run, not done.
-- **Then Run 3**, the remaining 220 or so. Runs are immediate now (batching is
-  off): about US$0.25–0.30 a company, so roughly US$60 for pass 1, against
-  about US$41 batched. Put `MM_ENRICH_BATCH=1` back in Vercel and redeploy for
-  the saving, at the price of waiting, sometimes much longer than the usual
-  minutes. Run 3 follows revision 10.
-
-**7. Next quarter: roll Q3-2026 forward from TSX's list.** Built 17 October
-(see *Next quarter from TSX's list* below; the procedure is section 4 of
-`docs/RUNBOOK.md`). In order:
-
-1. ~~Apply migration `0033` and push~~ — **done 17 October**. `0033` adds
-   one column, `periods.source_kind`; Q3-2026 reads `workbook`.
-2. Finish Q3: decide what is in review and **publish revision 10** (item 1).
-   Only the published revision is carried; the report warns about anything
-   left behind, and committing leaves it with Q3.
-3. Upload TSX's list on `/upload`. The September 2026 file (as of 31 August)
-   was checked against a local copy of the real data: **266 companies at or
-   above C$200M; 242 continuing, 24 new, 17 leaving** (8 now under the line,
-   9 off the list, among them Almonty, Orla, Osisko Development and G2
-   Goldfields). Every proof total ties.
-4. Commit it as `Q4-2026 (2026-08-31)`. Q4 becomes the Analysts' working
-   period; **Viewers keep Q3 until Q4 is published**.
-5. Then research; pass 2 now collects the six new fields too. A run's "Not
-   yet researched" scope counts per period, so in
-   Q4 it offers all 266 for pass 1, including companies researched in Q3. To
-   pay only for what is new, narrow the run to the 24 newcomers' tickers, or
-   decide first whether research done in one quarter should count in the next
-   (not built).
-
-**The roster, as at 12 October 2026** (read the live state from `/access`):
+**The roster, as at 18 October 2026** (read the live state from `/access`):
 
 | Address | Role | State |
 |---|---|---|
-| `oksamtrading@gmail.com` | Admin | settled, last in 9 Oct |
-| `hasaleem@r8dius.ca` | Admin | **cannot sign in** (see item 3) |
-| `Kampofo@deloitte.ca` | Analyst | settled, **uses it unaided**: ran Lucara on 25 Sep, exported the workbook |
-| `samowusuking@gmail.com` | Analyst | settled |
-| `saowusu@deloitte.ca` | Viewer | settled |
+| `oksamtrading@gmail.com` | Admin | settled, last in 16 Oct |
+| `hasaleem@r8dius.ca` | Admin | **cannot sign in** (item 5); last in 1 Oct |
+| `Kampofo@deloitte.ca` | Analyst | settled, **uses it unaided**: ran Lucara on 25 Sep, exported the workbook; last in 13 Oct |
+| `samowusuking@gmail.com` | Analyst | settled, last in 14 Sep |
+| `saowusu@deloitte.ca` | Viewer | settled, last in 14 Sep |
+| `rodcamara@deloitte.ca` | Viewer | invited 13 Oct, **not signed in yet** |
 
 `allowed_email_domains` is `gmail.com, deloitte.ca, r8dius.ca`. Samuel added
 `r8dius.ca` on `/settings` on 25 September, one minute before the invite.
@@ -212,7 +192,7 @@ trial* below).
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
-Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 153 commits on `main`.
+Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. 164 commits on `main`.
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -260,6 +240,29 @@ is client information.
 ## What exists, and what state it is in
 
 ### Built on 9–12 October 2026 — the client's requests
+
+**Release B, how it was finished (12 October).** Migrations `0030`/`0031`
+applied and verified; code pushed; then:
+
+- **The head-office backfill ran through the Supabase connector, not Samuel's
+  shell**, on his instruction — the logic of `scripts/backfill_head_office.mjs`
+  with its guards rebuilt in one SQL transaction (revision must be 8; every one
+  of 259 market caps equal to the committed fact). It wrote 259 facts and 234
+  values, and left the 25 research and review values alone. Audited as
+  `head_office_backfilled`, with the workbook's hash.
+- **"Québec" became "Quebec".** Research had copied French filings' spelling
+  for G Mining, Nouveau Monde and Radisson; Samuel decided the stored value
+  uses the workbook's spelling. Corrected before revision 9, source and
+  citation unchanged (audited as `head_office_spelling_normalised`), and
+  Release C's `canonicalRegion` keeps it so for research, review and undo. The
+  finding's QUOTE keeps the filing's spelling: it is the citation.
+- **Revision 9** froze 4,030 values, all cited (211 to a filing, 7 searches that
+  found nothing, 7 review entries, 3,028 to the workbook, 777 to the rules),
+  76 stage rows and 259 head offices.
+- **Four head offices disagree with the workbook** and are worth a reviewer's
+  eye — research stands, but one of the two sources is stale: China Gold
+  (research BC, workbook China), First Quantum (Ontario / BC), G Mining
+  (Quebec / BC), Lundin Mining (BC / Ontario).
 
 An email after a client conversation, 9 October 2026, asked for six things.
 Samuel first excluded the sixth (*remove the Pursuit section*), then had it
@@ -1376,20 +1379,20 @@ it. Never run `git add -A` outside this project's folder.
 
 ## What is left, in order
 
-As at 12 October 2026, in the order worth doing:
+As at 18 October 2026, in the order worth doing:
 
 | | | Whose |
 |---|---|---|
-| **a** | ~~Release B~~ — done 12 October, revision 9 published | — |
-| **b** | **Finish Release C**: review the pass-2 re-run (done 12 Oct), then revision 10 with fresh numbers in the override; `pg:smoke` | Samuel and Kay; `pg:smoke` in Samuel's terminal |
-| **c** | **Unblock the second Admin.** A Deloitte address with no account, or a forgotten password | Samuel, on `/access` |
-| **d** | **Review**: 67 undecided pairs, the two flagged judgements | Samuel and Kay |
-| **e** | **Re-run the ten trial companies, then Run 3** (about US$60 for pass 1 run immediately, US$41 batched; item 6) | Samuel starts both on `/runs`, after revision 10 |
+| **a** | **Finish Q3-2026**: the 15 items in the review brief, then revision 10 with "9 unsupported claims out of 210" in the override (item 1) | Samuel and Kay |
+| **b** | **Roll forward to Q4** from TSX's list (item 2) | Samuel or Kay, on `/upload` |
+| **c** | **Research Q4, Run 3**: decide the scope first, then pass 1, websites, pass 2 (item 3) | Samuel, on `/runs` |
+| **d** | **`pg:smoke`** (item 4) | Samuel's terminal |
+| **e** | **Unblock the second Admin** (item 5) | Samuel, on `/access` |
 | **f** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
 | **g** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
 | **h** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
 | **i** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
-| **j** | ~~Viewers see the Deloitte market on the company page~~ — fixed 12 October | — |
+| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars) | done |
 
 Rename the Vercel project, the URL and the repository only if Samuel decides
 to; they are outward-facing.
