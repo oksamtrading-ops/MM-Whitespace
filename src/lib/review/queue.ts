@@ -70,11 +70,22 @@ export async function reviewableFields(db: Sql, periodId: string): Promise<Field
 type Bucketable = {
   conflict?: boolean; findingState: string; anchorMode: string; sourceCount: number;
   abstained?: boolean; bulkAcceptableField: boolean; evidenceStrength: number | null;
-  fieldKey: string; newerThanDecision?: boolean;
+  fieldKey: string; newerThanDecision?: boolean; fromOlderFiling?: boolean;
 };
 
-/** The one bucket that holds DECIDED rows, and so is counted apart. */
+/** The bucket of DECIDED rows research has since overtaken, counted apart. */
 export const SUPERSEDED = "superseded";
+
+/**
+ * Decided rows researched again from a document reporting on an EARLIER year
+ * than the one the accept cites. Shown, so nothing a run found is hidden, but
+ * never offered as a correction: on 18 October 2026 two of these displaced
+ * China Gold's correct auditor change. Nothing on this tab is waiting.
+ */
+export const OLDER_FILING = "older_filing";
+
+/** The buckets whose rows are decided: every other bucket asks what is left to do. */
+const DECIDED_BUCKETS = new Set([SUPERSEDED, OLDER_FILING]);
 
 /**
  * Does this proposal say something other than what the field holds?
@@ -131,6 +142,8 @@ export const IN_BUCKET: Record<string, (c: Bucketable, threshold: number) => boo
                          !IN_BUCKET.conflict(c, t) && !IN_BUCKET.bulkable(c, t),
   // Decided, and overtaken since. Every other bucket is about undecided rows.
   [SUPERSEDED]: (c) => Boolean(c.newerThanDecision),
+  // Decided, and researched again from an older filing: shown, not offered.
+  [OLDER_FILING]: (c) => Boolean(c.fromOlderFiling),
 };
 
 export async function queueBuckets(
@@ -143,7 +156,7 @@ export async function queueBuckets(
   // carries the field to open. Otherwise "need review 7" can land on a field
   // holding none of them.
   const bucket = (key: string, label: string, startHere?: boolean): QueueBucket => {
-    const from = key === SUPERSEDED ? candidates : undecided;
+    const from = DECIDED_BUCKETS.has(key) ? candidates : undecided;
     const inIt = from.filter((c) => IN_BUCKET[key](c, threshold));
     return {
       key, label, count: inIt.length, firstField: inIt[0]?.fieldKey ?? null,
@@ -158,6 +171,7 @@ export async function queueBuckets(
     bucket("no_evidence", "no evidence found"),
     bucket("quarantined", "quarantined: excerpt did not anchor"),
     bucket(SUPERSEDED, "accepted, then researched again"),
+    bucket(OLDER_FILING, "researched again from an older filing"),
   ];
 }
 
@@ -178,6 +192,16 @@ export type Row = Candidate & {
    * and a model proposing against it is not a reason to ask them twice.
    */
   newerThanDecision: boolean;
+  /**
+   * A later proposal like the one above, but read from a document that
+   * reports on an earlier fiscal year than the accepted value's. Never also
+   * newerThanDecision: it is shown on its own tab and not offered.
+   */
+  fromOlderFiling: boolean;
+  /** The fiscal year this proposal's document reports on, when it says. */
+  reportsOn: number | null;
+  /** The same, for the document behind the standing accept. */
+  acceptedReportsOn: number | null;
   abstained: boolean;
   band: ReturnType<typeof evidenceBand>;
   excerpt: string | null;
@@ -197,6 +221,11 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
             (select s.url from finding_sources s where s.finding_id = e.id limit 1) as "sourceUrl",
             (select s.source_tier from finding_sources s where s.finding_id = e.id limit 1) as "sourceTier",
             e.anchor_document_hash as "documentHash",
+            -- The fiscal year the finding's document reports on (0035): the
+            -- one it anchored to, else the first it cites.
+            (select doc.reports_on from documents doc
+              where doc.content_hash = coalesce(e.anchor_document_hash,
+                (select s.content_hash from finding_sources s where s.finding_id = e.id limit 1))) as "reportsOn",
             -- From the facts table, not the resolved values: a decision
             -- rewrites the resolved row's source away from 'extract', and the
             -- diff would then show the AI's proposal against nothing.
@@ -267,6 +296,9 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
         differs(String(r.fieldKey), proposedValue,
                 r.resolvedValue ? safeParse(String(r.resolvedValue)) : null,
                 stagesOf.get(String(r.companyId)) ?? []),
+      fromOlderFiling: false,
+      reportsOn: r.reportsOn === null || r.reportsOn === undefined ? null : Number(r.reportsOn),
+      acceptedReportsOn: null,
       abstained: Number(r.abstained) === 1,
       band: evidenceBand(r.evidenceStrength === null ? null : Number(r.evidenceStrength)),
       excerpt: r.excerpt ? String(r.excerpt) : null,
@@ -279,8 +311,27 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
       ...candidate,
       createdAt: r.findingCreatedAt ?? null,
       sourceTier: r.sourceTier === null || r.sourceTier === undefined ? null : Number(r.sourceTier),
+      decidedFindingId: r.decidedFindingId ? String(r.decidedFindingId) : null,
     };
   });
+
+  // Newer research means a newer DOCUMENT, not just a newer finding. A finding
+  // is newer when a run produced it after the accept, whatever it read; on 13
+  // October 2026 a re-run read China Gold's 2022 circular, and its "no change,
+  // since 2010" was offered against values accepted from the 2026 one, taken,
+  // and published. Where both documents say which fiscal year they report on
+  // and the proposal's is the earlier, it is shown as from an older filing and
+  // not offered. Where either says nothing, nothing changes: unknown demotes
+  // nothing (docs/decisions/NEWER-RESEARCH-FROM-OLDER-FILINGS.md).
+  const yearOf = new Map(candidates.map((c) => [String(c.findingId), c.reportsOn]));
+  for (const c of candidates) {
+    if (!c.newerThanDecision || !c.decidedFindingId) continue;
+    c.acceptedReportsOn = yearOf.get(c.decidedFindingId) ?? null;
+    if (c.reportsOn !== null && c.acceptedReportsOn !== null && c.reportsOn < c.acceptedReportsOn) {
+      c.newerThanDecision = false;
+      c.fromOlderFiling = true;
+    }
+  }
 
   // One row per company and field, picked here rather than in the statement:
   // which proposal to show depends on the standing decision, and a correlated
@@ -295,8 +346,8 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
                     a.companyName.localeCompare(b.companyName));
 }
 
-/** A Row plus what only the pick needs: when it was written, and from where. */
-type Proposal = Row & { createdAt: unknown; sourceTier: number | null };
+/** A Row plus what only the pick needs: when it was written, from where, and what it was weighed against. */
+type Proposal = Row & { createdAt: unknown; sourceTier: number | null; decidedFindingId?: string | null };
 
 /** An anchored proposal, then one held for a human, then the rest, abstention last. */
 const STATE_RANK: Record<string, number> = { proposed: 0, anchor_mismatch: 1, abstained: 3 };
@@ -337,6 +388,10 @@ function byNewest(a: Proposal, b: Proposal): number {
 export function pickFinding(group: Proposal[]): Proposal {
   const newer = group.filter((c) => c.newerThanDecision);
   if (newer.length > 0) return [...newer].sort(byNewest)[0];
+  // Then one researched again from an older filing, so the row its tab counts
+  // is the row it shows, with the reason it is not offered.
+  const older = group.filter((c) => c.fromOlderFiling);
+  if (older.length > 0) return [...older].sort(byNewest)[0];
 
   const preferSource = EDGAR_PROFILE_FIELDS.has(group[0].fieldKey);
   return [...group].sort((a, b) =>
@@ -352,9 +407,9 @@ export async function fieldRows(
 ): Promise<Row[]> {
   const all = (await allCandidates(db, periodId)).filter((r) => r.fieldKey === fieldKey);
   if (!bucket || bucket === "all") return all;
-  // The one bucket whose rows are decided: everything else asks what is left
-  // to do, and this asks what was done before the research improved.
-  if (bucket === SUPERSEDED) return all.filter((r) => r.newerThanDecision);
+  // The buckets whose rows are decided: everything else asks what is left to
+  // do, and these ask what was done before the research came back.
+  if (DECIDED_BUCKETS.has(bucket)) return all.filter((r) => IN_BUCKET[bucket](r, threshold));
 
   const undecided = all.filter((r) => !r.decided);
   const predicate = IN_BUCKET[bucket];
@@ -414,8 +469,21 @@ export function cellLabel(row: Row, fieldLabel: string): string {
     ? "abstained"
     : formatValue(row.proposedValue, row.fieldKey);
   const state = row.decided ? row.decision! : "unreviewed";
-  const newer = row.newerThanDecision ? ", newer research since" : "";
+  const newer = row.newerThanDecision ? ", newer research since"
+    : row.fromOlderFiling ? ", researched again from an older filing" : "";
   return `${fieldLabel}, ${value}, evidence ${row.band}, ${state}${newer}`;
+}
+
+/**
+ * Why a row researched again from an older filing is shown and not offered.
+ * Written here, once, for the field grid and the company grid alike.
+ */
+export function olderFilingNote(row: Row): string | null {
+  if (!row.fromOlderFiling) return null;
+  return `Researched again from a filing that reports on ${row.reportsOn}. The accepted value cites ` +
+    `one that reports on ${row.acceptedReportsOn}, so this is not offered as a correction and the ` +
+    "accepted value stands. If the older filing is right after all, undo the accept on this field " +
+    "and decide again.";
 }
 
 /** A proposed or extracted value as the grid shows it -- and as its override box starts. */

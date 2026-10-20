@@ -24,6 +24,7 @@ import {
   type ReactNode,
 } from "react";
 import Icon from "../../../_ui/Icon.tsx";
+import Callout from "../../../_ui/Callout.tsx";
 import { bulkAccept, confirmationText } from "./actions.ts";
 import { useDecide } from "../useDecide.ts";
 import BulkDialog from "./BulkDialog.tsx";
@@ -40,6 +41,8 @@ export type GridRow = {
   decision: string | null;
   /** Accepted before a later run proposed something better. */
   newerThanDecision: boolean;
+  /** Researched again from an older filing: why it is shown and not offered, or null. */
+  olderFilingNote: string | null;
   conflict: boolean;
   sourceCount: number;
   excerpt: string | null;
@@ -350,6 +353,10 @@ export default function Grid(props: Props) {
                         <span className="tag warn" title="A later run proposed a better value than this decision saw">
                           <Icon name="history" size={11} />newer research
                         </span>}
+                      {r.olderFilingNote &&
+                        <span className="tag done" title="Researched again from a filing older than the accepted one">
+                          <Icon name="calendar-clock" size={11} />older filing
+                        </span>}
                     </>
                   : r.sourceCount === 0
                     ? <span className="tag warn"><Icon name="search-x" size={11} />no sources</span>
@@ -399,6 +406,9 @@ export default function Grid(props: Props) {
                 )}
               </p>
               {row.tierNote && <p className="tiernote">{row.tierNote}</p>}
+              {row.olderFilingNote && (
+                <Callout tone="info" icon="calendar-clock" title="From an older filing">{row.olderFilingNote}</Callout>
+              )}
 
               {/* A decided row has no controls -- its decision stands, and Undo
                   walks it back. The exception is a row research has overtaken:

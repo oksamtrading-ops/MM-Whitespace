@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useOptimistic, useRef, useState } from
 import { useDecide } from "../useDecide.ts";
 import ShortcutsDialog from "../[field]/ShortcutsDialog.tsx";
 import Icon from "../../../_ui/Icon.tsx";
+import Callout from "../../../_ui/Callout.tsx";
 
 export type Cell = {
   fieldKey: string;
@@ -26,6 +27,8 @@ export type Cell = {
   decision: string | null;
   /** Accepted before a later run proposed something better. */
   newerThanDecision: boolean;
+  /** Researched again from an older filing: why it is shown and not offered, or null. */
+  olderFilingNote: string | null;
   conflict: boolean;
   sourceCount: number;
   excerpt: string | null;
@@ -264,6 +267,7 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                       {c.conflict && <span className="tag conflict"><Icon name="git-compare" size={11} />conflict</span>}
                       {c.decided && <span className="tag done"><Icon name="check" size={11} />{c.decision}</span>}
                       {c.newerThanDecision && <span className="tag warn"><Icon name="history" size={11} />newer research</span>}
+                      {c.olderFilingNote && <span className="tag done"><Icon name="calendar-clock" size={11} />older filing</span>}
                     </>
                   ) : <span className="meta">—</span>}
                 </div>
@@ -304,6 +308,9 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                 )}
               </p>
               {cell.tierNote && <p className="tiernote">{cell.tierNote}</p>}
+              {cell.olderFilingNote && (
+                <Callout tone="info" icon="calendar-clock" title="From an older filing">{cell.olderFilingNote}</Callout>
+              )}
 
               {/* Decided rows keep their decision and are walked back with Undo
                   -- except one research has overtaken, which must be takeable. */}

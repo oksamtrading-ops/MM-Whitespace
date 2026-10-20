@@ -3,7 +3,7 @@ import type { Metadata, Route } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { evaluateGate } from "../../../lib/publish/gate.ts";
-import { queueBuckets, reviewableFields } from "../../../lib/review/queue.ts";
+import { OLDER_FILING, queueBuckets, reviewableFields } from "../../../lib/review/queue.ts";
 import Gauge from "../../_ui/Gauge.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
 import Section from "../../_ui/Section.tsx";
@@ -25,7 +25,8 @@ const BUCKET_ICON: Record<string, IconName> = {
   no_evidence: "search-x",
   bulk: "list-checks",
   above_threshold: "list-checks",
-  newer: "history",
+  superseded: "history",
+  older_filing: "calendar-clock",
 };
 
 export default async function ReviewBoard() {
@@ -52,7 +53,9 @@ export default async function ReviewBoard() {
   const gate = await evaluateGate(ctx.db, period.id);
   const fields = await reviewableFields(ctx.db, period.id);
   const buckets = await queueBuckets(ctx.db, period.id);
-  const totalValues = buckets.reduce((a, b) => a + b.count, 0);
+  // What is waiting on someone. Rows researched again from an older filing
+  // are shown on the board but ask for nothing, so they are not counted here.
+  const totalValues = buckets.filter((b) => b.key !== OLDER_FILING).reduce((a, b) => a + b.count, 0);
   const firstField = fields[0]?.fieldKey;
   const { name: periodTitle, asOf } = periodName(period.label);
 

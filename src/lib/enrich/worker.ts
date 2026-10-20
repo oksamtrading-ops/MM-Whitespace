@@ -24,6 +24,7 @@ import {
   type PublicCompanyRow, type Route,
 } from "./prompt.ts";
 import { buildAllowlist, type FetchedDocument } from "./fetch.ts";
+import { reportsOn, REPORTS_ON_VERSION } from "./reportson.ts";
 import {
   BATCH_DISCOUNT, Meter, preparePass, promptVersionFor, researchLive, resumePass, sdkVendor,
   type CandidateDoc, type LiveBody, type LiveDeps, type LiveJob, type Pass,
@@ -581,14 +582,17 @@ async function persist(
   })).sort((a, b) => a.contentHash < b.contentHash ? -1 : a.contentHash > b.contentHash ? 1 : 0);
   for (const d of fetched) {
     docs.set(d.contentHash, d);
+    const retrievedAt = new Date().toISOString();
     await db.run(`insert into documents (content_hash, url, retrieved_at, extractor, extractor_version,
                               normalization_version, text_content, char_count, page_count,
-                              chars_per_page, source_tier, doc_type, scale_phrase, has_text_layer)
-       values (?, ?, ?, 'fixture', '1.0.0', '1.0.0', ?, ?, ?, ?, ?, ?, ?, ?)
-       on conflict (content_hash) do nothing`, d.contentHash, d.url, new Date().toISOString(), d.text, d.text.length,
+                              chars_per_page, source_tier, doc_type, scale_phrase, has_text_layer,
+                              reports_on, reports_on_version)
+       values (?, ?, ?, 'fixture', '1.0.0', '1.0.0', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       on conflict (content_hash) do nothing`, d.contentHash, d.url, retrievedAt, d.text, d.text.length,
           d.pageCount ?? 1, d.charsPerPage ?? d.text.length,
           d.sourceTier, d.docType ?? null, d.scalePhrase ?? null,
-          d.hasTextLayer === false ? 0 : 1);
+          d.hasTextLayer === false ? 0 : 1,
+          reportsOn(d.text, retrievedAt), REPORTS_ON_VERSION);
   }
 
   const judged = body.findings.map((f) => {
@@ -722,17 +726,21 @@ export async function allowlistFromPeriod(db: Sql, periodId: string): Promise<Se
   return buildAllowlist(domains);
 }
 
-/** Persist a fetched document. The text is stored; the file never is. */
+/**
+ * Persist a fetched document. The text is stored; the file never is. So is
+ * the fiscal year it reports on, read once here rather than from the whole
+ * text on every review page (reportson.ts).
+ */
 export async function storeDocument(db: Sql, doc: FetchedDocument): Promise<string> {
   await db.run(`insert into documents (content_hash, url, final_url, retrieved_at, extractor,
                             extractor_version, normalization_version, text_content,
                             char_count, page_count, chars_per_page, source_tier,
-                            doc_type, has_text_layer)
-     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            doc_type, has_text_layer, reports_on, reports_on_version)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      on conflict (content_hash) do nothing`, doc.contentHash, doc.url, doc.finalUrl, doc.retrievedAt, doc.extractor,
         doc.extractorVersion, doc.normalizationVersion, doc.text, doc.charCount,
         doc.pageCount, doc.charsPerPage, doc.sourceTier, doc.docType,
-        doc.hasTextLayer ? 1 : 0);
+        doc.hasTextLayer ? 1 : 0, reportsOn(doc.text, doc.retrievedAt), REPORTS_ON_VERSION);
   return doc.contentHash;
 }
 

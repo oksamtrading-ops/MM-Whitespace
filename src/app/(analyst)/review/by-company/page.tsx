@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
-import { cellLabel, companyRows, formatValue, tierConsequence } from "../../../../lib/review/queue.ts";
+import { cellLabel, companyRows, formatValue, olderFilingNote, tierConsequence } from "../../../../lib/review/queue.ts";
 import Facts from "../../../_ui/Facts.tsx";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Page from "../../../_ui/Page.tsx";
@@ -47,6 +47,7 @@ export default async function ByCompany(
       decided: c.decided,
       decision: c.decision,
       newerThanDecision: c.newerThanDecision,
+      olderFilingNote: olderFilingNote(c),
       conflict: c.conflict,
       sourceCount: c.sourceCount,
       excerpt: c.excerpt,

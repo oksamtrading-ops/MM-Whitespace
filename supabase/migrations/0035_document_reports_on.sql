@@ -1,0 +1,25 @@
+-- The fiscal year each stored document reports on: the latest period it says
+-- has ended ("for the year ended December 31, 2025"), read from its text by
+-- src/lib/enrich/reportson.ts when it is stored.
+--
+-- Review's "Newer research" offered a finding as a correction when it was
+-- created after the accept, whatever the age of the document it came from. On
+-- 13 October 2026 a re-run read China Gold's 2022 circular and its "no auditor
+-- change, since 2010" displaced values accepted from the 2026 circular. With
+-- the year stored, a later finding from a document reporting on an earlier
+-- year is shown as "from an older filing" and not offered
+-- (docs/decisions/NEWER-RESEARCH-FROM-OLDER-FILINGS.md).
+--
+--   reports_on           the year, or null when the document never says
+--   reports_on_version   which reading produced it, null if never read: a
+--                        null year is then "does not say", not "not looked"
+--
+-- Documents stored before this migration are read by
+-- scripts/backfill_reports_on.mjs; until then they count as unknown, which
+-- demotes nothing.
+--
+-- Idempotent on purpose: this file creates no table, so the ledger's adoption
+-- rule cannot recognise it as applied and may replay it. One add column per
+-- alter table, as 0027 explains.
+alter table documents add column if not exists reports_on integer;
+alter table documents add column if not exists reports_on_version text;

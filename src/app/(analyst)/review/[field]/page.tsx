@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import { isStageField } from "../../../../lib/review/decide.ts";
-import { cellLabel, fieldRows, formatValue, tierConsequence } from "../../../../lib/review/queue.ts";
+import { cellLabel, fieldRows, formatValue, olderFilingNote, tierConsequence } from "../../../../lib/review/queue.ts";
 import { chosenThreshold, DEFAULT_THRESHOLD, THRESHOLDS } from "../../../../lib/review/threshold.ts";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Facts from "../../../_ui/Facts.tsx";
@@ -21,6 +21,9 @@ const BUCKETS: Array<[string, string]> = [
   // Decided, and researched again since. Every other tab asks what is left to
   // do; this one asks what was settled before the answer improved.
   ["superseded", "Newer research"],
+  // Decided, and researched again from a document reporting on an earlier
+  // year: shown so nothing a run found is hidden, never offered.
+  ["older_filing", "Older filing"],
 ];
 
 export default async function FieldReview(
@@ -71,6 +74,7 @@ export default async function FieldReview(
     decided: r.decided,
     decision: r.decision,
     newerThanDecision: r.newerThanDecision,
+    olderFilingNote: olderFilingNote(r),
     conflict: r.conflict,
     sourceCount: r.sourceCount,
     excerpt: r.excerpt,

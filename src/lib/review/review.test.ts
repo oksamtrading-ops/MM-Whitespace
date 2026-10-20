@@ -253,7 +253,7 @@ test("evidence has four ordinal bands, so it is never colour alone", async () =>
 test("a cell's accessible name carries value, evidence band and review state", async () => {
   const row = {
     ...candidate(), decided: false, decision: null, abstained: false,
-    newerThanDecision: false,
+    newerThanDecision: false, fromOlderFiling: false, reportsOn: null, acceptedReportsOn: null,
     band: "high" as const, excerpt: null, sourceUrl: null, documentHash: null,
     conflict: false,
   };
@@ -269,6 +269,10 @@ test("a cell's accessible name carries value, evidence band and review state", a
   assert.equal(
     cellLabel({ ...row, decided: true, decision: "accept", newerThanDecision: true }, "Audit fees"),
     "Audit fees, Deloitte, evidence high, accept, newer research since");
+  // And one researched again from an older filing says that instead.
+  assert.equal(
+    cellLabel({ ...row, decided: true, decision: "accept", fromOlderFiling: true }, "Audit fees"),
+    "Audit fees, Deloitte, evidence high, accept, researched again from an older filing");
 });
 
 test("a multi-valued stage renders as its set, not as JSON", async () => {
