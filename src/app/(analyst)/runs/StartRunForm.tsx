@@ -12,6 +12,8 @@ import Callout from "../../_ui/Callout.tsx";
 export type ScopeOffer = {
   key: string; pass: Pass | null; scope: Scope;
   label: string; detail: string;
+  /** What the option leaves out or takes in, counted: research done here, or carried from an earlier quarter. */
+  note?: string;
   estimate: Estimate; allowed: boolean; why?: string;
   /** Every ticker the scope covers, so a typed list can be counted here. */
   tickers: string[];
@@ -65,6 +67,7 @@ export default function StartRunForm({ periodId, offers, defaultBudgetUsd, mode,
               {o.estimate.count === 1 ? " company" : " companies"}
             </label>
             <span className="hint">{o.allowed ? o.detail : o.why}</span>
+            {o.note && <span className="hint">{o.note}</span>}
           </p>
         ))}
       </fieldset>

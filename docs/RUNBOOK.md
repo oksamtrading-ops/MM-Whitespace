@@ -276,9 +276,20 @@ catches up with the newcomers.
   would carry nothing.
 - **Do not expect research to be redone.** Accepted research and overrides are
   carried, and outrank the list's own value for the fields both hold
-  (commodities, head office, regions). A run's "Not yet researched" scope still
-  counts per period, so in a new period it offers every company again. Narrow it
-  by ticker to the newcomers if you only want those.
+  (commodities, head office, regions). A run's "not yet done" scope counts
+  carried research too (`FIELD_GROUPS` in `src/lib/enrich/scope.ts`):
+  - **Pass 1** leaves out a company whose website, SEC registration, fiscal
+    year-end or head office was accepted, overridden or accepted as "not
+    found", in this period or an earlier one.
+  - **Pass 2** has two halves, and leaves a company out only when both are
+    researched: the filing fields, and commodities with the financials, which
+    no pass 2 asked for before 17 October. Every company through pass 2 in
+    Q3-2026 is therefore offered again in Q4 for the second half.
+  - A finding nobody decided is not carried, so it does not count next quarter.
+
+  `/runs` says beside each option how many it leaves out and why. Researching
+  everyone again is "every eligible company", Admin-only once a period has
+  findings or carries research.
 
 ---
 

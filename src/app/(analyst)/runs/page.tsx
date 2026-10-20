@@ -6,8 +6,8 @@ import { readWorkerHealth, type WorkerHealth } from "../../../lib/enrich/health.
 import { WORKER_SLOTS } from "../../../lib/enrich/ledger.ts";
 import { listRuns, PHASE_COPY, type RunStatus } from "../../../lib/enrich/runstatus.ts";
 import {
-  estimate, PASS_COPY, periodHasFindings, runInProgress, SCOPE_COPY, scopeWithTickers,
-  type Pass, type Scope,
+  estimate, PASS_COPY, passScopes, periodHasResearch, runInProgress, SCOPE_COPY, scopeNote, scopeWithTickers,
+  type Pass, type PassScopes, type Scope,
 } from "../../../lib/enrich/start.ts";
 import { enrichmentMode } from "../../../lib/enrich/worker.ts";
 import { BATCH_ENABLED } from "../../../lib/enrich/batch.ts";
@@ -74,10 +74,11 @@ export default async function Runs() {
   let budget = 0;
   if (mode.mode !== null && !inProgress) {
     budget = await getNumber(ctx.db, "default_run_budget_usd", 5);
-    const hasFindings = await periodHasFindings(ctx.db, period.id);
-    const adminOnly = "A full re-run of a period that already has findings is Admin-only.";
-    const offer = async (pass: Pass | null, scope: Scope): Promise<ScopeOffer> => {
-      const inScope = await scopeWithTickers(ctx.db, period.id, scope, pass ?? undefined);
+    const hasResearch = await periodHasResearch(ctx.db, period.id);
+    const adminOnly = "A full re-run of a period that already has findings, or carries research from an " +
+                      "earlier one, is Admin-only.";
+    const offer = (pass: Pass | null, scope: Scope, inScope: Array<{ ticker: string }>,
+                   scopes: PassScopes | null): ScopeOffer => {
       const n = inScope.length;
       const passCopy = pass ? PASS_COPY[pass] : null;
       return {
@@ -86,20 +87,33 @@ export default async function Runs() {
           ? `${passCopy.label}: ${scope === "all" ? "every eligible company" : "not yet done"}`
           : SCOPE_COPY[scope].label,
         detail: passCopy ? passCopy.detail : SCOPE_COPY[scope].detail,
+        note: pass && scopes ? scopeNote(pass, scope, scopes, (l) => periodName(l).name) : undefined,
         estimate: estimate(n, budget, pass, batched),
         tickers: inScope.map((c) => c.ticker).filter(Boolean),
-        allowed: n > 0 && (scope !== "all" || !hasFindings || ctx.user.role === "admin"),
+        allowed: n > 0 && (scope !== "all" || !hasResearch || ctx.user.role === "admin"),
         why: n === 0
-          ? (pass === "general"
-              ? "No company has a trusted website with pass 2 still to do. Accept websites from pass 1 in review."
-              : "Every company in scope has been researched or has a job in flight.")
+          ? (pass === "general" && scopes?.eligible === 0
+              ? "No company has a trusted website. Accept websites from pass 1 in review."
+              : "Every company in scope has been researched, here or in an earlier quarter and carried " +
+                "here, or has a job in flight.")
           : adminOnly,
       };
     };
-    offers = mode.mode === "live"
-      ? [await offer("identity", "unresearched"), await offer("general", "unresearched"),
-         await offer("identity", "all"), await offer("general", "all")]
-      : [await offer(null, "unresearched"), await offer(null, "all")];
+    if (mode.mode === "live") {
+      const identity = await passScopes(ctx.db, period.id, "identity");
+      const general = await passScopes(ctx.db, period.id, "general");
+      offers = [
+        offer("identity", "unresearched", identity.unresearched, identity),
+        offer("general", "unresearched", general.unresearched, general),
+        offer("identity", "all", identity.all, identity),
+        offer("general", "all", general.all, general),
+      ];
+    } else {
+      offers = [
+        offer(null, "unresearched", await scopeWithTickers(ctx.db, period.id, "unresearched"), null),
+        offer(null, "all", await scopeWithTickers(ctx.db, period.id, "all"), null),
+      ];
+    }
   }
 
   const startSection = (index: number) => (

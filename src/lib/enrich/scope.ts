@@ -31,9 +31,142 @@ export const SCOPE_COPY: Record<Scope, { label: string; detail: string }> = {
   all: {
     label: "Every company in the period",
     detail: "A full re-run. Existing findings are not replaced; a new attempt becomes a " +
-            "new, visible proposal. Admin-only once the period has findings.",
+            "new, visible proposal. Admin-only once the period has findings or carries research.",
   },
 };
+
+/**
+ * The values a pass produces, in the groups a run's "not yet done" counts.
+ *
+ * A company has had a pass when every group of it is researched: a job of
+ * that pass in this period that asked for the group (completed or in flight
+ * -- a pass can find nothing and still be done), or a value of the group
+ * settled in review, here or in an earlier period and carried here. Settled
+ * means accepted research, an accepted "found nothing", or an override. A
+ * finding nobody decided is not carried, so it does not count next quarter.
+ *
+ * A group is researched when ANY of its values is. Pass 2 abstains often --
+ * 22 "not found" were left undecided in Q3 on purpose -- so asking for every
+ * field would offer nearly every company again each quarter.
+ *
+ * Pass 1's group includes fiscal year-end and head office, which pass 2 also
+ * reads from filings: either way they are researched, and pass 1 would only
+ * look them up again. Pass 2's groups leave them out, so that pass 1 alone
+ * never marks pass 2 done.
+ *
+ * ERP (12 October) sits in the filing fields rather than a group of its own:
+ * a company names its ERP so rarely (one accepted in Q3) that a group of it
+ * alone would almost never be researched. Commodities (16 October) and the
+ * financials (17 October) are one group for the same reason, and no pass 2
+ * ran between the two days.
+ */
+export type FieldGroup = {
+  key: string;
+  /** In the screen's words. */
+  label: string;
+  fields: readonly string[];
+  /**
+   * The live rules version (live.ts, LIVE_RULES_VERSION) from which pass
+   * asked for these fields. A job run under older rules did not ask, so it
+   * does not count for them. Null: asked for from the start.
+   */
+  since: string | null;
+};
+
+export const FIELD_GROUPS: Record<Pass, readonly FieldGroup[]> = {
+  identity: [{
+    key: "identity", label: "website, SEC registration, fiscal year-end or head office",
+    fields: ["website", "sec_registrant", "fiscal_year_end", "head_office_location", "head_office_region"],
+    since: null,
+  }],
+  general: [
+    {
+      key: "filings", label: "the filing fields",
+      fields: ["stage_evidence_state", "auditor", "auditor_since", "auditor_change", "audit_fee", "tax_fee",
+               "incumbent_erp"],
+      since: null,
+    },
+    {
+      key: "october", label: "commodities and the financials",
+      fields: ["commodities", "total_revenue", "net_income", "total_assets", "audit_related_fee", "other_fee",
+               "reporting_currency"],
+      since: "2026-10-17.1",
+    },
+  ],
+};
+
+/** What "not yet done" leaves out, per pass, as the start form says it. */
+export const DONE_COPY: Record<Pass, string> = {
+  identity: "Not yet done leaves out a company whose website, SEC registration, fiscal year-end or head " +
+            "office is researched: by a pass 1 run in this period, or accepted, overridden or accepted as " +
+            "not found in review, here or in an earlier quarter and carried here.",
+  general: "Not yet done leaves out a company only when both halves of pass 2 are researched, here or in an " +
+           "earlier quarter and carried here: the filing fields (stage, auditor, tenure, change of auditor, " +
+           "audit and tax fees, ERP), and commodities with the financials (revenue, net income, total assets, " +
+           "audit-related and other fees, reporting currency), which pass 2 has asked for since 17 October. " +
+           "Research from before then covers the first half only.",
+};
+
+/** The counts behind a pass's two options (start.ts, passScopes). */
+export type ScopeCounts = {
+  /** Every company the pass could research. */
+  eligible: number;
+  /** Left out of "not yet done": researched by a run or review here, or by research carried in alone. */
+  doneHere: number;
+  doneCarried: number;
+  /** In "not yet done" with part of the pass researched, by the groups they still lack. */
+  partly: Array<{ lacking: string; n: number }>;
+  /** The periods carried research came from, by label. */
+  carriedFrom: string[];
+};
+
+/**
+ * What an option leaves out or takes in, counted, so a quarter's cost is
+ * read before it is spent: a period rolled forward from TSX's list offers
+ * every company, and its carried research is what narrows that.
+ */
+export function scopeNote(pass: Pass, scope: Scope, c: ScopeCounts,
+                          name: (label: string) => string = (l) => l): string {
+  const from = c.carriedFrom.map(name).join(" and ") || "an earlier quarter";
+  const carried = (n: number) => `${n} whose research was carried from ${from}`;
+  const done = c.doneHere + c.doneCarried;
+  const which = c.doneCarried === 0 ? `${c.doneHere} researched in this period`
+    : c.doneHere === 0 ? carried(c.doneCarried)
+    : `${done}: ${c.doneHere} researched in this period and ${carried(c.doneCarried)}`;
+  if (scope === "all") return done === 0 ? "" : `Includes ${which}, which a full re-run pays for again.`;
+  return [
+    done === 0 ? "" : `Leaves out ${which}.`,
+    ...c.partly.map((p) => `Includes ${p.n} researched only in part, still without ${p.lacking}.`),
+    DONE_COPY[pass],
+  ].filter(Boolean).join(" ");
+}
+
+/** The live rules a run was asked under, from its prompt version ("2026-09-04.1+live.2026-10-17.1"). */
+export function liveRulesOf(promptVersion: string | null | undefined): string | null {
+  return String(promptVersion ?? "").match(/\+live\.(\S+)$/)?.[1] ?? null;
+}
+
+/** "2026-10-09.1" against "2026-10-17.1", part by part as numbers, so ".10" follows ".9". */
+export function compareRules(a: string, b: string): number {
+  const pa = a.split(/[-.]/).map(Number);
+  const pb = b.split(/[-.]/).map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * Whether a job, run under this prompt version, asked for the group's fields.
+ * Replay names no live rules: it plays recordings back, never in production,
+ * and counts as it always has, for everything.
+ */
+export function askedFor(group: FieldGroup, promptVersion: string | null | undefined): boolean {
+  if (group.since === null) return true;
+  const rules = liveRulesOf(promptVersion);
+  return rules === null || compareRules(rules, group.since) >= 0;
+}
 
 /**
  * The Batch API's discount. Every token in a batched request is half price.

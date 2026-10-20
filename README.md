@@ -514,7 +514,9 @@ checkable. `docs/decisions/S1-WORKER-SHAPE.md` records why this shape stays.
 **Starting a run** is a form on `/runs`, and every refusal lives in
 `src/lib/enrich/start.ts` rather than the form: the estimate blocks, a scope
 above 50 companies needs its count typed, a full re-run of a period with
-findings is Admin-only, and one run at a time. `MM_ENRICH_MODE` decides
+findings or carried research is Admin-only, and one run at a time. "Not yet
+done" leaves out what a pass has researched, group by group, in this period
+or carried from an earlier one (`FIELD_GROUPS` in `src/lib/enrich/scope.ts`). `MM_ENRICH_MODE` decides
 whether a deployment may research at all; unset, the screen says so.
 
 ### Colour

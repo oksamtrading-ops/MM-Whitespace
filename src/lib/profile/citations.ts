@@ -127,6 +127,26 @@ const parseJson = (v: unknown): unknown => {
   try { return JSON.parse(v); } catch { return null; }
 };
 
+/** A citation that says a reviewer settled the value: research accepted, or an override. */
+const SETTLED_CITATIONS = new Set<string>(["document", "searched", "review"]);
+
+/**
+ * Whether a published value was settled in review rather than read from a
+ * file: accepted research (a "found nothing" too) or an override --
+ * including a value the revision had itself carried, whose frozen citation
+ * still says where it came from.
+ *
+ * Rolling forward keeps such a value over TSX's list (committsx.ts), and a
+ * run does not pay to research it again (start.ts).
+ */
+export function settledInReview(row: { source: string; sources: unknown } | undefined): boolean {
+  if (!row) return false;
+  if (row.source === "ai_accepted" || row.source === "manual_override") return true;
+  if (row.source !== "inherited") return false;
+  const c = citationOf(parseJson(row.sources));
+  return c?.kind === "prior_period" && Boolean(c.origin && SETTLED_CITATIONS.has(c.origin.kind));
+}
+
 type ValueRow = { company_id: string; field_key: string; source: string; value: string | null; source_period_id: string | null };
 type OriginRow = {
   period_id: string; company_id: string; field_key: string; sources: unknown; excerpt: string | null;

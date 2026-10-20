@@ -25,7 +25,7 @@
  */
 import { insertMany, type Sql } from "./sql.ts";
 import { normName, periodAdmissibility } from "./commit.ts";
-import { citationOf } from "../profile/citations.ts";
+import { citationOf, settledInReview } from "../profile/citations.ts";
 import { classifyResolved } from "../review/resolve.ts";
 import { RULE_SET_VERSION, type Evidence, type Stage } from "../tiering/index.ts";
 import { anyRegion, deloitteMarketFor, loadTsxPlan, type TsxIssuer, type TsxPlan } from "../ingest/tsx.ts";
@@ -58,22 +58,6 @@ const parse = (v: unknown): unknown => {
   if (typeof v !== "string") return v ?? null;
   try { return JSON.parse(v); } catch { return v; }
 };
-
-/** A citation that says a reviewer settled the value: research accepted, or an override. */
-const SETTLED_CITATIONS = new Set(["document", "searched", "review"]);
-
-/**
- * Whether the last period's value was settled in review rather than read
- * from a file -- including a value it had itself carried, whose frozen
- * citation still says where it came from.
- */
-function settled(row: BaseRow | undefined): boolean {
-  if (!row) return false;
-  if (row.source === "ai_accepted" || row.source === "manual_override") return true;
-  if (row.source !== "inherited") return false;
-  const c = citationOf(parse(row.sources));
-  return c?.kind === "prior_period" && Boolean(c.origin && SETTLED_CITATIONS.has(c.origin.kind));
-}
 
 export async function commitTsxPeriod(
   db: Sql,
@@ -198,7 +182,7 @@ export async function commitTsxPeriod(
       for (const field of TSX_FIELDS) {
         const said = listSays[field];
         const before = prior.get(field);
-        const fromFile = ALWAYS_FROM_LIST.has(field) || !before || (said.says && !settled(before));
+        const fromFile = ALWAYS_FROM_LIST.has(field) || !before || (said.says && !settledInReview(before));
         if (fromFile) {
           // Silence from a company new to the population is still the file's
           // word, recorded as such: blank, not a value.
