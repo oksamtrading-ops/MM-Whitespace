@@ -31,6 +31,61 @@ const submissionsUrl = (cik: string) => `https://data.sec.gov/submissions/CIK${c
 /** Forms that are an annual report, most authoritative first. */
 const ANNUAL_FORMS = ["40-F", "20-F", "10-K"];
 
+/**
+ * Forms that register a class of securities under section 12, with the annual
+ * report each leads to. A company that has filed one reports to the SEC from
+ * then on, even before its first annual report: Gunnison Copper and Black
+ * Mammoth registered on Form 40-F in 2026 and had filed no 40-F yet.
+ */
+const REGISTRATION_FORMS: Record<string, string> = {
+  "40FR12B": "40-F", "40FR12G": "40-F", "20FR12B": "20-F", "20FR12G": "20-F", "10-12B": "10-K", "10-12G": "10-K",
+};
+
+/** Forms that end a registration: Form 15, and Form 15F for a foreign private issuer. */
+const TERMINATION_FORMS = new Set(["15-12G", "15-12B", "15-15D", "15F-12G", "15F-12B", "15F-15D"]);
+
+/**
+ * Reports only a company still reporting to the SEC files. One filed after a
+ * Form 15 shows the registration went on: a Form 15 can end one class of
+ * securities, such as warrants, and leave the shares registered.
+ */
+const PERIODIC_FORMS = new Set([...ANNUAL_FORMS, "40-F/A", "20-F/A", "10-K/A", "6-K", "10-Q", "8-K"]);
+
+/**
+ * Whether EDGAR's record shows a company that reports to the SEC.
+ *
+ * A record alone does not: EDGAR gives a number to anyone who files anything.
+ * Most junior miners have one only for Form D, the notice of a US private
+ * placement; an ADR programme's depositary files F-6 under the issuer's name;
+ * a takeover brings 425 and CB. Until 20 October 2026 every matched record was
+ * proposed as "SEC registrant", at evidence 0.88. Of the 116 proposed in Run
+ * 3's pass 1, 49 had never registered and 6 had deregistered; three published
+ * in Q3-2026 (Alkane, First Quantum, Paladin) had never filed an annual report.
+ *
+ * Registered: an annual report or a section-12 registration, with no later
+ * Form 15 or 15F that nothing periodic followed. Arras Minerals filed 20-F
+ * reports, then a 15-12G in October 2024, and only Form D since.
+ */
+export type Registration =
+  | { status: "registered"; form: string | null }
+  | { status: "terminated"; form: string; filed: string }
+  | { status: "never" };
+
+export function registrationOf(recent: { form: string[]; filingDate: string[] } | undefined): Registration {
+  const forms = recent?.form ?? [];
+  // EDGAR lists recent filings newest first, so a lower index is later.
+  const first = (pick: (form: string) => boolean) => forms.findIndex(pick);
+  const ended = first((f) => TERMINATION_FORMS.has(f));
+  if (ended >= 0 && !forms.slice(0, ended).some((f) => PERIODIC_FORMS.has(f) || f in REGISTRATION_FORMS)) {
+    return { status: "terminated", form: forms[ended], filed: recent?.filingDate[ended] ?? "" };
+  }
+  const annual = first((f) => ANNUAL_FORMS.includes(f));
+  if (annual >= 0) return { status: "registered", form: forms[annual] };
+  const registered = first((f) => f in REGISTRATION_FORMS);
+  if (registered >= 0) return { status: "registered", form: REGISTRATION_FORMS[forms[registered]] };
+  return { status: "never" };
+}
+
 /** Corporate suffixes that say nothing about which company it is. */
 const SUFFIXES = new Set([
   "inc", "incorporated", "corp", "corporation", "ltd", "limited", "plc", "co", "company",
@@ -141,6 +196,8 @@ export type EdgarRecord = {
   businessCity: string | null;
   businessRegion: string | null;
   latestAnnual: { form: string; filed: string; url: string; indexUrl: string } | null;
+  /** Whether the company reports to the SEC, which a record alone does not say (registrationOf). */
+  registration: Registration;
 };
 
 export function parseSubmissions(text: string): EdgarRecord {
@@ -171,6 +228,7 @@ export function parseSubmissions(text: string): EdgarRecord {
     businessCity: titleAddress(j.addresses?.business?.city),
     businessRegion: regionFrom(j.addresses?.business?.stateOrCountry, j.addresses?.business?.stateOrCountryDescription),
     latestAnnual,
+    registration: registrationOf(recent),
   };
 }
 
@@ -201,9 +259,16 @@ export function edgarFindings(record: EdgarRecord, doc: FetchedDocument): Propos
     out.push({ ...(EDGAR_PROFILE_FIELDS.has(field_key) ? profile : base),
                field_key, value, evidence_excerpt });
 
+  // Registered or not, as the filings say (registrationOf). A deregistered
+  // company's quote is the Form 15 that ended it; any other quotes the CIK.
+  const reg = record.registration;
   push("sec_registrant",
-       { registrant: true, form: record.latestAnnual?.form ?? null, cik: record.cik },
-       quote(doc.text, /"cik"\s*:\s*"?0*\d+"?/));
+       reg.status === "registered"
+         ? { registrant: true, form: reg.form, cik: record.cik }
+         : { registrant: false, form: null, cik: record.cik },
+       reg.status === "terminated"
+         ? quote(doc.text, new RegExp(`"${reg.form}"`))
+         : quote(doc.text, /"cik"\s*:\s*"?0*\d+"?/));
   if (record.fiscalYearEnd) {
     push("fiscal_year_end", record.fiscalYearEnd,
          quote(doc.text, /"fiscalYearEnd"\s*:\s*"\d{4}"/));
