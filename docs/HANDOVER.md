@@ -18,19 +18,24 @@
 > - **`/publish` lists what an amendment changes** (20 October), and asks for
 >   a ticked confirmation when it changes nothing;
 > - **"Newer research" no longer offers findings from older filings**
->   (20 October, migration `0035`): they go to an "Older filing" tab. It acts
->   only once the stored documents are read (item 4).
+>   (20 October, migration `0035`): they go to an "Older filing" tab. Every
+>   stored document has been read for its year;
+> - **a run's "not yet done" counts research carried from an earlier quarter**
+>   (20 October, `a701126`);
+> - **an EDGAR record is no longer taken for an SEC registration**
+>   (20 October, `a523198`): Form D, depositary and takeover filings and a
+>   Form 15 deregistration all read as "not a registrant".
 >
-> Q3-2026 is at **revision 11** (20 October). Revision 10 (18 October)
-> published 59 decisions taken that evening: the review brief's items and most
-> of the ten trial companies' findings. 44 companies now carry a tier.
-> **Revision 11 was meant to correct two values and did not**: China Gold's
-> auditor change and Alkane's head office are still wrong in it, and its
-> header says they are fixed. **Revision 12 is next** (item 1). October's
-> recorded research spend is US$7.75 across four runs.
+> **Q3-2026 is finished at revision 12** (20 October, 20:00 UTC): China Gold's
+> auditor and Alkane's head office corrected, eight checked values added, and
+> 45 of 259 companies tiered. **Q4-2026 (2026-08-31) is the working period**:
+> committed from TSX's list on 20 October with 266 companies. Viewers keep
+> Q3 until Q4 is published. **Pass 1 of Run 3 is done and reviewed for SEC
+> registration and websites. Pass 2 is next** (item 2). October's recorded
+> research spend is US$67.83 across seven runs.
 >
 > Everything on `main` is deployed; migrations are applied through `0035`.
-> The code last changed at `1b09a4f` (20 October). To start a new session,
+> The code last changed at `a523198` (20 October). To start a new session,
 > paste everything below the line.
 
 ---
@@ -52,162 +57,92 @@ anything.
    the guide in `node_modules/next/dist/docs/` before writing Next.js code).
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
-5. Releases A, B and C are all on `main`. The `release-*`, `tsx-next-period`,
-   `research-financials` and `handover-*` branches on Samuel's Mac are merged
-   and can be deleted.
+5. Everything is on `main`. The local branches `publish-diff`,
+   `newer-research-dates`, `fix-sec-registrant` and
+   `claude/nostalgic-austin-62bc1b` (the scope rule, with its worktree in
+   `.claude/worktrees/`) are merged and can be deleted.
 
 ## What is waiting on Samuel
 
-In order. Items 1 to 3 are one sequence: finish Q3, roll forward to Q4, then
-research Q4.
+In order. Items 1 to 3 are one sequence: finish reviewing pass 1, run pass 2,
+then review it and publish Q4.
 
-**1. Finish Q3-2026: make the two corrections, then publish revision 12.**
+**1. Finish reviewing pass 1 in Q4.** What was decided on 20 October
+(decisions 347 to 617, on Samuel's Admin account):
+- **SEC registrant: 141 of 266 settled.** 115 accepted at evidence 0.80 (61
+  registrants, 54 not), 22 carried from Q3, and 4 overridden to "Not an SEC
+  registrant": First Quantum, Mega Uranium, San Lorenzo and Thor, on which
+  the corrective re-run abstained. See the trap *An EDGAR record is not a
+  registration*.
+- **Website: 258 of 266 settled.** 152 accepted at 0.80 and 106 carried.
+  Arras is among the 152: its site answered on the re-run.
 
-*What revisions 10 and 11 published.*
-- **Revision 10** (18 October, 19:50 UTC) froze 4,075 values, every one cited
-  (3,000 to the workbook, 777 to the rules, 285 to a filing, 7 review entries,
-  6 searches that found nothing), and 90 stage rows. It carries the 28 values
-  accepted on 13 October and the 59 decisions taken between 19:43 and 19:49
-  on 18 October. Four companies gained a tier: Paladin (1), DPM and Santacruz
-  (3), Osisko Metals (6). **44 of 259 are tiered.**
-- **Revision 11** (20 October, 15:21 UTC) differs from 10 in one thing: Kay's
-  undo on 19 October of Barrick's Royalty/Streaming tick (89 stage rows). Its
-  amendment reason says "China Gold/Alkane fixes", but no decision was made
-  between the two revisions. The logs show the session went from `/review`
-  straight to `/publish`.
-- **Both headers are what Viewers read** on the dashboard: revision 11's
-  override reason is "All information have been vetted". Revision 12's should
-  state the basis, for example: *"Coverage floors are not met: 44 of 259
-  companies are tiered and Run 3 has not happened. Every published value is
-  cited. The 12 October pass-2 run (496db939) had 9 unsupported claims out of
-  210."*
+What is left. None of it stops pass 2, except that pass 2 skips a company
+with no website:
+- **8 websites on Quarantined**, none of which could be confirmed: Amapá,
+  Cadillac (403), Chesapeake, GoldQuest, Mega Uranium, Mkango, Predictive
+  Discovery and Westgold. Open each site, then accept it or override it.
+  Each one settled before pass 2 starts adds that company to the run.
+- **113 SEC registrant abstentions** ("no sources"): EDGAR has no record
+  matching the name. Accepting one stores an empty value, like any "not
+  found". The choice is to override each to "Not an SEC registrant" or to
+  leave them blank. No publish floor reads the field.
+- **Head office (118), fiscal year-end (113) and head office region (67)**,
+  mostly from EDGAR addresses. Pass 2 reads both from the filings too, so
+  leave them until it has run, then review them against the filings. EDGAR's
+  casing defect ("Perth, Wa") is still in the data; see *EDGAR's address
+  casing* below.
+- **Still open from September:** China Gold's auditor. Lixin & Ethos has
+  audited its Canadian reporting since 26 February 2026 and BDO its Hong Kong
+  reporting since 26 June 2025; the workbook's "Deloitte" was carried into Q4
+  under Samuel's flag of 13 September. Choosing between them is the
+  practice's call.
+- **The review screen has no reject button:** "Leave it" means press nothing.
 
-*The two corrections, then publish.*
-- **China Gold's auditor change and tenure went backwards on 18 October.**
-  On 13 September Samuel accepted "changed 26 June 2025, from Deloitte" and
-  "auditor since 2026", from the FY2025 AIF and the 2026 circular. The 13
-  October run read an older circular ("Deloitte Touche Tohmatsu was first
-  appointed as auditors of the Company on April 1, 2010"); its "no change" and
-  "since 2010" were newer *findings*, so they were offered on Newer research
-  and taken (decisions 326 and 327). **Fix: one ⌘Z on
-  `/review/auditor_change` and one on `/review/auditor_since`.** Each is still
-  the newest decision on its field, so the undo restores September's values.
-  See the trap *Newer research can come from an older filing*.
-- **Alkane's head office location reads "Perth, Wa"**, the EDGAR casing defect
-  (see the traps), accepted on 18 October (decision 274). Undo on
-  `/review/head_office_location` walks back Almonty (277), Osisko Metals
-  (276), Allied Gold (275), then Alkane: four ⌘Z, override Alkane with
-  "Perth", then accept the other three again (Toronto, Montréal, Toronto).
-- **Check before publishing** that the decisions landed. Since 20 October
-  `/publish` lists every value, stage and tier the next revision changes (see
-  the trap *A published revision carries what was decided*). The three
-  corrections above, and anything else decided since revision 11, should be
-  exactly what it shows.
-- **Publish** on `/publish` with an amendment reason and the blocked-gate
-  override, as for every revision since 6.
-
-*What is left in review, none of it blocking.*
-- **The ten trial companies (run `3924fe88`)**: 27 undecided.
-  - **Accept, checked in the stored filings:** Almonty's audit fee C$723,084
-    and tax fee C$52,000 (FY2025; its AIF states every amount in Canadian
-    dollars); Santacruz's and Versamet's nil tax fees (column order and "Tax
-    Fees $Nil $Nil"); Almonty's stage, Production (Sangdong "began commercial
-    mining in December 2025"), which would put Almonty on Tier 3. All five sit
-    on Quarantined. Almonty leaves the population in Q4, so these matter for
-    Q3 only.
-  - **Leave all 22 "not found".** Accepting a "not found" stores an empty
-    value: on Paladin's auditor it would erase the workbook's PwC. The eight
-    fee abstentions (China Gold, DPM, Osisko Metals, Paladin) are gaps in what
-    the model read, not absences; DPM's own answer says the table is in its
-    AIF. The ten ERP abstentions are left, as the 26 of 12 October were.
-- **Stage rows taken against the brief's suggestion on 18 October**, none of
-  which moves a tier: Cameco and China Gold now tick Development, Kinross no
-  longer ticks Exploration. Each quote names production only. Undoing them on
-  `/review/stage_evidence_state` walks back Lundin first (decision 324),
-  which should stand, and Cameco needs five undos (317–321, one key held
-  down).
-- **Almonty's head office** is now Toronto, Ontario, from its FY2025 40-F.
-  EDGAR and the workbook both say Montana (Dillon), where it is moving as it
-  leaves Canada. Either is defensible, and Q4 drops it.
-- **Settled on 18 October by reading the stored filings** (`documents.text_content`):
-  - Barrick's fees are in US dollars; its AIF says every amount in it is. That
-    answers the Barrick audit-fee currency question, open since September:
-    US$10.3 million.
-  - Kinross's fee table is headed "C$", so its C$75,000 tax fee is right.
-  - Wesdome's 2025 nil tax fee and Ivanhoe's 2024 one are confirmed by their
-    tables' column order; so is NMG's FY2025 audit fee (C$399,699), whose table
-    runs 2024 then 2025.
-  - Lundin's 2026 circular describes "a strong pipeline of development
-    projects" at Vicuña, which supports its Development tick. Cameco's report
-    names only "advanced projects" (Millennium, Yeelirrie, Kintyre), and China
-    Gold's only a feasibility study to mine deeper at CSH.
-- **Still open from September:** China Gold's auditor itself. Lixin & Ethos
-  has audited its Canadian reporting since 26 February 2026 and BDO its Hong
-  Kong reporting since 26 June 2025; the workbook's "Deloitte" stands, under
-  Samuel's flag of 13 September. Choosing between them is the practice's call.
-- **The review brief** (`reference/review-brief-revision-10.md`, git-ignored)
-  and Kay's private page (https://claude.ai/artifact/9GeAaanYEu1VK4g9AS12qq)
-  describe the queue as it was on the morning of 18 October and are now out
-  of date. **The review screen has no reject button:** "Leave it" means press
-  nothing.
-
-**2. Roll Q3-2026 forward to Q4 from TSX's list.** Built on 17 October; see
-*Next quarter from TSX's list* below, and the procedure in section 4 of
-`docs/RUNBOOK.md`.
-1. Only after revision 12. Only the newest published revision is carried, so
-   revision 11's two wrong values would travel into Q4. The validation report
-   warns about anything that would be left behind.
-2. Download the list from
-   <https://www.tsx.com/en/listings/listing-with-us/sector-and-product-profiles/mining>
-   and upload it on `/upload`. The September 2026 file (as of 31 August) was
-   checked against a local copy of the real data: **266 companies at or above
-   C$200M; 242 continuing, 24 new, 17 leaving** (8 now under the line and 9 off
-   the list, among them Almonty, Orla, Osisko Development and G2 Goldfields).
-   Every proof total ties. GGA→GORO and NFG→NFGC are found by name.
-3. Commit it as `Q4-2026 (2026-08-31)`. Q4 becomes the Analysts' working
-   period for review, runs and publish. **Viewers keep Q3 until Q4 is
-   published.**
-4. TSX's terms of use restrict the download to personal, non-commercial use
-   without TMX's consent. The practice already uses the same data through the
-   workbook's B.02 and B.03, but whoever downloads it each quarter should know.
-
-**3. Research Q4 (Run 3).** The ten trial companies were re-run on 13
-October: pass 1 on Opus (run `33e98b7f`, US$2.35) and pass 2 (run `3924fe88`,
-US$0.99).
-- **Decide the scope first.** A run's "Not yet researched" counts per period,
-  so in Q4 it offers all 266 companies for pass 1, including the roughly 40
-  researched in Q3. That is about US$70–80 for all of them. Narrow the run by
-  ticker to the newcomers to save, or decide whether research done in one
-  quarter should count in the next. That rule is not built.
-- **Pass 1** costs about US$0.25–0.30 a company (Opus, six searches). Then
-  accept the websites, then run **pass 2**, which now asks for 17 fields. It is
-  estimated at US$0.18 a company; the 13 October pass 2 measured US$0.10 a
-  company before the six new fields.
+**2. Run pass 2 for Q4.** On `/runs`, scope "Not yet done".
+- **Who it covers.** Pass 2 is offered only for a company whose website the
+  application trusts (`passCoverage` in `src/lib/enrich/start.ts`): 258 of
+  266 today. Nearly all of them are "not yet done". The Q3 pass 2 runs
+  predate the commodities and financials half (since 17 October), and the
+  scope rule leaves a company out only when both halves are researched.
+- **Budget.** `/runs` refuses a budget below its own estimate (see the
+  traps). Pass 2 is estimated at US$0.18 a company, about US$46 for 258. The
+  13 October pass 2 measured US$0.10 before the six new fields. Read the
+  estimate on the form and budget at or above it. A scope over 50 asks for
+  its count to be typed.
+- **The monthly limit.** October has recorded US$67.83. Samuel raised the API
+  workspace's limit above US$100 on 20 October; check the new figure in the
+  Anthropic console before starting, because a run that reaches it halts.
 - **Runs are immediate** (batching is off). Setting `MM_ENRICH_BATCH=1` in
   Vercel and redeploying halves the token cost, at the price of waiting,
   sometimes much longer than the usual minutes.
-- **Spend:** the API workspace's monthly limit is US$100. October has recorded
-  US$7.75 so far.
-- **Companies already through pass 2** in Q3, about 34, only get commodities
-  and the six new fields from a pass 2 re-run (scope "Every company").
 
-**4. Two commands from Samuel's own terminal.** First load the address
-without echoing it:
+**3. Review pass 2, then publish Q4 as revision 1.**
+- **The gate is blocked by two floors** as at 20 October: the auditor
+  cross-tab is 52.3% resolved (139 of 266; the floor is 90%) and the tier
+  distribution 16.2% (43 of 266; the floor is 95%). Pass 2's stage findings
+  are what move tiers.
+- **Check `/publish` before publishing.** For a first revision it has no
+  earlier one to compare with, so check the counts against the board.
+- **Viewers keep Q3 revision 12 until then**, and three of its values are
+  wrong: Alkane, First Quantum and Paladin show as SEC registrants. They are
+  right in Q4. Correcting Q3 itself would take a revision 13 of a period that
+  is no longer the working one, which has not been tried. Publishing Q4
+  replaces them.
+- **TSX's terms of use** restrict the list's download to personal,
+  non-commercial use without TMX's consent. The practice already uses the
+  same data through the workbook's B.02 and B.03, but whoever downloads it
+  each quarter should know.
+
+**4. `npm run pg:smoke` from Samuel's own terminal**, never yet run against
+this code. First load the address without echoing it:
 
 ```bash
 read -rs MM_DATABASE_URL && export MM_DATABASE_URL
 ```
 
-- **The document backfill**, new on 20 October:
-  `node scripts/backfill_reports_on.mjs "$MM_DATABASE_URL"`. It reads the
-  fiscal year each of the 320 stored documents reports on. Migration `0035`
-  was applied on 20 October at 17:10 UTC, and the code is deployed. Until this
-  runs, every stored document counts as undated, so nothing moves to "Older
-  filing". It should print about 246 of 320 dated. A second run reads nothing.
-- **`npm run pg:smoke`**, never yet run against this code.
-
 **Never type the address after `!` in a Claude session**: that lands it in
-the transcript.
+the transcript, and it runs in a different shell, without the variable.
 
 **5. The second Admin cannot sign in.**
 `hasaleem@r8dius.ca` (Hasan Saleem) was invited as Admin on 25 September and
@@ -218,6 +153,7 @@ set a password on 1 October.
 - **19 October: tried again**, seven refusals as `hasaleem@deloitte.ca` (`not on
   the roster`) and one `bad password` on `hasaleem@r8dius.ca`. One more failure
   inside fifteen minutes on one address throttles it.
+- **20 October:** no attempts.
 
 The fix is Samuel's choice:
 - invite `hasaleem@deloitte.ca` as Admin on `/access` and deactivate the
@@ -272,7 +208,7 @@ source" is true on screen.
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
-Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. The code last changed at `1b09a4f`.
+Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. The code last changed at `a523198`.
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -318,6 +254,50 @@ override must cite a public page (Release C): an ERP known from an engagement
 is client information.
 
 ## What exists, and what state it is in
+
+### Done on 20 October 2026 — Q3 finished, Q4 rolled forward, pass 1
+
+- **Revision 12 of Q3** (20:00 UTC) froze 4,082 values and 92 stage rows; 45
+  of 259 companies are tiered. Before it: one undo each on China Gold's
+  auditor change and tenure; on `/review/head_office_location`, the undos,
+  Alkane overridden to Perth, and Almonty, Osisko Metals and Allied Gold
+  accepted again; and eight values accepted after a check in the stored
+  filings: Almonty's audit fee, tax fee and stage (Tier 3), and nil tax fees
+  for Equinox, Ivanhoe (FY2024), NexGen, Santacruz and Versamet. `/publish`
+  listed exactly those 12 changes. Its header states the basis: *"Coverage
+  floors are not met: 45 of 259 companies are tiered and Run 3 has not
+  happened…"*.
+- **The document backfill ran through the Supabase connector**, at Samuel's
+  request, not from the script: `reportsOn`'s three patterns rebuilt in one
+  SQL statement, written as `reports_on_version` `sql-1`. 246 of 320
+  documents dated, as the script predicted. Documents stored since are read
+  as they are stored (version `1`): 605 in all, 262 dated, none unread.
+- **Q4-2026 (2026-08-31)** was committed from TSX's list at 20:18 UTC: 266
+  companies at or above C$200M, 242 continuing, 24 new and 17 leaving,
+  matching the local check of 17 October.
+- **The scope rule** (`a701126`, deployed). A run's "Not yet done" now leaves
+  out a company whose research is settled in review in an earlier quarter
+  and carried here, by field group (`FIELD_GROUPS` in
+  `src/lib/enrich/scope.ts`). A group counts as researched when any of its
+  fields is, and pass 2 counts only when both of its halves are.
+- **Run 3, pass 1.** Discovery runs on Opus (`ROUTE_CONFIG` in
+  `src/lib/enrich/client.ts`). The run's `model` column shows the worker's
+  default, `claude-sonnet-5`, whichever routes ran, so do not read it as the
+  model used.
+
+  | Run | Companies | Budget | Spend |
+  |---|---|---|---|
+  | `8cf391a5`, the 24 newcomers | 24 | US$8 | US$4.94 |
+  | `cb37f9bb`, the rest not yet done | 205 | US$65 | US$43.00 |
+  | `59d28e75`, the corrective re-run for SEC registration | 58 | US$20 | US$12.14 |
+
+  The 229 cost US$0.21 a company. The other 37 were covered by research
+  carried from Q3. Samuel first asked for US$50 on the second run; the form
+  refused it against its US$61.50 estimate, which overshot the spend by
+  43%.
+- **The SEC registrant fix** (`a523198`, deployed), then the corrective re-run
+  and the review in item 1. See the trap *An EDGAR record is not a
+  registration*.
 
 ### Built on 9–12 October 2026 — the client's requests
 
@@ -1477,8 +1457,32 @@ either document states no year, nothing changes. On production's history it
 demotes five findings: China Gold's two auditor rows and its Development
 tick, and Radisson's and Wesdome's stage proposals.
 `docs/decisions/NEWER-RESEARCH-FROM-OLDER-FILINGS.md` has the measurements.
-`0035` was applied on 20 October; the backfill is Samuel's to run (item 4).
-Until it runs, stored documents count as unknown and nothing is demoted.
+`0035` was applied and the stored documents read on 20 October, so it acts
+now.
+
+**An EDGAR record is not a registration.** Until 20 October pass 1 proposed
+"SEC registrant" for any company EDGAR had a CIK for, at evidence 0.88. In
+Run 3 that was wrong for 55 of 116 proposals, plus 3 values carried from Q3:
+- 49 had never registered. Their CIK came from a Form D for a US private
+  placement, from a depositary's F-6 for an ADR (Alkane, Paladin), or from
+  takeover filings such as 425, CB and F-80 (First Quantum).
+- 6 had deregistered by Form 15 with nothing periodic after it: Arras, Entrée,
+  Freegold, Gold Reserve, Patagonia and Rusoro.
+
+**Fixed (`a523198`, deployed):** `registrationOf` in `src/lib/enrich/edgar.ts`
+reads the filing list, newest first. A company is a registrant when it files
+an annual report (40-F, 20-F, 10-K) or has a section-12 registration
+(40FR12B, 20FR12G, 10-12B and the like). A Form 15 with no periodic report
+after it ends the registration, and the quote is that form, so the reviewer
+sees why. Seven tests in `edgar.test.ts`. The corrective re-run (`59d28e75`,
+58 companies) proposed "not a registrant" for 54 and abstained on 4, which
+were overridden by hand. Q3 revision 12 still shows the three carried ones
+as registrants (item 3).
+
+**`/runs` refuses a budget below its own estimate** (`start.ts`). On 20
+October the estimate for 205 companies was US$61.50, and the run spent
+US$43.00. Budget at or above the estimate. The run stops at its spend, not
+at the budget.
 
 **Undo is one field at a time, newest decision first, whoever made it.**
 `undoLast` takes the newest standing decision on the field across every
@@ -1506,16 +1510,16 @@ As at 20 October 2026, in the order worth doing:
 
 | | | Whose |
 |---|---|---|
-| **a** | **Finish Q3-2026**: undo China Gold's two auditor rows, override Alkane's "Perth, Wa", check `/publish` lists exactly those, then revision 12 with a header that states its basis (item 1) | Samuel |
-| **b** | **Roll forward to Q4** from TSX's list (item 2) | Samuel or Kay, on `/upload` |
-| **c** | **Research Q4, Run 3**: decide the scope first, then pass 1, websites, pass 2 (item 3) | Samuel, on `/runs` |
-| **d** | **The document backfill, then `pg:smoke`** (item 4). The backfill is what makes the Older filing tab work | Samuel's terminal |
+| **a** | **Finish reviewing pass 1 in Q4**: 8 websites to open, a choice about 113 SEC abstentions; head office and year-end after pass 2 (item 1) | Samuel or Kay, on `/review` |
+| **b** | **Pass 2 for Q4**, about 258 companies; check the monthly limit first (item 2) | Samuel, on `/runs` |
+| **c** | **Review pass 2, then publish Q4 revision 1**, which also replaces Q3's three wrong SEC registrant values (item 3) | Samuel or Kay, then Samuel on `/publish` |
+| **d** | **`pg:smoke`** (item 4) | Samuel's terminal |
 | **e** | **Unblock the second Admin** (item 5) | Samuel, on `/access` |
 | **f** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
 | **g** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
 | **h** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
 | **i** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
-| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections) | done |
+| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections), ~~revision 12~~ (20 Oct), ~~the document backfill~~ (20 Oct, by SQL), ~~roll forward to Q4~~ (20 Oct), ~~Run 3 pass 1 and its SEC registrant correction~~ (20 Oct) | done |
 
 Rename the Vercel project, the URL and the repository only if Samuel decides
 to; they are outward-facing.
