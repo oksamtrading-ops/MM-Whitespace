@@ -486,6 +486,16 @@ async function journeys(dbPath) {
   check("a further publication is an amendment, not a replacement",
         adminPublish.html.includes("Publish an amendment") &&
         adminPublish.html.includes('name="amendmentReason"'));
+  // An amendment's reason is printed on the dashboard header, and revision 11
+  // of Q3-2026 named two fixes it did not contain. So the screen says what the
+  // next revision changes, and asks again when the answer is nothing.
+  const unchanged = adminPublish.html.includes("Nothing has changed since revision");
+  check("the publish screen says what the next revision would change",
+        adminPublish.html.includes('id="changes"') &&
+        adminPublish.html.includes("What changes in this revision"));
+  check("an amendment that changes nothing has to be confirmed, and only then",
+        unchanged === adminPublish.html.includes('name="nothingChanged"'),
+        unchanged ? "nothing changed, and no confirmation was asked" : "a confirmation was asked although something changed");
 
   // Journey four: the deliverable is a clean workbook the application builds,
   // and it is a download in the application rather than a command line.

@@ -11,8 +11,10 @@ const MIN_REASON = 20;
  * the gate is open, the gate is blocked and you may override it, or the gate
  * is blocked and you may not.
  */
-export default function PublishForm({ periodId, publishable, isAdmin, amending, blockers }: {
+export default function PublishForm({ periodId, publishable, isAdmin, amending, blockers, unchangedSince }: {
   periodId: string; publishable: boolean; isAdmin: boolean; amending: boolean; blockers: number;
+  /** The revision this one would be identical to, apart from its reasons; null when it differs. */
+  unchangedSince: number | null;
 }) {
   const [state, action, pending] = useActionState(publish, null);
   const [reason, setReason] = useState("");
@@ -52,8 +54,21 @@ export default function PublishForm({ periodId, publishable, isAdmin, amending, 
           <input id="amendmentReason" name="amendmentReason" required autoComplete="off"
                  placeholder="What changed since the last revision." />
           <span className="hint">
-            The published revision is never replaced. This writes a new one beside it.
+            The published revision is never replaced. This writes a new one beside it. Name what
+            the list of changes above shows.
           </span>
+        </p>
+      )}
+
+      {/* Not refused: a revision that corrects only its header is legitimate
+          (revision 8 was one). But it is asked, here and again on the server. */}
+      {amending && unchangedSince !== null && (
+        <p className="check">
+          <input type="checkbox" id="nothingChanged" name="nothingChanged" value="yes" required />
+          <label htmlFor="nothingChanged">
+            Nothing has changed since revision {unchangedSince}. Publish a revision that differs from it
+            only in its reasons.
+          </label>
         </p>
       )}
 

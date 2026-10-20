@@ -3,6 +3,7 @@ import type { Metadata, Route } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { evaluateGate } from "../../../lib/publish/gate.ts";
+import { revisionChanges } from "../../../lib/publish/changes.ts";
 import Facts from "../../_ui/Facts.tsx";
 import Gauge from "../../_ui/Gauge.tsx";
 import Refusal from "../../_ui/Refusal.tsx";
@@ -13,6 +14,7 @@ import Page from "../../_ui/Page.tsx";
 import Panel, { StatRow } from "../../_ui/Panel.tsx";
 import { fmtDate, periodName } from "../../_ui/format.ts";
 import PublishForm from "./PublishForm.tsx";
+import Changes from "./Changes.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Publish" };
@@ -57,6 +59,13 @@ export default async function Publish() {
     revision: number; published_at: string; override_reason: string | null;
     amendment_reason: string | null; unresolved_count: number; by_email: string | null;
   }>;
+
+  // What an amendment would actually change. Its reason is printed on the
+  // dashboard header, and revision 11 of Q3-2026 named two fixes it did not
+  // contain, because nothing on this screen said what it held.
+  const changes = revisions.length > 0 ? await revisionChanges(ctx.db, period.id) : null;
+  const labels = new Map((await ctx.db.all("select key, label from field_catalog") as
+    Array<{ key: string; label: string }>).map((f) => [f.key, f.label]));
 
   const { name: periodTitle } = periodName(period.label);
   const isAdmin = ctx.user.role === "admin";
@@ -140,12 +149,24 @@ export default async function Publish() {
               { value: gate.population, label: "Companies", icon: "building-2" },
               { value: gate.unresolvedCount, label: "With unresolved values", icon: "circle-dashed", quiet: true },
               { value: revisions.length + 1, label: "Revision", icon: "badge-check" },
+              ...(changes
+                ? [{ value: changes.total, label: `Changed since revision ${changes.revision}`, icon: "history" as const,
+                     quiet: changes.total === 0 }]
+                : []),
             ]} />
           </Panel>
         </Section>
 
+        {changes && (
+          <Section id="changes" title="What changes in this revision" index={4} icon="history"
+                   caption={`What the next revision would freeze that revision ${changes.revision} does not. ` +
+                            "Read it before writing the reason: the reason is printed on the dashboard header."}>
+            <Changes changes={changes} labels={labels} />
+          </Section>
+        )}
+
         {revisions.length > 0 && (
-          <Section id="revisions" title="Revisions already published" index={4}
+          <Section id="revisions" title="Revisions already published" index={5}
                    caption="None of these change. A correction is the next one down.">
             <table>
               <thead>
@@ -172,12 +193,13 @@ export default async function Publish() {
           </Section>
         )}
 
-        <Section id="publish" title={revisions.length > 0 ? "Publish an amendment" : "Publish"} index={5} icon="badge-check" lead>
+        <Section id="publish" title={revisions.length > 0 ? "Publish an amendment" : "Publish"} index={6} icon="badge-check" lead>
           <PublishForm periodId={period.id} publishable={gate.publishable} isAdmin={isAdmin}
-                       amending={revisions.length > 0} blockers={gate.blockers.length} />
+                       amending={revisions.length > 0} blockers={gate.blockers.length}
+                       unchangedSince={changes && changes.total === 0 ? changes.revision : null} />
         </Section>
 
-        <Section id="export" title="Take it away as a workbook" index={6} icon="file-spreadsheet"
+        <Section id="export" title="Take it away as a workbook" index={7} icon="file-spreadsheet"
                  caption={"A clean template the application controls. The uploaded workbook is an " +
                           "input artifact and is never written back into; this is the deliverable."}>
           <p className="actions">

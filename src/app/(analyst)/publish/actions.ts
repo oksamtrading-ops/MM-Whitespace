@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { evaluateGate } from "../../../lib/publish/gate.ts";
+import { revisionChanges } from "../../../lib/publish/changes.ts";
 import { publishPeriod, PublishBlocked } from "../../../lib/publish/snapshot.ts";
 
 export type PublishMessage = { ok: false; message: string };
@@ -50,6 +51,18 @@ export async function publish(_prev: PublishMessage | null, form: FormData): Pro
   }
   if (amending && !amendmentReason) {
     return { ok: false, message: "An amendment needs a reason. The published revision is not replaced." };
+  }
+  // Read here, not trusted from the page, for the reason the gate is: the page
+  // may be minutes old, and an undo since then can have emptied the list.
+  if (amending) {
+    const changes = await revisionChanges(db, periodId);
+    if (changes && changes.total === 0 && form.get("nothingChanged") !== "yes") {
+      return {
+        ok: false,
+        message: `Nothing has changed since revision ${changes.revision}, so this revision would differ ` +
+                 "from it only in its reasons. Reload the page to see that, and tick the box to publish it anyway.",
+      };
+    }
   }
 
   try {
