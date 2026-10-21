@@ -410,6 +410,18 @@ export async function fieldRows(
   db: Sql, periodId: string, fieldKey: string, bucket?: string, threshold = 0.8,
 ): Promise<Row[]> {
   const all = (await allCandidates(db, periodId)).filter((r) => r.fieldKey === fieldKey);
+  return inBucket(all, bucket, threshold);
+}
+
+/**
+ * One field's rows narrowed to a bucket, from rows already loaded.
+ *
+ * Loading is the cost: fieldRows reads every candidate in the period. The grid
+ * counted its eight filters with eight loads, so every decision took 12 to 20
+ * seconds to redraw and some redraws timed out (21 October 2026). A screen that
+ * needs several buckets of one field loads "all" once and narrows here.
+ */
+export function inBucket(all: Row[], bucket?: string, threshold = 0.8): Row[] {
   if (!bucket || bucket === "all") return all;
   // The buckets whose rows are decided: everything else asks what is left to
   // do, and these ask what was done before the research came back.

@@ -6,7 +6,7 @@ import {
   bulkConfirmation, effectiveDecision, evidenceBand, extractedFact, isConflict,
   partitionForBulkAccept, recordDecision, undoLast, type Candidate,
 } from "./decide.ts";
-import { cellLabel, companyRows, fieldRows, formatValue, IN_BUCKET, queueBuckets } from "./queue.ts";
+import { cellLabel, companyRows, fieldRows, formatValue, IN_BUCKET, inBucket, queueBuckets } from "./queue.ts";
 import { chosenThreshold, DEFAULT_THRESHOLD, THRESHOLDS } from "./threshold.ts";
 
 function candidate(over: Partial<Candidate> = {}): Candidate {
@@ -447,6 +447,46 @@ test("company-major and field-major show the same proposals", async () => {
       `${field.fieldKey} differs between the two axes`);
     assert.equal(across?.band ?? null, down?.band ?? null);
   }
+});
+
+test("one load narrowed in memory shows what each bucket's own load shows", async () => {
+  // The grid now loads a field once and counts its filters from that load
+  // (21 October 2026). The narrowing must be the one fieldRows applies.
+  const { db, periodId } = await seeded();
+  await db.run(`insert into enrichment_runs (period_id, budget_usd, model, prompt_version)
+     values (?, 5, 'm', 'v1')`, periodId);
+  const run = await db.get("select id from enrichment_runs") as { id: string };
+  const layouts: Array<[string, number, string, string]> = [
+    ["Strongco", 0.9, "exact_normalized", "proposed"],
+    ["Weakco", 0.4, "exact_normalized", "proposed"],
+    ["Labelco", 0.9, "label_only", "proposed"],
+    ["Mismatchco", 0.45, "label_only", "anchor_mismatch"],
+    ["Decidedco", 0.9, "exact_normalized", "proposed"],
+  ];
+  for (const [name, strength, anchor, state] of layouts) {
+    await db.run("insert into companies (canonical_name, name_normalized) values (?, ?)", name, name.toLowerCase());
+    const co = await db.get("select id from companies where canonical_name = ?", name) as { id: string };
+    await db.run(`insert into enrichment_jobs (run_id, company_id, field_group) values (?, ?, 'auditor')`, run.id, co.id);
+    const job = await db.get("select id from enrichment_jobs order by rowid desc limit 1") as { id: string };
+    await db.run(`insert into enrichment_findings
+         (run_id, job_id, company_id, field_key, attempt, proposed_value, evidence_strength,
+          anchor_mode, state, model, prompt_version)
+       values (?, ?, ?, 'auditor', 1, '"KPMG"', ?, ?, ?, 'm', 'v1')`, run.id, job.id, co.id, strength, anchor, state);
+    const finding = await db.get("select id from enrichment_findings order by rowid desc limit 1") as { id: string };
+    await db.run(`insert into finding_sources (finding_id, url, source_tier) values (?, 'https://x.invalid', 1)`, finding.id);
+    if (name === "Decidedco") {
+      await recordDecision(db, { periodId, companyId: co.id, fieldKey: "auditor", decision: "accept", actorId: null });
+    }
+  }
+
+  const all = await fieldRows(db, periodId, "auditor", "all");
+  const ids = (rows: Array<{ companyId: string }>) => rows.map((r) => r.companyId).sort();
+  for (const bucket of ["all", "conflict", "need_review", "bulkable", "no_evidence",
+                        "quarantined", "superseded", "older_filing", "no_such_bucket"]) {
+    assert.deepEqual(ids(inBucket(all, bucket, 0.8)), ids(await fieldRows(db, periodId, "auditor", bucket, 0.8)),
+      `${bucket} differs between one load and its own`);
+  }
+  assert.equal(inBucket(all, "need_review", 0.8).length, 1, "the fixture reaches more than one bucket");
 });
 
 /*

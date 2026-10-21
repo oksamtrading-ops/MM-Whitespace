@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import { isStageField } from "../../../../lib/review/decide.ts";
-import { cellLabel, fieldRows, formatValue, olderFilingNote, tierConsequence } from "../../../../lib/review/queue.ts";
+import { cellLabel, fieldRows, formatValue, inBucket, olderFilingNote, tierConsequence } from "../../../../lib/review/queue.ts";
 import { chosenThreshold, DEFAULT_THRESHOLD, THRESHOLDS } from "../../../../lib/review/threshold.ts";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Facts from "../../../_ui/Facts.tsx";
@@ -63,7 +63,10 @@ export default async function FieldReview(
     { key: string; label: string } | undefined;
   if (!catalogue) notFound();
 
-  const raw = await fieldRows(ctx.db, period.id, field, bucket, threshold);
+  // One load for the grid and every count: each fieldRows call reads the whole
+  // period, and eight of them made each decision slow to redraw.
+  const all = await fieldRows(ctx.db, period.id, field, "all", threshold);
+  const raw = inBucket(all, bucket, threshold);
   const rows: GridRow[] = await Promise.all(raw.map(async (r) => ({
     companyId: r.companyId,
     companyName: r.companyName,
@@ -88,10 +91,8 @@ export default async function FieldReview(
   })));
 
   // A count on every filter, so the choice of batch is made before the click.
-  const counts = Object.fromEntries(await Promise.all(BUCKETS.map(async ([key]) =>
-    [key, key === bucket
-      ? raw.length
-      : (await fieldRows(ctx.db, period.id, field, key, threshold)).length])));
+  const counts = Object.fromEntries(BUCKETS.map(([key]) =>
+    [key, key === bucket ? raw.length : inBucket(all, key, threshold).length]));
 
   return (
     <Page title={catalogue.label} count={rows.length}
