@@ -199,11 +199,38 @@ const DOC_KINDS: DocKind[] = [
   "annual_information_form", "annual_financial_statements", "annual_mdna", "information_circular",
   "change_of_auditor", "interim_report", "news_release", "sec_annual_report", "other",
 ];
-/** What to read first. The circular carries auditor, tenure and fees; the AIF carries stage and head office. */
-const KIND_PRIORITY: DocKind[] = [
+/**
+ * What to read first, by where the issuer must print its audit fees.
+ *
+ * NI 52-110: a venture issuer (TSXV) puts its audit committee disclosure, the
+ * fee table with it, in its management information circular (Form 52-110F2).
+ * Any other issuer puts it in its AIF (Form 52-110F1), and its circular refers
+ * the reader there. A 40-F carries the AIF as an exhibit; a 10-K or 20-F
+ * prints the accountant's fees itself. The circular also carries the auditor's
+ * tenure and the AIF the stage and head office, so both are read when there is
+ * room: the order decides which is read first, inside the budget.
+ *
+ * Until 21 October 2026 every company read the circular first, and 60 TSX
+ * companies abstained on the audit fee in Q4 pass 2.
+ */
+const VENTURE_PRIORITY: DocKind[] = [
   "information_circular", "annual_information_form", "change_of_auditor", "annual_financial_statements",
   "sec_annual_report", "annual_mdna", "interim_report", "news_release", "other",
 ];
+const NON_VENTURE_PRIORITY: DocKind[] = [
+  "annual_information_form", "sec_annual_report", "information_circular", "change_of_auditor",
+  "annual_financial_statements", "annual_mdna", "interim_report", "news_release", "other",
+];
+
+/** The reading order for a company on this exchange. Anything but the TSX reads as a venture issuer, as all did before. */
+export function kindPriority(exchange: string): readonly DocKind[] {
+  return exchange === "TSX" ? NON_VENTURE_PRIORITY : VENTURE_PRIORITY;
+}
+
+/** The kinds that print the fee table, for a company on this exchange. */
+function feeKinds(exchange: string): readonly DocKind[] {
+  return exchange === "TSX" ? ["annual_information_form", "sec_annual_report"] : ["information_circular", "sec_annual_report"];
+}
 
 const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: "null" }] });
 
@@ -253,10 +280,14 @@ const REPORT_TOOL = {
  * DISCOVERY_RULES or EXTRACTION_RULES moved no version anywhere, so the record
  * could not tell a finding made before the edit from one made after.
  *
- * Raise this whenever either rules block changes. promptVersionFor() composes
- * it with the prefix's version, so a stored value names both halves.
+ * Raise this whenever either rules block, or FEE_SEARCH, changes.
+ * promptVersionFor() composes it with the prefix's version, so a stored value
+ * names both halves.
+ *
+ * 2026-10-21.1: pass 2 searches again, with FEE_SEARCH, when pass 1 found no
+ * current filing of the kind the fees are printed in.
  */
-export const LIVE_RULES_VERSION = "2026-10-17.1";
+export const LIVE_RULES_VERSION = "2026-10-21.1";
 
 /**
  * What produced a finding, for the record: the prefix's version alone in
@@ -279,6 +310,27 @@ Find, for the company named in the message:
 
 Prefer the company's own website and SEC EDGAR. SEDAR+ must not be used. Do not state facts about the
 company; another step reads the documents. Report with report_sources, once, at the end.`.trim();
+
+/**
+ * What pass 2 adds to the discovery message when pass 1's list has no current
+ * filing of the kind the fees are printed in. Pass 1 asks for every kind at
+ * once, and for 55 of the 78 venture issuers that abstained on the audit fee
+ * in Q4 it had found no circular, AIF or SEC annual report from 2024 on.
+ */
+const FEE_SEARCH: Record<"venture" | "non_venture", string> = {
+  venture: `
+The documents already found for this company include no management information circular for its
+most recent annual general meeting. Find that circular: as a venture issuer the company
+prints its audit committee disclosure and the external auditor service fees there (Form 52-110F2).
+Look on the company's own website, including its investor, AGM and shareholder meeting pages, and on
+SEC EDGAR if it files there. Report any other document the rules ask for that you find on the way.`.trim(),
+  non_venture: `
+The documents already found for this company include no annual information form or SEC annual report
+for its most recent fiscal year. Find its most recent annual information form: its audit committee section
+prints the external auditor service fees (Form 52-110F1). If it files with the SEC, its latest 40-F
+carries the AIF as an exhibit, and a 10-K or 20-F prints the fees itself. Report any other document
+the rules ask for that you find on the way.`.trim(),
+};
 
 export type Discovery = { report: { official_website: string | null; sec_cik: string | null;
   documents: Array<Omit<CandidateDoc, "provenance">>; notes: string };
@@ -309,7 +361,7 @@ export function collectSearchUrls(node: unknown, into: Set<string>): void {
  * identity jobs and 40 of 41 field jobs made exactly one vendor call. The loop
  * below exists for the company where it does not.
  */
-export function discoveryRequest(row: PublicCompanyRow): Record<string, unknown> {
+export function discoveryRequest(row: PublicCompanyRow, also?: string): Record<string, unknown> {
   const cfg = ROUTE_CONFIG.discovery;
   const prompt = buildPrompt("discovery", row);
   return {
@@ -324,7 +376,8 @@ export function discoveryRequest(row: PublicCompanyRow): Record<string, unknown>
         blocked_domains: EXCLUDED_DOMAINS },
       REPORT_TOOL,
     ],
-    messages: [{ role: "user", content: prompt.userContent }],
+    // In the message, not the rules: the system block stays one cached prefix.
+    messages: [{ role: "user", content: also ? `${prompt.userContent}\n\n${also}` : prompt.userContent }],
   };
 }
 
@@ -366,22 +419,35 @@ export async function continueDiscovery(
   throw new Error("discovery did not report its sources within six turns");
 }
 
-export async function discover(row: PublicCompanyRow, deps: LiveDeps, meter: Meter): Promise<Discovery> {
-  const request = discoveryRequest(row);
+export async function discover(row: PublicCompanyRow, deps: LiveDeps, meter: Meter, also?: string): Promise<Discovery> {
+  const request = discoveryRequest(row, also);
   return continueDiscovery(request, await call(deps, meter, request), deps, meter);
 }
 
 /* ---------------------------------------------------------- identity pass */
 
-/** Does this text name the company -- its core name, or its ticker as a word? */
-export function namesCompany(text: string, row: Pick<PublicCompanyRow, "canonicalName" | "rootTicker">): number {
+/**
+ * Does this text name the company -- its core name, a name it is also known
+ * by, or its ticker as a word?
+ *
+ * The other names are the company's aliases: the workbook's and the TSX
+ * list's spellings, and the names it filed under before it was renamed. A
+ * filing from before a rename names the company only as it was then: of the
+ * 76 documents Q4 pass 2 refused as naming someone else, most were the
+ * company's own, under its old name. An alias must appear as whole words: a
+ * short old name inside a longer word is not the company.
+ */
+export function namesCompany(
+  text: string, row: Pick<PublicCompanyRow, "canonicalName" | "rootTicker"> & { aliases?: readonly string[] },
+): number {
   const core = normalizeName(row.canonicalName);
   const hay = normalizeName(text.slice(0, 400_000));
-  if (core && hay.includes(core)) {
-    // Index into the ORIGINAL text, for a quote that anchors.
-    const first = core.split(" ")[0];
-    const at = text.toLowerCase().indexOf(first);
-    return at >= 0 ? at : 0;
+  // Index into the ORIGINAL text, for a quote that anchors.
+  const at = (name: string) => { const i = text.toLowerCase().indexOf(name.split(" ")[0]); return i >= 0 ? i : 0; };
+  if (core && hay.includes(core)) return at(core);
+  for (const alias of row.aliases ?? []) {
+    const name = normalizeName(alias);
+    if (name && ` ${hay} `.includes(` ${name} `)) return at(name);
   }
   const t = row.rootTicker.trim();
   if (t.length >= 2) {
@@ -536,12 +602,22 @@ export async function identityPass(job: LiveJob, deps: LiveDeps, meter: Meter): 
 /** Where in a filing each field's evidence lives. */
 const WINDOW_PATTERNS: RegExp[] = [
   /independent auditor|chartered professional accountants|auditors? of the (company|corporation)|appointed .{0,40}auditor|auditor since|nomination de l.auditeur/gi,
-  /audit fees|audit-related fees|tax fees|all other fees|external auditor service fees|honoraires/gi,
   /commercial production|producing mine|production decision|construction decision|feasibility study|preliminary economic assessment|exploration[- ]stage|development[- ]stage|royalt(y|ies)|streaming/gi,
   /head office|registered office|principal (executive )?office|si[eè]ge social/gi,
   /(fiscal|financial) year|years? ended|exercice/gi,
   /change of auditor|reporting package|successor auditor|former auditor|resign(ed|ation) as auditor/gi,
 ];
+
+/**
+ * The fee table's labels. Kept apart from WINDOW_PATTERNS: the table comes
+ * late -- in the audit committee section of an AIF, near the end of a
+ * circular -- and in document order the cap cut it. Q4 pass 2, 21 October
+ * 2026: 19 of the 27 TSX companies that abstained on the audit fee had been
+ * given a filing whose fee table sat past the first 30,000 characters.
+ */
+const FEE_PATTERN = /audit fees|audit-related fees|tax fees|all other fees|external auditor service fees|honoraires/gi;
+/** Room the fee windows are promised after the cover, before any other field's. */
+const FEE_RESERVE = 9_000;
 
 /**
  * Where a company names its ERP: mostly the internal-control section, when the
@@ -581,56 +657,83 @@ const LAST: ReadonlyArray<readonly [RegExp, number]> = [
   [CURRENCY_PATTERN, CURRENCY_HITS], [FINANCIALS_PATTERN, FINANCIALS_HITS],
 ];
 
+type Span = [number, number];
+const SEPARATOR = "\n[...]\n";
+
+/** The spans with one more added, merged where they meet: sorted and disjoint. */
+function union(spans: readonly Span[], add: Span): Span[] {
+  const merged: Span[] = [];
+  for (const s of [...spans, add].sort((a, b) => a[0] - b[0])) {
+    const last = merged[merged.length - 1];
+    if (last && s[0] <= last[1]) last[1] = Math.max(last[1], s[1]);
+    else merged.push([s[0], s[1]]);
+  }
+  return merged;
+}
+
+/** How long the spans print: every piece, and a separator between each two. */
+const printed = (spans: readonly Span[]) =>
+  spans.reduce((n, [a, b]) => n + (b - a), 0) + SEPARATOR.length * Math.max(0, spans.length - 1);
+
 /**
  * The cover and every window that matters, verbatim, merged and capped.
  *
- * The ERP windows, then the business-description windows for commodities, then
- * the reporting currency's and the financial statements', are placed LAST, in
- * whatever budget the other fields left. The cap stops at the
- * first window that will not fit, in document order, and fee tables come late
- * in a circular: an early internal-controls passage about an ERP would
- * otherwise push a fee out of the text the model sees. So adding either field
- * cannot take evidence from any other -- and a document that names no ERP and
- * has no business description reads exactly as it did before they existed.
+ * Chosen in order of need and printed in document order. The cover first;
+ * then the fee table, its densest windows first, in FEE_RESERVE; then the
+ * other fields' windows in document order, up to the first that will not fit;
+ * then, LAST, the ERP windows, the business-description windows for
+ * commodities, and the reporting currency's and the financial statements',
+ * each in whatever the rest left.
+ *
+ * The fee table comes late in a filing, so in document order an earlier
+ * passage -- an auditor's name, a stage word, an internal-controls note about
+ * an ERP -- could push it past the cap. Placed before any of them, it cannot.
+ * And a LAST field cannot take evidence from any other: a document that names
+ * no ERP and has no business description reads as it did before they existed.
+ *
+ * `cap` is the most this document may print: MAX_CHARS_PER_DOCUMENT, or what
+ * the earlier documents left of the request's budget.
  */
-export function windowsOf(text: string): string {
-  const spans: Array<[number, number]> = [[0, Math.min(text.length, 3000)]];
+export function windowsOf(text: string, cap = MAX_CHARS_PER_DOCUMENT): string {
+  const around = (at: number): Span => [Math.max(0, at - WINDOW_CHARS), Math.min(text.length, at + WINDOW_CHARS)];
+  let kept: Span[] = [];
+  const keep = (span: Span, limit = cap): boolean => {
+    const next = union(kept, span);
+    if (printed(next) > limit) return false;
+    kept = next;
+    return true;
+  };
+  const inView = (at: number) => kept.some(([a, b]) => at >= a && at < b);
+
+  keep([0, Math.min(text.length, 3000, cap)]);
+
+  // The window with the most fee labels in it first: the table itself, not a
+  // charter's passing "pre-approve all audit fees".
+  const fees = [...text.matchAll(FEE_PATTERN)].map((m) => m.index!);
+  const densest = fees.map((at) => ({ at, near: fees.filter((o) => Math.abs(o - at) <= WINDOW_CHARS).length }))
+    .sort((x, y) => (y.near - x.near) || (x.at - y.at));
+  const feeLimit = Math.min(cap, printed(kept) + FEE_RESERVE);
+  for (const { at } of densest) if (!inView(at)) keep(around(at), feeLimit);
+
+  const others: Span[] = [];
   for (const re of WINDOW_PATTERNS) {
     let hits = 0;
     for (const m of text.matchAll(re)) {
-      spans.push([Math.max(0, m.index! - WINDOW_CHARS), Math.min(text.length, m.index! + WINDOW_CHARS)]);
+      others.push(around(m.index!));
       if (++hits >= 6) break;
     }
   }
-  spans.sort((a, b) => a[0] - b[0]);
-  const merged: Array<[number, number]> = [];
-  for (const s of spans) {
-    const last = merged[merged.length - 1];
-    if (last && s[0] <= last[1]) last[1] = Math.max(last[1], s[1]);
-    else merged.push([...s]);
-  }
-  let out = "";
-  const kept: Array<[number, number]> = [];
-  for (const [a, b] of merged) {
-    const piece = text.slice(a, b);
-    if (out.length + piece.length > MAX_CHARS_PER_DOCUMENT) break;
-    out += (out ? "\n[...]\n" : "") + piece;
-    kept.push([a, b]);
-  }
-  for (const [pattern, cap] of LAST) {
+  for (const span of others.sort((a, b) => a[0] - b[0])) if (!keep(span)) break;
+
+  for (const [pattern, most] of LAST) {
     let taken = 0;
     for (const m of text.matchAll(pattern)) {
-      if (taken >= cap) break;
-      if (kept.some(([a, b]) => m.index! >= a && m.index! < b)) { taken++; continue; }   // already in view
-      const span: [number, number] = [Math.max(0, m.index! - WINDOW_CHARS), Math.min(text.length, m.index! + WINDOW_CHARS)];
-      const piece = text.slice(span[0], span[1]);
-      if (out.length + piece.length + 7 > MAX_CHARS_PER_DOCUMENT) break;
-      out += (out ? "\n[...]\n" : "") + piece;
-      kept.push(span);
+      if (taken >= most) break;
+      if (!inView(m.index!) && !keep(around(m.index!))) break;
       taken++;
     }
   }
-  return out;
+  return kept.map(([a, b]) => text.slice(a, b)).join(SEPARATOR);
 }
 
 export const EXTRACTED_FIELDS = [
@@ -873,7 +976,18 @@ export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFind
   return null;
 }
 
-function rankCandidates(candidates: CandidateDoc[], allow: Set<string>): CandidateDoc[] {
+/**
+ * A filing of the kind this company prints its fees in, from the latest annual
+ * cycle: fiscal year no earlier than the one before the period's. A filing of
+ * no stated year is not counted -- an EDGAR exhibit has none, and its annual
+ * report beside it does.
+ */
+function printsFees(c: CandidateDoc, row: Pick<PublicCompanyRow, "exchange" | "periodAsOf">): boolean {
+  return feeKinds(row.exchange).includes(c.kind) &&
+    c.fiscal_year !== null && c.fiscal_year >= Number(row.periodAsOf.slice(0, 4)) - 1;
+}
+
+function rankCandidates(candidates: CandidateDoc[], allow: Set<string>, priority: readonly DocKind[]): CandidateDoc[] {
   const allowed = (url: string) => {
     const h = hostOf(url);
     return Boolean(h) && [...allow].some((a) => h === a || h!.endsWith(`.${a}`));
@@ -883,7 +997,7 @@ function rankCandidates(candidates: CandidateDoc[], allow: Set<string>): Candida
     .filter((c) => allowed(c.url))
     .filter((c) => { const k = canonicalUrl(c.url); if (seen.has(k)) return false; seen.add(k); return true; })
     .sort((a, b) =>
-      (KIND_PRIORITY.indexOf(a.kind) - KIND_PRIORITY.indexOf(b.kind)) ||
+      (priority.indexOf(a.kind) - priority.indexOf(b.kind)) ||
       ((b.fiscal_year ?? 0) - (a.fiscal_year ?? 0)) ||
       // Seen in a search result beats merely reported: a transcribed URL may not exist.
       ((a.provenance === "reported" ? 1 : 0) - (b.provenance === "reported" ? 1 : 0)));
@@ -912,7 +1026,9 @@ export function kindFromUrl(url: string): DocKind | null {
  * The filings an index page links to, on hosts already trusted, most useful
  * first. A link to anything that is not plausibly a filing is ignored.
  */
-export function linkedFilings(links: string[], allow: Set<string>, seen: Set<string>): CandidateDoc[] {
+export function linkedFilings(
+  links: string[], allow: Set<string>, seen: Set<string>, priority: readonly DocKind[],
+): CandidateDoc[] {
   const allowed = (url: string) => {
     const h = hostOf(url);
     return Boolean(h) && [...allow].some((a) => h === a || h!.endsWith(`.${a}`));
@@ -928,7 +1044,7 @@ export function linkedFilings(links: string[], allow: Set<string>, seen: Set<str
                  provenance: "reported" });
   }
   found.sort((a, b) =>
-    (KIND_PRIORITY.indexOf(a.kind) - KIND_PRIORITY.indexOf(b.kind)) || ((b.fiscal_year ?? 0) - (a.fiscal_year ?? 0)));
+    (priority.indexOf(a.kind) - priority.indexOf(b.kind)) || ((b.fiscal_year ?? 0) - (a.fiscal_year ?? 0)));
   const picked = found.slice(0, MAX_LINKS_PER_PAGE);
   for (const p of picked) seen.add(canonicalUrl(p.url));
   return picked;
@@ -942,15 +1058,25 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
   const allow = new Set([siteHost, SEC_HOST, ...IR_PLATFORM_HOSTS]);
   const notes: string[] = [];
 
+  const searched = async (also?: string): Promise<CandidateDoc[]> => {
+    const found = await discover(job.row, deps, meter, also);
+    return (found.report.documents ?? []).map((d) => ({ ...d,
+      provenance: found.seenUrls.has(canonicalUrl(d.url)) ? "search_result" as const : "reported" as const }));
+  };
+  const priority = kindPriority(job.row.exchange);
   let candidates = job.priorCandidates ?? [];
   if (candidates.length === 0) {
-    const found = await discover(job.row, deps, meter);
-    candidates = (found.report.documents ?? []).map((d) => ({ ...d,
-      provenance: found.seenUrls.has(canonicalUrl(d.url)) ? "search_result" as const : "reported" as const }));
+    candidates = await searched();
+  } else if (!rankCandidates(candidates, allow, priority).some((c) => printsFees(c, job.row))) {
+    // Pass 1 found filings, just not the one the fees are in. One more
+    // discovery, asking for that one, costs what a pass-1 search does.
+    const venture = job.row.exchange !== "TSX";
+    candidates = [...candidates, ...await searched(FEE_SEARCH[venture ? "venture" : "non_venture"])];
+    notes.push(`searched again: pass 1 found no current ${venture ? "circular" : "AIF or SEC annual report"}`);
   }
 
   const docs: FetchedDocument[] = [];
-  const queue = rankCandidates(candidates, allow);
+  const queue = rankCandidates(candidates, allow, priority);
   const seen = new Set(queue.map((c) => canonicalUrl(c.url)));
   let fetches = 0;
   while (queue.length > 0 && docs.length < MAX_DOCUMENTS && fetches < MAX_FETCHES) {
@@ -967,7 +1093,7 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
     // discovery often stops at "Investors" or "AGM materials" when its search
     // budget runs out (Run 1, Radisson). Follow its links, read none of it.
     if (doc.docType === "html") {
-      const linked = linkedFilings(doc.links ?? [], allow, seen);
+      const linked = linkedFilings(doc.links ?? [], allow, seen, priority);
       if (linked.length > 0) {
         queue.unshift(...linked);
         notes.push(`followed ${linked.length} filing link(s) from ${c.url}`);
@@ -991,7 +1117,9 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
 
   let budget = MAX_CHARS_TOTAL;
   const blocks = docs.map((d, i) => {
-    const w = windowsOf(d.text).slice(0, Math.max(0, budget));
+    // What is left of the budget is this document's cap, so a later document
+    // still gets its fee windows first rather than losing its tail to a cut.
+    const w = windowsOf(d.text, Math.min(MAX_CHARS_PER_DOCUMENT, Math.max(0, budget)));
     budget -= w.length;
     return { type: "text", text: `<document index="${i}" url="${d.finalUrl}">\n${w}\n</document>` };
   });

@@ -11,7 +11,8 @@ import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
   BATCH_DISCOUNT, EXTRACTED_FIELDS, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
-  canonicalAuditor, collectSearchUrls, discoveryRequest, kindFromUrl, linkedFilings, Meter, toFinding, windowsOf,
+  canonicalAuditor, collectSearchUrls, discoveryRequest, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany,
+  toFinding, windowsOf,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
 import { EgressViolation, PROMPT_VERSION } from "./prompt.ts";
@@ -34,6 +35,13 @@ const CIRCULAR = makePdf([
   "Description of the Business\nNorthco Mining Corp. is engaged in the exploration and development of gold and copper properties in Ontario.",
 ]);
 const SOMEONE_ELSE = makePdf(["Southco Resources Ltd.\nAnnual Information Form\nAudit fees 999"]);
+// Northco's own AIF from before its rename, naming it only as it was then.
+const BEFORE_RENAME = makePdf([
+  "Kirkland North Gold Ltd.\nAnnual Information Form for the year ended December 31, 2025\n" +
+  "Kirkland North Gold Ltd. is engaged in the exploration and development of gold properties in Ontario.",
+  "External Auditor Service Fees\nAll amounts are expressed in thousands of Canadian dollars.\n" +
+  "                        2025     2024\nAudit fees               412      388\nTax fees                 118      102",
+]);
 
 const EDGAR_RECORD = JSON.stringify({
   cik: "1234567", name: "NORTHCO MINING CORP", fiscalYearEnd: "1231", website: "northco.invalid",
@@ -52,6 +60,7 @@ const PAGES: Record<string, { type: string; body: Uint8Array | string }> = {
     body: "<html><body><h1>Northco Mining Corp.</h1><p>TSX: NRTH. Gold in Ontario and Peru.</p></body></html>" },
   "https://northco.invalid/docs/circular-2026.pdf": { type: "application/pdf", body: CIRCULAR },
   "https://northco.invalid/docs/southco-aif.pdf": { type: "application/pdf", body: SOMEONE_ELSE },
+  "https://northco.invalid/docs/kirkland-aif-2025.pdf": { type: "application/pdf", body: BEFORE_RENAME },
   // An investors page: where discovery stops when its searches run out.
   "https://northco.invalid/investors/": { type: "text/html", body:
     `<html><body><h1>Northco Mining Corp. Investors</h1>
@@ -67,13 +76,13 @@ const PAGES: Record<string, { type: string; body: Uint8Array | string }> = {
     body: JSON.stringify({ directory: { item: [{ name: "d40f.htm", size: "900" }, { name: "ex99-1.htm", size: "90000" }] } }) },
 };
 
-function world() {
+function world(opts: { omit?: string[] } = {}) {
   const fetched: string[] = [];
   const fetchDeps = {
     resolve: async () => ["93.184.216.34"],
     http: async (url: string): Promise<HttpResponse> => {
       fetched.push(url);
-      const page = PAGES[url];
+      const page = opts.omit?.includes(url) ? undefined : PAGES[url];
       if (!page) return { status: 404, headers: {}, body: new Uint8Array() };
       const body = typeof page.body === "string" ? new TextEncoder().encode(page.body) : page.body;
       return { status: 200, headers: { "content-type": page.type }, body };
@@ -125,7 +134,9 @@ const EXTRACTION = { findings: [
 ] };
 
 function vendor(opts: { pauseFirst?: boolean; refuse?: boolean; perCompany?: boolean;
-                        report?: Record<string, unknown>; extraction?: typeof EXTRACTION } = {}) {
+                        report?: Record<string, unknown>; extraction?: typeof EXTRACTION;
+                        /** One report per discovery, in turn; the last repeats. */
+                        reports?: Array<Record<string, unknown>> } = {}) {
   const requests: Array<Record<string, unknown>> = [];
   let discoveries = 0;
   const v: Vendor = {
@@ -156,7 +167,8 @@ function vendor(opts: { pauseFirst?: boolean; refuse?: boolean; perCompany?: boo
         return { stop_reason: "tool_use", usage, content: [
           searchBlock(["https://northco.invalid/", "https://northco.invalid/docs/circular-2026.pdf",
                        "https://northco.invalid/docs/southco-aif.pdf"]),
-          { type: "tool_use", id: "t1", name: "report_sources", input: opts.report ?? DISCOVERY_REPORT },
+          { type: "tool_use", id: "t1", name: "report_sources",
+            input: opts.reports?.[Math.min(discoveries, opts.reports.length) - 1] ?? opts.report ?? DISCOVERY_REPORT },
         ] } as VendorMessage;
       }
       return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(opts.extraction ?? EXTRACTION) }],
@@ -306,15 +318,30 @@ test("a linked file's kind comes from its address, and forms that are not filing
   assert.equal(kindFromUrl("https://x.invalid/2024/q1/FS-Q1-2024-FINAL.pdf"), "interim_report");
   assert.equal(kindFromUrl("https://x.invalid/agm/2026/Form-of-Proxy.pdf"), null);
   assert.equal(kindFromUrl("https://x.invalid/brochure.pdf"), null);
-  const seen = new Set<string>();
-  const picked = linkedFilings([
+  const links = [
     "https://x.invalid/2024-AIF.pdf", "https://x.invalid/2025-AIF.pdf", "https://x.invalid/2026-Circular.pdf",
     "https://y.invalid/2026-Circular.pdf",
-  ], new Set(["x.invalid"]), seen);
+  ];
+  const seen = new Set<string>();
+  const picked = linkedFilings(links, new Set(["x.invalid"]), seen, kindPriority("TSXV"));
   assert.deepEqual(picked.map((p) => p.url),
-    ["https://x.invalid/2026-Circular.pdf", "https://x.invalid/2025-AIF.pdf", "https://x.invalid/2024-AIF.pdf"]);
-  assert.deepEqual(linkedFilings(["https://x.invalid/2026-Circular.pdf"], new Set(["x.invalid"]), seen), [],
+    ["https://x.invalid/2026-Circular.pdf", "https://x.invalid/2025-AIF.pdf", "https://x.invalid/2024-AIF.pdf"],
+    "a venture issuer prints its fees in the circular");
+  assert.deepEqual(linkedFilings(["https://x.invalid/2026-Circular.pdf"], new Set(["x.invalid"]), seen, kindPriority("TSXV")), [],
     "nothing is followed twice");
+  assert.deepEqual(linkedFilings(links, new Set(["x.invalid"]), new Set(), kindPriority("TSX")).map((p) => p.url),
+    ["https://x.invalid/2025-AIF.pdf", "https://x.invalid/2024-AIF.pdf", "https://x.invalid/2026-Circular.pdf"],
+    "any other issuer prints them in its AIF, and its circular refers the reader there");
+});
+
+test("the reading order puts first the filing the exchange's issuers print their fees in", () => {
+  const tsx = kindPriority("TSX"), tsxv = kindPriority("TSXV");
+  assert.equal(tsx[0], "annual_information_form", "Form 52-110F1 is part of the AIF");
+  assert.ok(tsx.indexOf("sec_annual_report") < tsx.indexOf("information_circular"),
+            "a 40-F carries the AIF, and a 10-K or 20-F prints the fees");
+  assert.equal(tsxv[0], "information_circular", "Form 52-110F2 goes in the circular");
+  assert.deepEqual([...kindPriority("")], [...tsxv], "an exchange not recorded reads as every company did before");
+  assert.deepEqual([...tsx].sort(), [...tsxv].sort(), "the same kinds, only reordered");
 });
 
 test("EDGAR's profile attributes are shown, scored below bulk accept, with a US state written out", async () => {
@@ -353,6 +380,69 @@ test("pass 2 reads the documents pass 1 found instead of searching again", async
   await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
   assert.equal(requests.length, 1, "one extraction call and no second discovery");
   assert.ok((requests[0].output_config as Record<string, unknown>).format);
+});
+
+test("pass 1 found filings but not the one the fees are in: pass 2 searches once more, for that one", async () => {
+  // Q4: 55 of the 78 venture issuers that abstained on the audit fee had no
+  // circular, AIF or SEC annual report from 2024 on in pass 1's list, and
+  // pass 2 read only that list.
+  const [circular, aif] = DISCOVERY_REPORT.documents;
+  const cases = [
+    { exchange: "TSXV", found: aif, form: /Form 52-110F2/, missing: /no current circular/ },
+    { exchange: "TSX", found: circular, form: /Form 52-110F1/, missing: /no current AIF or SEC annual report/ },
+  ];
+  for (const c of cases) {
+    const { db, periodId, northco } = await seeded();
+    await db.run("update company_identifiers set exchange = ? where company_id = ?", c.exchange, northco.id);
+    const { v, requests } = vendor({ reports: [{ ...DISCOVERY_REPORT, documents: [c.found] }, DISCOVERY_REPORT] });
+    // No EDGAR record, so no 40-F: the list holds only what discovery found.
+    const { fetched, fetchDeps } = world({ omit: ["https://data.sec.gov/submissions/CIK0001234567.json"] });
+    await runOne(db, periodId, northco.id, "identity", deps(db, v, fetchDeps));
+    await db.run(`insert into company_period_field_values (period_id, company_id, field_key, value, source, evidence_state)
+        values (?, ?, 'website', '"https://northco.invalid"', 'ai_accepted', 'asserted')
+        on conflict (period_id, company_id, field_key) do update set value = excluded.value`, periodId, northco.id);
+    const first = requests.find((r) => (r.tools as Array<{ name: string }>)?.some((t) => t.name === "report_sources"))!;
+    requests.length = 0;
+    fetched.length = 0;
+
+    const { by, runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+    const searches = requests.filter((r) => (r.tools as Array<{ name: string }> | undefined)?.some((t) => t.name === "report_sources"));
+    assert.equal(searches.length, 1, `${c.exchange}: one more search, not one per field`);
+    assert.match(JSON.stringify(searches[0].messages), c.form, `${c.exchange}: asked for the filing its fees are in`);
+    assert.deepEqual(searches[0].system, first.system, "the rules are unchanged, so the cached prefix is too");
+    assert.ok(fetched.includes("https://northco.invalid/docs/circular-2026.pdf"));
+    assert.equal(by.audit_fee.state, "proposed", c.exchange);
+    const raw = JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+        where j.run_id = ?`, runId) as { raw: string }).raw);
+    assert.ok(raw.notes.some((n: string) => c.missing.test(n)), JSON.stringify(raw.notes));
+  }
+});
+
+test("pass 2 reads a filing that names the company only as it was before a rename", async () => {
+  const report = { ...DISCOVERY_REPORT, documents: [
+    { url: "https://northco.invalid/docs/kirkland-aif-2025.pdf", kind: "annual_information_form", fiscal_year: 2025, title: "AIF" },
+  ] };
+  const read = async (formerName: boolean) => {
+    const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+    if (formerName) {
+      await db.run(`insert into company_aliases (company_id, name, name_normalized, alias_type, source)
+          values (?, 'Kirkland North Gold Ltd.', 'kirkland north gold', 'former', 'research')`, northco.id);
+    }
+    const { v } = vendor({ report });
+    const { fetchDeps } = world();
+    const { runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+    const raw = JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+        where j.run_id = ?`, runId) as { raw: string }).raw);
+    const stored = (await db.all("select url from documents") as Array<{ url: string }>).map((d) => d.url);
+    return { notes: raw.notes as string[], stored };
+  };
+  const without = await read(false);
+  assert.deepEqual(without.notes, ["does not name the company: https://northco.invalid/docs/kirkland-aif-2025.pdf"],
+                   "without the former name it reads as someone else's");
+  assert.ok(!without.stored.some((u) => u.includes("kirkland")));
+  const withAlias = await read(true);
+  assert.ok(withAlias.stored.some((u) => u.endsWith("kirkland-aif-2025.pdf")), "with it, the company's own");
+  assert.deepEqual(withAlias.notes, []);
 });
 
 test("a paused search resumes by resending the turn, with no invented user message", async () => {
@@ -474,6 +564,52 @@ test("windows keep the cover and what each field needs, verbatim and capped", ()
   assert.ok(w.startsWith("Cover page of Northco."));
   assert.ok(w.includes("Audit fees 412") && w.includes("Head office: Toronto"));
   assert.ok(w.length <= 30_000 + 20, `capped, got ${w.length}`);
+});
+
+test("a fee table past the first 30,000 characters is still read, and before what crowded it out", () => {
+  // An AIF's order: the cover, the business, the auditor named in the
+  // material contracts, a charter that "pre-approves audit fees", and the
+  // audit committee's fee table near the end. Q4 pass 2: 19 TSX companies
+  // abstained on the fee with a filing like this in hand.
+  const gap = "x ".repeat(1500);
+  const parts = [`Cover page of Northco. ${gap}`, `${gap} The committee shall pre-approve all audit fees. ${gap}`];
+  for (let i = 0; i < 6; i++) parts.push(`${gap} independent auditor ${i} ${gap}`);
+  for (let i = 0; i < 6; i++) parts.push(`${gap} exploration-stage property ${i} ${gap}`);
+  for (let i = 0; i < 6; i++) parts.push(`${gap} head office ${i} ${gap}`);
+  const table = "External Auditor Service Fees\nAudit fees 412 388\nAudit-related fees 30 25\nTax fees 118 102\nAll other fees 5 0";
+  parts.push(`${gap} ${table} ${gap}`);
+  const text = parts.join("");
+  assert.ok(text.indexOf("External Auditor") > 60_000, "the table sits far past the cap");
+
+  const w = windowsOf(text);
+  assert.ok(w.length <= 30_000, `capped, got ${w.length}`);
+  assert.ok(w.includes(table), "the whole table survives");
+  assert.ok(w.startsWith("Cover page of Northco."), "the cover still comes first");
+  assert.ok(w.includes("independent auditor 0"), "and the earlier fields still get what is left");
+  assert.ok(w.indexOf("independent auditor 0") < w.indexOf(table), "printed in the filing's order");
+  assert.ok(!w.includes("head office 5"), "what no longer fits is the last of the other windows, not the fee");
+});
+
+test("a document's cap is what the request has left, and the fee is kept inside it", () => {
+  const gap = "x ".repeat(1500);
+  const parts = [`Cover page of Northco. ${gap}`];
+  for (let i = 0; i < 6; i++) parts.push(`${gap} independent auditor ${i} ${gap}`);
+  parts.push(`${gap} Audit fees 412 Tax fees 118 ${gap}`);
+  const w = windowsOf(parts.join(""), 8_000);
+  assert.ok(w.length <= 8_000, `capped at what was left, got ${w.length}`);
+  assert.ok(w.includes("Audit fees 412 Tax fees 118"), "the fee, not the tail of an auditor window, fills it");
+  assert.equal(windowsOf(parts.join(""), 0), "", "nothing left is nothing read");
+});
+
+test("a filing under the company's former name is its filing; a name inside a longer word is not", () => {
+  const row = { canonicalName: "Northco Mining Corp.", rootTicker: "NRTH", aliases: ["Kirkland North Gold Ltd."] };
+  const old = "Kirkland North Gold Ltd.\nAnnual Information Form for the year ended December 31, 2024";
+  assert.ok(namesCompany(old, row) >= 0, "the name it filed under before the rename");
+  assert.equal(namesCompany(old, { ...row, aliases: [] }), -1, "without the alias it reads as someone else's");
+  assert.equal(old.slice(namesCompany(old, row)).split("\n")[0], "Kirkland North Gold Ltd.", "and the index anchors on it");
+  assert.equal(namesCompany("Sorthco Ltd. and Ascotland Resources", { ...row, aliases: ["Ascot Ltd."] }), -1,
+               "an old name inside a longer word is not the company");
+  assert.equal(namesCompany("Southco Resources Ltd. annual report", row), -1);
 });
 
 test("a character a model wrote as its escape is put back before the quote is checked", () => {
