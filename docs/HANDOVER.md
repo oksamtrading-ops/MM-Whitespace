@@ -1,6 +1,21 @@
 # Handover — Market Assessment Tool
 
-> **Status at 21 October 2026.** **Q4-2026 is published as revision 1**
+> **Status at 21 October 2026, evening.** **Q4-2026 is published as revision
+> 3** (19:27 UTC, through a blocked gate, 5,495 values). Audit-fee coverage is
+> **47.0%** (125 of 266), up from 34.2% at revision 1 that morning. Two
+> code changes made pass 2 find fees it had missed: the fee table is kept
+> when a filing is long, the filing the exchange's rules put the fees in is
+> read first, a company's former names are its own, current filings come
+> before stale ones, and a 10-K filer's proxy statement is read (`40812f7`,
+> `7aaf0f8`). A third lets a flagged row take newer research from a later
+> filing (`1cd38e0`). Fourteen former names were added to `company_aliases`.
+> Three pass-2 runs (US$29.58) and a fee review against every source table
+> fed revisions 2 (17:49 UTC, 60 fees) and 3 (8 audit fees). October's
+> recorded research spend is US$124.70 across twelve runs. Everything on
+> `main` is deployed; the code last changed at `1cd38e0`. See "Done on
+> 21 October 2026, afternoon".
+>
+> **That morning:** **Q4-2026 was published as revision 1**
 > (12:58 UTC, through a blocked gate, 5,426 values): pass 2 ran on 20 October
 > (`706429e0`, US$27.01), its two failures were fixed (`1e0fe9a`) and re-run
 > (`f3d65dbd`, US$0.28), and every pass-2 row was reviewed against its source
@@ -67,33 +82,50 @@ anything.
    the guide in `node_modules/next/dist/docs/` before writing Next.js code).
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
-5. Everything is on `main`. The local branches `publish-diff`,
-   `newer-research-dates`, `fix-sec-registrant`, `fix/review-page-one-load`
-   and `claude/nostalgic-austin-62bc1b` (the scope rule, with its worktree in
+5. Everything is on `main` except one branch. The local branches
+   `publish-diff`, `newer-research-dates`, `fix-sec-registrant`,
+   `fix/review-page-one-load`, `fix-pass2-failures`, `fix/pass2-fee-search`,
+   `fix/pass2-fee-search-2`, `fix/review-flagged-newer` and
+   `claude/nostalgic-austin-62bc1b` (the scope rule, with its worktree in
    `.claude/worktrees/`) are merged and can be deleted.
+   **`claude/cool-sinoussi-fb57b1` (`be511a7`) is not merged**: it fixes the
+   three review-screen defects in item 2 and waits on Samuel's decision. It
+   merges cleanly into `main` as at `1cd38e0`; run the checks on the merge
+   before pushing.
 
 ## What is waiting on Samuel
 
-In order. Item 1 is what Q4 revision 1 left open.
+In order. Item 1 is what Q4 revision 3 left open.
 
-**1. What Q4 revision 1 left open.** Published on 21 October through a blocked
-gate, with the basis on the dashboard header. The gate's two blocks:
-- **Tier distribution 92.1%** (245 of 266; floor 95%). The 21 companies with
-  no documents read this quarter have no stage row, so they are unclassified:
-  Amapá, Cadillac, Chesapeake, Copper Fox, Copper Giant, Discovery Silver,
-  FireFly, Lara, Luca, Magna, Mega Uranium, Montage, Nevgold, PMET,
-  Predictive Discovery, Revival, Sandfire America, Snowline, Southern Cross,
-  Tudor and Westgold. Their stage and auditor were researched by hand on
+**1. What Q4 revision 3 left open.** Revisions 1 to 3 were published on
+21 October through a blocked gate, each with its basis on the dashboard
+header. Revision 3's three blocks:
+- **Tier distribution 92.1%** (245 of 266; floor 95%). 21 companies have no
+  stage evidence decided, so they are unclassified: Amapá, Cadillac,
+  Chesapeake, Copper Fox, Copper Giant, Discovery Silver, FireFly, Luca,
+  Magna, Mega Uranium, Montage, Nevgold, PMET, Predictive Discovery, Revival,
+  Rusoro, Sandfire America, Snowline, Southern Cross, Tudor and Westgold.
+  (Revision 1's header named Lara instead of Rusoro; the list above is the
+  gate's own count on 21 October evening.) Their stage and auditor were researched by hand on
   21 October (`reference/q4-unread-companies-research.json`, git-ignored: 37
   stages and 49 auditors, each with its source; those for companies that
   had a finding were entered as overrides), but **the review screens cannot enter
   a value for a company with no finding**: the field grid lists only
   findings, and the by-company grid's empty cells ("—") take no keys. A
-  small code change (an override on an empty cell) or a pass 2 that reaches
-  them would let revision 2 tier them.
-- **Fabrication rate 2.3%** of 3,280 assessed findings (ceiling 2.0%). Review
-  cannot lower it. No unsupported finding was accepted; Vox's auditor change
-  was quarantined but right, and was entered as an override.
+  small code change (an override on an empty cell) would let a later
+  revision tier them; it is on the unmerged branch in item 2.
+- **Fabrication rate 2.8%** of 4,375 assessed findings (ceiling 2.0%; 2.3% of
+  3,280 at revision 1, raised by the 21 October afternoon runs). Review cannot
+  lower it. No unsupported finding was accepted; Vox's auditor change was
+  quarantined but right, and was entered as an override, and quarantined fee
+  rows were entered by hand only where the amount was checked in the filing.
+- **19 fields with two proposals and no adjudication**, all from the
+  21 October afternoon re-research: 14 commodity lists (Apollo Silver, Ecora,
+  Energy Fuels, Erdene, First Mining, First Quantum, Franco-Nevada, Jaguar,
+  Liberty, Osisko Gold Group, Silver Mountain, Talamore, Titan, Ucore); head
+  office for Magna (Dowling or Sudbury), Osisko Gold Group and Rio2 (Toronto
+  or Vancouver); region for Bunker Hill (two spellings of Idaho) and Rio2.
+  Their values stand as in revision 1. Deciding a row clears it.
 
 Also open, each recorded as a flag with its reason on `/review`:
 - **China Gold's auditor** (and its auditor-since): Deloitte retired at the
@@ -105,11 +137,27 @@ Also open, each recorded as a flag with its reason on `/review`:
 - **Atha and King Copper auditor change**: no appointment date found, so the
   24-month window cannot be settled. **Freegold and OceanaGold auditor-since**:
   the year is not established.
-- **50 stale fee and financial rows**: tables two or more fiscal years old
-  (27 fee rows, 23 financial rows, including Founders, Regulus and Silver
+- **61 stale fee and financial rows**: tables two or more fiscal years old
+  (38 fee rows, 23 financial rows, including Founders, Regulus and Silver
   Mountain, whose FY2025 has closed but whose annual figure was not read,
   and Highlander's fifteen-month and LunR's stub periods). Flagged, not
-  published.
+  published. Eleven of the fee rows were flagged on 21 October afternoon
+  (Eloro, Erdene, Imperial, Meridian). Since `1cd38e0` a flagged row is
+  offered again only when research reads a later filing than the flagged one.
+- **31 quarantined "Nil" fee rows** from the 21 October afternoon runs were
+  left undecided, as the morning's review left its own: accepting a zero the
+  quote does not print is a judgement call.
+- **Two duplicate company records**, offered for a merge since the former
+  names went in: Osisko Development Corp. (ODV) is Osisko Gold Group, and
+  Fuerte Metals Corporation (FMT) is Talamore Mining. The old records are in
+  Q3 only, so Q4 counts nothing twice, but their Q3 history is not linked to
+  the Q4 companies. Merging is Samuel's call, on `/companies/merge` ("Possible duplicates").
+- **Unreviewed research from the 21 October afternoon runs**, for 108
+  companies: every pass-2 field except the fees (the four fee types were
+  reviewed for runs `be17897a` and `ee293a9a`, the audit fee alone for
+  `965a1edc`). Corrections to decided rows show on each field's "Newer
+  research" tab. China Gold's auditor tenure there proposes 2025 from a 2024
+  report; the stored 2026 is right, so leave it.
 - **103 commodities conflicts** and 4 head office region conflicts (Bunker
   Hill, Energy Fuels, GoldQuest, Marimaca) were left undecided, so TSX's
   values stand.
@@ -119,7 +167,10 @@ Also open, each recorded as a flag with its reason on `/review`:
 - **113 SEC registrant abstentions** were left blank, as decided on
   20 October. No publish floor reads the field.
 
-**2. Three review-screen defects found on 21 October**, none fixed:
+**2. Three review-screen defects found on 21 October**, fixed on the
+unmerged branch `claude/cool-sinoussi-fb57b1` (`be511a7`, "a value where
+nothing was proposed, stage in bulk, and an honest bulk message"), which
+waits on Samuel's decision to merge:
 - **Stage cannot be bulk-accepted.** The dialog asks for `STAGE` typed, but
   `confirmationText` counts without `stageOptIn`, so it offers "Accept 0
   values" and the button stays disabled. Stage was accepted one row at a time.
@@ -127,11 +178,24 @@ Also open, each recorded as a flag with its reason on `/review`:
   148 rows, all saved).
 - **No value can be entered for a company with no finding** (item 1).
 
-**3. Three things an agent did on Samuel's behalf on 20–21 October** that
+A fourth, found that afternoon, is fixed and deployed (`1cd38e0`): a flagged
+row could not take newer research, so Entree's and Marimaca's FY2025 fees,
+found after their FY2022 and FY2023 tables were flagged as stale, could not
+be entered from either screen.
+
+**3. Things an agent did on Samuel's behalf on 20–21 October** that
 Samuel should know: one research agent sent Samuel's email address to SEC
 EDGAR once as its User-Agent (EDGAR asks for a contact); a source link
 opened a file-save dialog in the browser (nothing was saved); and the review
-page wrote to the OS clipboard during a synthetic keypress.
+page wrote to the OS clipboard during a synthetic keypress. On 21 October
+afternoon, with Samuel's approval each time: 14 former names were inserted
+into `company_aliases`; three pass-2 runs were started from `/runs`; and
+revisions 2 and 3 were published. One mistake: the grid filter "Alamos" also
+matched Minera Alamos, and decision 2748 accepted its abstention, storing an
+empty audit fee. It was undone with the three newer audit-fee decisions
+(2752–2755) and those three redone. The undo leaves an empty audit-fee row
+for Minera Alamos, published blank in revisions 2 and 3, as it was blank in
+revision 1.
 
 **4. `npm run pg:smoke` from Samuel's own terminal**, never yet run against
 this code. First load the address without echoing it:
@@ -253,6 +317,91 @@ override must cite a public page (Release C): an ERP known from an engagement
 is client information.
 
 ## What exists, and what state it is in
+
+### Done on 21 October 2026, afternoon — fees: three fixes, three runs, revisions 2 and 3
+
+Revision 1 published audit fees for 91 of 266 companies (34.2%). Of the 138
+that abstained in pass 2, 60 were TSX and 78 TSXV, and there were four causes:
+- **The fee table was cut.** `windowsOf` kept the windows in document order
+  up to 30,000 characters, and the fee table comes late in an AIF or
+  circular: 19 of the 27 TSX companies holding a current filing with the
+  table never had it shown.
+- **The wrong filing first.** Every company read its circular first, but
+  under NI 52-110 only a venture issuer prints its fees there (Form
+  52-110F2); any other issuer prints them in its AIF (52-110F1), and its
+  circular refers the reader there.
+- **No such filing in the list.** For 55 of the 78 TSXV abstentions, pass 1
+  had found no circular, AIF or SEC annual report from 2024 on, and pass 2
+  read only pass 1's list.
+- **A former name read as someone else.** The name check knew only the
+  canonical name: 76 documents were refused in Q4 pass 2, most of them the
+  company's own under an earlier name.
+
+What was done, in order:
+- **`6df5506` and `40812f7`** (deployed): the fee windows are chosen right
+  after the cover, densest first, in a 9,000-character reserve, and printed
+  in document order; a later document is capped at what the request has left
+  rather than cut. TSX companies read the AIF and SEC annual report first,
+  TSXV the circular (`kindPriority`). When pass 1's list has no current
+  filing of that kind, pass 2 makes one more discovery call asking for it
+  (`FEE_SEARCH`; rules version `2026-10-21.1`). `namesCompany` also accepts
+  the company's aliases, as whole words. The start form quotes pass 2 at
+  $0.30 a company.
+- **Former names**: 14 rows in `company_aliases` (`alias_type` `former`,
+  `source` `research`) for 13 companies, e.g. Pampa Metals (Andina Copper),
+  Ascot Resources (Cambria), Osisko Development (Osisko Gold Group), Fuerte
+  Metals and Atacama Copper (Talamore), Treasury Metals (NexGold). Each was
+  checked as a rename, not an acquisition. `reference/former-names-2026-10-21.sql`
+  (git-ignored) holds the rows, the sources, and what was left out
+  (acquisitions such as Signal Gold and Dolly Varden; names last used before
+  2024). `name_normalized` is `normName` from `src/lib/db/commit.ts`.
+- **Trial `be17897a`** (10 companies, US$2.92): audit fees for First Quantum,
+  Platinum Group, Talamore (from Fuerte's AIF, under the old name) and
+  Fireweed.
+- **TSX run `ee293a9a`** (75 companies, US$18.05): 24 fees proposed (16 for
+  FY2024 on), 6 quarantined, 45 none. The fee windows and the reading order
+  found a current fee for 11 of the 26 companies whose list already held a
+  current AIF or SEC annual report, at $0.13 each. The second search ran for
+  49 companies at $0.30 each, and supplied the filing for only four fees
+  (Entree, Magna, China Gold, and Imperial's stale one). Six of the eight
+  stale fees came from old AIFs and two from old circulars: with kind ranked
+  before age, an old AIF was read ahead of any current filing of another
+  kind.
+- **`7aaf0f8`** (deployed): `readingOrder` reads current filings (fiscal
+  year no earlier than the one before the period's) before stale ones, then
+  by kind; filings linked from an index page join that order instead of
+  going first (Andina had read four 2023 filings that way). The second
+  search runs only where pass 1 listed a filing of the fee kind, from an
+  earlier year or on a host pass 2 cannot read: of the 56 companies searched
+  again, the 28 with no such filing found no fee by it (US$8.70). A 10-K
+  filer's latest DEF 14A is listed beside the 10-K, and pass 2 asks EDGAR
+  for it when an older list lacks it (`edgarProxy`).
+- **The fee review** (decisions 2744–2822): 114 fee findings from the first
+  two runs, each checked against its fee table for amount, currency, scale
+  and year. 43 accepted; 17 quarantined rows overridden with the checked
+  amount (OceanaGold's four in US dollars, not the proposed Canadian); 11
+  flagged as stale; 31 quarantined "Nil" rows and the rest left. FY2024 and
+  later accepted, FY2023 and earlier flagged, as in the morning's review.
+- **`1cd38e0`** (deployed): a flagged row is offered newer research when the
+  proposal reads a filing reporting on a later year than the flagged one.
+  Entree's and Marimaca's three FY2025 fees were then entered (2820–2822).
+- **Revision 2** (17:49 UTC, 5,487 values): 60 fees for 26 companies, and
+  nothing else changed. Audit fees 44.0%.
+- **Run `965a1edc`** (32 companies: 23 TSXV with a circular in view or a
+  second search due, the 8 stale-fee TSX companies, International Tower
+  Hill; US$8.61): 8 current audit fees. International Tower Hill's came from
+  its DEF 14A, Titan's and Torex's FY2025 fees replaced stale-flagged FY2022
+  tables, and Osisko Gold Group's came from its 40-F under its former name.
+  Silver Storm's came from a circular, and Amarc's, Colonial Coal's and
+  NorthIsle's were quarantined and checked. The five that found only stale
+  tables again stayed quiet behind their flags.
+- **Revision 3** (19:27 UTC, 5,495 values): those 8 audit fees (decisions
+  2823–2830), and nothing else changed. Audit fees **47.0%** (125 of 266).
+
+Still missing a fee: 141 companies. Most of the TSXV gap is circulars that
+are on SEDAR+ only: 66 of the TSXV companies without a fee have never had a
+circular or SEC annual report in pass 1's list, so the second search skips
+them by design.
 
 ### Done on 20–21 October 2026 — pass 2, its review, Q4 revision 1
 
@@ -1263,6 +1412,21 @@ five tabs at once made pages fail to draw on 21 October.
 once, Enter. Clicking into the box or retyping doubles the reason (decision
 658, undone at 659).
 
+**The grid's search matches part of a name.** `/review/<field>?q=Alamos`
+shows Alamos Gold and Minera Alamos, and `a` acts on the first row. On
+21 October that accepted Minera Alamos' abstention, which stores an empty
+value (decision 2748). Undo is newest-first per field, so it took four undos
+and three decisions redone. Before deciding by filter, check the term matches
+one company, or type the full name.
+
+**A field grid shows one finding per company: the one its standing decision
+judged, or newer research.** Since `1cd38e0` a flagged row offers research
+from a later filing; before that, a flag hid every later finding. Same-year
+and earlier-year findings on a flagged row stay quiet by design.
+
+**The browser pane can reopen signed out.** It did on 21 October evening.
+An agent will not type a password, so Samuel signs in and says so.
+
 **"The newest period" is two periods now.** Since a TSX list can commit a draft
 after a published period, a Viewer's read must take the newest *published*
 period and an Analyst's the newest of all: `shownPeriod`, `newestPublishedPeriod`
@@ -1555,27 +1719,29 @@ database.
 
 ## What is left, in order
 
-As at 21 October 2026, in the order worth doing:
+As at 21 October 2026, evening, in the order worth doing:
 
 | | | Whose |
 |---|---|---|
-| **a** | **Tier the 21 unread companies**: a way to enter a value with no finding, or pass 2 on them; then Q4 revision 2 (items 1 and 2) | a small build, then Samuel or Kay on `/review` |
-| **b** | **China Gold's auditor**, and the other flagged rows on `/review` (item 1) | the practice, then Samuel or Kay |
-| **c** | **The stage bulk-accept defect** and the false "cancelled" message (item 2) | a build |
-| **d** | **`pg:smoke`** (item 4) | Samuel's terminal |
-| **e** | **Unblock the second Admin** (item 5) | Samuel, on `/access` |
-| **f** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
-| **g** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
-| **h** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
-| **i** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
-| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections), ~~revision 12~~ (20 Oct), ~~the document backfill~~ (20 Oct, by SQL), ~~roll forward to Q4~~ (20 Oct), ~~Run 3 pass 1 and its SEC registrant correction~~ (20 Oct), ~~pass 2 for Q4~~ (20 Oct), ~~its review and Q4 revision 1~~ (21 Oct) | done |
+| **a** | **Merge `claude/cool-sinoussi-fb57b1`** (the three review defects, item 2), then **tier the 21 unclassified companies** from `reference/q4-unread-companies-research.json` and publish revision 4 (item 1) | Samuel's decision, then Samuel or Kay on `/review` |
+| **b** | **Review what the 21 October afternoon runs found** beyond the fees, for 108 companies, and check run `965a1edc`'s tax, audit-related and other fees against their tables (item 1) | Samuel or Kay on `/review` |
+| **c** | **The 19 gate conflicts** (14 commodity lists, three head offices, two regions) and the **two duplicate records**, Osisko Development and Fuerte (item 1) | Samuel or Kay; the merges are Samuel's call |
+| **d** | **China Gold's auditor**, and the other flagged rows on `/review` (item 1) | the practice, then Samuel or Kay |
+| **e** | **The 141 companies still without an audit fee**: most TSXV circulars are on SEDAR+ only, which Decision 1 rules out | a decision about sources, not a build |
+| **f** | **`pg:smoke`** (item 4) | Samuel's terminal |
+| **g** | **Unblock the second Admin** (item 5) | Samuel, on `/access` |
+| **h** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
+| **i** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
+| **j** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
+| **k** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
+| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections), ~~revision 12~~ (20 Oct), ~~the document backfill~~ (20 Oct, by SQL), ~~roll forward to Q4~~ (20 Oct), ~~Run 3 pass 1 and its SEC registrant correction~~ (20 Oct), ~~pass 2 for Q4~~ (20 Oct), ~~its review and Q4 revision 1~~ (21 Oct), ~~pass 2's fee search, former names, and Q4 revisions 2 and 3~~ (21 Oct) | done |
 
 Rename the Vercel project, the URL and the repository only if Samuel decides
 to; they are outward-facing.
 
 ### The list as it stood on 14 September, kept for its reasoning
 
-Items 3–7 below are a–i above. What is recorded under each, about why things
+Items 3–7 below are among the rows above. What is recorded under each, about why things
 are as they are, still holds.
 
 1. ~~Confirm the live upload~~, ~~read a day of ticks~~ (1,440 of 1,440),
