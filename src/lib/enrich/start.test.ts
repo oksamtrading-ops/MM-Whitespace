@@ -92,7 +92,7 @@ test("the estimate blocks: over budget is refused, and a large scope needs its c
   // Live estimates are per pass, from Run 1: the fields pass costs about half
   // the identity pass, so one flat figure over-refused pass 2 runs.
   assert.equal(estimate(10, 1000, "identity").estimatedUsd, 3);
-  assert.equal(estimate(10, 1000, "general").estimatedUsd, 1.8, "six more fields since 17 October");
+  assert.equal(estimate(10, 1000, "general").estimatedUsd, 3, "and a second search for the fee filing since 21 October");
   assert.equal(estimate(10, 1000).estimatedUsd, 2.5, "replay keeps the design's figure");
 });
 
@@ -174,11 +174,12 @@ test("a batched run is discounted on its tokens, not on its searches", async () 
             "a flat half would under-quote it");
   assert.equal(batched.count, live.count, "the same companies, at a different price");
 
-  // Pass 2 never searches, so there the discount really is flat.
+  // Pass 2 searches again for some companies, and those searches escape the
+  // discount too.
   const p2 = estimate(75, 200, "general");
   const p2Batched = estimate(75, 200, "general", true);
-  assert.equal(p2Batched.estimatedUsd, Math.round(p2.estimatedUsd * 0.5 * 100) / 100,
-               "no searches on pass 2, so nothing escapes the discount");
+  assert.equal(p2.estimatedUsd, 22.5, "75 companies at $0.30");
+  assert.equal(p2Batched.estimatedUsd, 12.75, "$0.26 halved, plus four cents of search");
 });
 
 test("the estimate and the meter cannot disagree about a batched company", async () => {

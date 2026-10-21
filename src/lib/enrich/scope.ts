@@ -200,10 +200,17 @@ export type Estimate = {
  * (revenue, net income, total assets, two fee lines, reporting currency):
  * about a thousand more output tokens and a few more windows on Sonnet, some
  * three cents a company. An estimate, until a run measures it.
+ *
+ * And to 0.30 on 21 October, when pass 2 began searching again for a company
+ * whose pass-1 list holds no current filing of the kind its fees are printed
+ * in. Measured on Q4: pass 2's reading cost $0.10 a company (266 jobs,
+ * US$27.07), and that search is one pass-1 discovery, $0.21 (287 jobs). It
+ * would run for 139 of the 266 companies, and for 119 of the 173 that have
+ * no audit fee: $0.10 + 69% of $0.21 is $0.25 for a fees re-run, plus 20%.
  */
 export const ESTIMATED_USD_PER_COMPANY_BY_PASS: Record<Pass, number> = {
   identity: 0.30,
-  general: 0.18,
+  general: 0.30,
 };
 /**
  * What of that is web search, which the Batch API does NOT discount -- "Web
@@ -216,10 +223,13 @@ export const ESTIMATED_USD_PER_COMPANY_BY_PASS: Record<Pass, number> = {
  * trusted domain and EDGAR rather than searching. Pass 1 always used every
  * search it was allowed, so the cap is the count: six, at a cent each, owed
  * in full by a batched run.
+ *
+ * Pass 2 searches only when it searches again for the filing the fees are in
+ * (21 October): six searches for about 69% of a fees re-run's companies.
  */
 export const ESTIMATED_SEARCH_USD_BY_PASS: Record<Pass, number> = {
   identity: 0.06,
-  general: 0,
+  general: 0.04,
 };
 /**
  * Replay, which spends nothing, and any run with no pass: the design's
