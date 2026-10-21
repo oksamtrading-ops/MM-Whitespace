@@ -12,7 +12,7 @@ import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batc
 import {
   BATCH_DISCOUNT, EXTRACTED_FIELDS, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
   canonicalAuditor, collectSearchUrls, discoveryRequest, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany,
-  toFinding, windowsOf,
+  readingOrder, toFinding, windowsOf, type CandidateDoc,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
 import { EgressViolation, PROMPT_VERSION } from "./prompt.ts";
@@ -36,6 +36,13 @@ const CIRCULAR = makePdf([
 ]);
 const SOMEONE_ELSE = makePdf(["Southco Resources Ltd.\nAnnual Information Form\nAudit fees 999"]);
 // Northco's own AIF from before its rename, naming it only as it was then.
+// Northco's AIFs from years past, and a current MD&A.
+const OLD_AIF = makePdf(["Northco Mining Corp.\nAnnual Information Form for the year ended December 31, 2019\n" +
+  "Northco Mining Corp. is engaged in the exploration of gold properties in northern Ontario, as it has been for years."]);
+const CURRENT_MDNA = makePdf(["Northco Mining Corp.\nManagement's Discussion and Analysis, three months ended March 31, 2026\n" +
+  "Northco Mining Corp. is engaged in the exploration and development of gold and copper properties in Ontario."]);
+const OLD_YEARS = [2018, 2019, 2020, 2021, 2022, 2023];
+
 const BEFORE_RENAME = makePdf([
   "Kirkland North Gold Ltd.\nAnnual Information Form for the year ended December 31, 2025\n" +
   "Kirkland North Gold Ltd. is engaged in the exploration and development of gold properties in Ontario.",
@@ -61,6 +68,13 @@ const PAGES: Record<string, { type: string; body: Uint8Array | string }> = {
   "https://northco.invalid/docs/circular-2026.pdf": { type: "application/pdf", body: CIRCULAR },
   "https://northco.invalid/docs/southco-aif.pdf": { type: "application/pdf", body: SOMEONE_ELSE },
   "https://northco.invalid/docs/kirkland-aif-2025.pdf": { type: "application/pdf", body: BEFORE_RENAME },
+  "https://northco.invalid/docs/northco-mda-q1-2026.pdf": { type: "application/pdf", body: CURRENT_MDNA },
+  // An archive page of filings from years past: where Andina's second search led, 21 October 2026.
+  "https://northco.invalid/investors/archive/": { type: "text/html", body:
+    `<html><body><h1>Northco Mining Corp. Archive</h1>${OLD_YEARS.map((y) =>
+      `<a href="/docs/old/aif-${y}.pdf">${y} Annual Information Form</a>`).join("")}</body></html>` },
+  ...Object.fromEntries(OLD_YEARS.map((y) =>
+    [`https://northco.invalid/docs/old/aif-${y}.pdf`, { type: "application/pdf", body: OLD_AIF }])),
   // An investors page: where discovery stops when its searches run out.
   "https://northco.invalid/investors/": { type: "text/html", body:
     `<html><body><h1>Northco Mining Corp. Investors</h1>
@@ -76,13 +90,13 @@ const PAGES: Record<string, { type: string; body: Uint8Array | string }> = {
     body: JSON.stringify({ directory: { item: [{ name: "d40f.htm", size: "900" }, { name: "ex99-1.htm", size: "90000" }] } }) },
 };
 
-function world(opts: { omit?: string[] } = {}) {
+function world(opts: { omit?: string[]; pages?: typeof PAGES } = {}) {
   const fetched: string[] = [];
   const fetchDeps = {
     resolve: async () => ["93.184.216.34"],
     http: async (url: string): Promise<HttpResponse> => {
       fetched.push(url);
-      const page = opts.omit?.includes(url) ? undefined : PAGES[url];
+      const page = opts.omit?.includes(url) ? undefined : (opts.pages?.[url] ?? PAGES[url]);
       if (!page) return { status: 404, headers: {}, body: new Uint8Array() };
       const body = typeof page.body === "string" ? new TextEncoder().encode(page.body) : page.body;
       return { status: 200, headers: { "content-type": page.type }, body };
@@ -323,15 +337,28 @@ test("a linked file's kind comes from its address, and forms that are not filing
     "https://y.invalid/2026-Circular.pdf",
   ];
   const seen = new Set<string>();
-  const picked = linkedFilings(links, new Set(["x.invalid"]), seen, kindPriority("TSXV"));
+  const venture = readingOrder(kindPriority("TSXV"), 2025);
+  const picked = linkedFilings(links, new Set(["x.invalid"]), seen, venture);
   assert.deepEqual(picked.map((p) => p.url),
     ["https://x.invalid/2026-Circular.pdf", "https://x.invalid/2025-AIF.pdf", "https://x.invalid/2024-AIF.pdf"],
     "a venture issuer prints its fees in the circular");
-  assert.deepEqual(linkedFilings(["https://x.invalid/2026-Circular.pdf"], new Set(["x.invalid"]), seen, kindPriority("TSXV")), [],
+  assert.deepEqual(linkedFilings(["https://x.invalid/2026-Circular.pdf"], new Set(["x.invalid"]), seen, venture), [],
     "nothing is followed twice");
-  assert.deepEqual(linkedFilings(links, new Set(["x.invalid"]), new Set(), kindPriority("TSX")).map((p) => p.url),
-    ["https://x.invalid/2025-AIF.pdf", "https://x.invalid/2024-AIF.pdf", "https://x.invalid/2026-Circular.pdf"],
-    "any other issuer prints them in its AIF, and its circular refers the reader there");
+  assert.deepEqual(
+    linkedFilings(links, new Set(["x.invalid"]), new Set(), readingOrder(kindPriority("TSX"), 2025)).map((p) => p.url),
+    ["https://x.invalid/2025-AIF.pdf", "https://x.invalid/2026-Circular.pdf", "https://x.invalid/2024-AIF.pdf"],
+    "any other issuer prints them in its AIF; a stale AIF still comes after a current circular");
+});
+
+test("current filings are read before stale ones, whatever their kind", () => {
+  const doc = (kind: CandidateDoc["kind"], fiscal_year: number | null, url: string): CandidateDoc =>
+    ({ url, kind, fiscal_year, title: url, provenance: "search_result" });
+  const list = [doc("annual_information_form", 2021, "aif-2021"), doc("annual_mdna", null, "mdna"),
+                doc("information_circular", 2025, "circular-2025"), doc("annual_information_form", 2025, "aif-2025"),
+                doc("annual_information_form", 2024, "aif-2024")];
+  assert.deepEqual([...list].sort(readingOrder(kindPriority("TSX"), 2025)).map((d) => d.url),
+    ["aif-2025", "circular-2025", "mdna", "aif-2024", "aif-2021"],
+    "Erdene's FY2019 AIF was read first on 21 October; a filing of no stated year counts as current");
 });
 
 test("the reading order puts first the filing the exchange's issuers print their fees in", () => {
@@ -382,14 +409,17 @@ test("pass 2 reads the documents pass 1 found instead of searching again", async
   assert.ok((requests[0].output_config as Record<string, unknown>).format);
 });
 
-test("pass 1 found filings but not the one the fees are in: pass 2 searches once more, for that one", async () => {
+test("pass 1 found only an older filing of the kind the fees are in: pass 2 searches once more, for the current one", async () => {
   // Q4: 55 of the 78 venture issuers that abstained on the audit fee had no
   // circular, AIF or SEC annual report from 2024 on in pass 1's list, and
-  // pass 2 read only that list.
-  const [circular, aif] = DISCOVERY_REPORT.documents;
+  // pass 2 read only that list. A company that published one before is the
+  // one a second search can find the current one for.
+  const [, aif] = DISCOVERY_REPORT.documents;
+  const oldCircular = { url: "https://northco.invalid/docs/circular-2023.pdf", kind: "information_circular",
+                        fiscal_year: 2023, title: "Circular" };
   const cases = [
-    { exchange: "TSXV", found: aif, form: /Form 52-110F2/, missing: /no current circular/ },
-    { exchange: "TSX", found: circular, form: /Form 52-110F1/, missing: /no current AIF or SEC annual report/ },
+    { exchange: "TSXV", found: oldCircular, form: /Form 52-110F2/, missing: /no current circular/ },
+    { exchange: "TSX", found: { ...aif, fiscal_year: 2023 }, form: /Form 52-110F1/, missing: /no current AIF or SEC annual report/ },
   ];
   for (const c of cases) {
     const { db, periodId, northco } = await seeded();
@@ -416,6 +446,93 @@ test("pass 1 found filings but not the one the fees are in: pass 2 searches once
         where j.run_id = ?`, runId) as { raw: string }).raw);
     assert.ok(raw.notes.some((n: string) => c.missing.test(n)), JSON.stringify(raw.notes));
   }
+});
+
+test("no second search for a company pass 1 never saw publish the filing its fees are in", async () => {
+  // 21 October: 28 of the 56 companies searched again had no such filing in
+  // pass 1's list, of any year, on any site. None found a fee by it.
+  const [circular, aif] = DISCOVERY_REPORT.documents;
+  for (const c of [{ exchange: "TSXV", found: aif, what: "circular" }, { exchange: "TSX", found: circular, what: "AIF or SEC annual report" }]) {
+    const { db, periodId, northco } = await seeded();
+    await db.run("update company_identifiers set exchange = ? where company_id = ?", c.exchange, northco.id);
+    const { v, requests } = vendor({ reports: [{ ...DISCOVERY_REPORT, documents: [c.found] }, DISCOVERY_REPORT] });
+    const { fetchDeps } = world({ omit: ["https://data.sec.gov/submissions/CIK0001234567.json"] });
+    await runOne(db, periodId, northco.id, "identity", deps(db, v, fetchDeps));
+    await db.run(`insert into company_period_field_values (period_id, company_id, field_key, value, source, evidence_state)
+        values (?, ?, 'website', '"https://northco.invalid"', 'ai_accepted', 'asserted')
+        on conflict (period_id, company_id, field_key) do update set value = excluded.value`, periodId, northco.id);
+    requests.length = 0;
+    const { runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+    const searches = requests.filter((r) => (r.tools as Array<{ name: string }> | undefined)?.some((t) => t.name === "report_sources"));
+    assert.equal(searches.length, 0, `${c.exchange}: no second search`);
+    const raw = JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+        where j.run_id = ?`, runId) as { raw: string }).raw);
+    assert.ok(raw.notes.includes(`not searched again: pass 1 found no ${c.what} of any year, anywhere`), JSON.stringify(raw.notes));
+  }
+});
+
+test("filings linked from an archive page join the reading order instead of jumping it", async () => {
+  // Andina, 21 October: its second search led to a page of 2023 filings, and
+  // four of them were read before anything current.
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v } = vendor({ report: { ...DISCOVERY_REPORT, documents: [
+    { url: "https://northco.invalid/investors/archive/", kind: "other", fiscal_year: null, title: "Archive" },
+    { url: "https://northco.invalid/docs/northco-mda-q1-2026.pdf", kind: "other", fiscal_year: null, title: "MD&A" },
+  ] } });
+  const { fetched, fetchDeps } = world();
+  await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  const current = fetched.indexOf("https://northco.invalid/docs/northco-mda-q1-2026.pdf");
+  const firstOld = fetched.findIndex((u) => u.includes("/docs/old/"));
+  assert.ok(current >= 0, "the current filing is read");
+  assert.ok(firstOld < 0 || current < firstOld, `read before any old one: ${JSON.stringify(fetched)}`);
+  assert.ok(fetched.includes("https://northco.invalid/docs/old/aif-2023.pdf"), "the old ones are still read, after it");
+});
+
+test("a 10-K filer's proxy statement is read: pass 1 lists it, and pass 2 asks EDGAR when an older list lacks it", async () => {
+  // International Tower Hill, 21 October: a 10-K, its annual report and a
+  // circular read, and not one had "audit fees" in it. Item 14 is in the proxy.
+  const submissions = "https://data.sec.gov/submissions/CIK0001234567.json";
+  const proxyUrl = "https://www.sec.gov/Archives/edgar/data/1234567/000123456726000020/def14a.htm";
+  const record = (withProxy: boolean) => ({ type: "application/json", body: JSON.stringify({
+    ...JSON.parse(EDGAR_RECORD),
+    filings: { recent: withProxy
+      ? { form: ["DEF 14A", "10-K"], filingDate: ["2026-04-20", "2026-03-02"],
+          accessionNumber: ["0001234567-26-000020", "0001234567-26-000008"], primaryDocument: ["def14a.htm", "d10k.htm"] }
+      : { form: ["10-K"], filingDate: ["2026-03-02"], accessionNumber: ["0001234567-26-000008"], primaryDocument: ["d10k.htm"] } },
+  }) });
+  const proxy = { type: "text/html", body: "<html><body><h1>Northco Mining Corp.</h1><p>Proxy Statement for the 2026 " +
+    "Annual Meeting of Shareholders.</p><p>Principal Accountant Fees and Services. Audit fees 412 388.</p></body></html>" };
+
+  // Pass 1, with the proxy on EDGAR: it is listed beside the 10-K.
+  {
+    const { db, periodId, northco } = await seeded();
+    const { v } = vendor();
+    const { fetchDeps } = world({ pages: { [submissions]: record(true) } });
+    await runOne(db, periodId, northco.id, "identity", deps(db, v, fetchDeps));
+    const raw = JSON.parse((await db.get("select raw from enrichment_job_results") as { raw: string }).raw);
+    const listed = raw.candidates.find((c: CandidateDoc) => c.url === proxyUrl);
+    assert.deepEqual(listed && { kind: listed.kind, fiscal_year: listed.fiscal_year, title: listed.title },
+                     { kind: "information_circular", fiscal_year: 2025, title: "DEF 14A" });
+  }
+
+  // A list from before: pass 1 saw no proxy, and pass 2 asks EDGAR for it.
+  const { db, periodId, northco } = await seeded();
+  const { v, requests } = vendor();
+  await runOne(db, periodId, northco.id, "identity", deps(db, v, world({ pages: { [submissions]: record(false) } }).fetchDeps));
+  await db.run(`insert into company_period_field_values (period_id, company_id, field_key, value, source, evidence_state)
+      values (?, ?, 'website', '"https://northco.invalid"', 'ai_accepted', 'asserted')
+      on conflict (period_id, company_id, field_key) do update set value = excluded.value`, periodId, northco.id);
+  requests.length = 0;
+  const { fetched, fetchDeps } = world({ pages: { [submissions]: record(true), [proxyUrl]: proxy } });
+  const { runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.ok(fetched.includes(proxyUrl), "the proxy statement is read");
+  const stored = await db.all("select url from documents") as Array<{ url: string }>;
+  assert.ok(stored.some((d) => d.url === proxyUrl));
+  const raw = JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+      where j.run_id = ?`, runId) as { raw: string }).raw);
+  assert.ok(raw.notes.includes(`added the 10-K's proxy statement: ${proxyUrl}`), JSON.stringify(raw.notes));
+  assert.ok(!requests.some((r) => (r.tools as Array<{ name: string }> | undefined)?.some((t) => t.name === "report_sources")),
+            "EDGAR is asked, not the model");
 });
 
 test("pass 2 reads a filing that names the company only as it was before a rename", async () => {

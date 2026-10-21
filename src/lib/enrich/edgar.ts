@@ -196,6 +196,12 @@ export type EdgarRecord = {
   businessCity: string | null;
   businessRegion: string | null;
   latestAnnual: { form: string; filed: string; url: string; indexUrl: string } | null;
+  /**
+   * The latest definitive proxy statement. A 10-K's Part III -- Item 14, the
+   * accountant's fees -- is usually incorporated by reference from it, so for
+   * a 10-K filer the fee table is here and not in the 10-K.
+   */
+  latestProxy: { filed: string; url: string } | null;
   /** Whether the company reports to the SEC, which a record alone does not say (registrationOf). */
   registration: Registration;
 };
@@ -210,14 +216,18 @@ export function parseSubmissions(text: string): EdgarRecord {
   const cik = String(j.cik).replace(/^0+/, "");
   const recent = j.filings?.recent;
   let latestAnnual: EdgarRecord["latestAnnual"] = null;
+  let latestProxy: EdgarRecord["latestProxy"] = null;
   if (recent) {
-    for (let i = 0; i < recent.form.length; i++) {
-      if (!ANNUAL_FORMS.includes(recent.form[i])) continue;
-      const acc = recent.accessionNumber[i].replace(/-/g, "");
-      const folder = `https://www.sec.gov/Archives/edgar/data/${cik}/${acc}`;
-      latestAnnual = { form: recent.form[i], filed: recent.filingDate[i],
-                       url: `${folder}/${recent.primaryDocument[i]}`, indexUrl: `${folder}/index.json` };
-      break;   // EDGAR lists recent filings newest first
+    // EDGAR lists recent filings newest first, so the first of each is the latest.
+    for (let i = 0; i < recent.form.length && !(latestAnnual && latestProxy); i++) {
+      const folder = `https://www.sec.gov/Archives/edgar/data/${cik}/${recent.accessionNumber[i].replace(/-/g, "")}`;
+      if (!latestAnnual && ANNUAL_FORMS.includes(recent.form[i])) {
+        latestAnnual = { form: recent.form[i], filed: recent.filingDate[i],
+                         url: `${folder}/${recent.primaryDocument[i]}`, indexUrl: `${folder}/index.json` };
+      }
+      if (!latestProxy && recent.form[i] === "DEF 14A") {
+        latestProxy = { filed: recent.filingDate[i], url: `${folder}/${recent.primaryDocument[i]}` };
+      }
     }
   }
   return {
@@ -228,6 +238,7 @@ export function parseSubmissions(text: string): EdgarRecord {
     businessCity: titleAddress(j.addresses?.business?.city),
     businessRegion: regionFrom(j.addresses?.business?.stateOrCountry, j.addresses?.business?.stateOrCountryDescription),
     latestAnnual,
+    latestProxy,
     registration: registrationOf(recent),
   };
 }
@@ -302,6 +313,19 @@ export async function lookupEdgar(
     if (namesMatch(record.name, company.name)) return { record, doc };
   }
   return null;
+}
+
+/**
+ * The latest definitive proxy statement of the registrant with this CIK, or
+ * null. For a list pass 1 built before it recorded the proxy: the CIK is in
+ * the 10-K's address, and EDGAR's record is free to read.
+ */
+export async function edgarProxy(cik: string, deps: FetchDeps): Promise<EdgarRecord["latestProxy"]> {
+  try {
+    return parseSubmissions((await fetchDocument(submissionsUrl(cik), new Set([SEC_HOST]), deps)).text).latestProxy;
+  } catch {
+    return null;
+  }
 }
 
 /**

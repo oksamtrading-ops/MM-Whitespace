@@ -203,10 +203,10 @@ export type Estimate = {
  *
  * And to 0.30 on 21 October, when pass 2 began searching again for a company
  * whose pass-1 list holds no current filing of the kind its fees are printed
- * in. Measured on Q4: pass 2's reading cost $0.10 a company (266 jobs,
- * US$27.07), and that search is one pass-1 discovery, $0.21 (287 jobs). It
- * would run for 139 of the 266 companies, and for 119 of the 173 that have
- * no audit fee: $0.10 + 69% of $0.21 is $0.25 for a fees re-run, plus 20%.
+ * in. Measured that day on 75 TSX companies: $0.30 for a company that
+ * searched again (49 of them, US$14.75), $0.13 for one that did not (26,
+ * US$3.30). How many search depends on the companies, so the figure is what
+ * a searching company costs: a run cannot outspend it, whatever its mix.
  */
 export const ESTIMATED_USD_PER_COMPANY_BY_PASS: Record<Pass, number> = {
   identity: 0.30,
@@ -225,11 +225,12 @@ export const ESTIMATED_USD_PER_COMPANY_BY_PASS: Record<Pass, number> = {
  * in full by a batched run.
  *
  * Pass 2 searches only when it searches again for the filing the fees are in
- * (21 October): six searches for about 69% of a fees re-run's companies.
+ * (21 October), and then as pass 1 does: six. Counted for every company, as
+ * the figure above is.
  */
 export const ESTIMATED_SEARCH_USD_BY_PASS: Record<Pass, number> = {
   identity: 0.06,
-  general: 0.04,
+  general: 0.06,
 };
 /**
  * Replay, which spends nothing, and any run with no pass: the design's

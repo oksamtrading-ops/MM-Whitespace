@@ -179,7 +179,7 @@ test("a batched run is discounted on its tokens, not on its searches", async () 
   const p2 = estimate(75, 200, "general");
   const p2Batched = estimate(75, 200, "general", true);
   assert.equal(p2.estimatedUsd, 22.5, "75 companies at $0.30");
-  assert.equal(p2Batched.estimatedUsd, 12.75, "$0.26 halved, plus four cents of search");
+  assert.equal(p2Batched.estimatedUsd, 13.5, "$0.24 halved, plus six cents of search");
 });
 
 test("the estimate and the meter cannot disagree about a batched company", async () => {

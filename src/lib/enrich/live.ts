@@ -28,7 +28,9 @@ import {
 import { canonicalRegion } from "../publish/jurisdictions.ts";
 import type { Mode } from "./cassette.ts";
 import { DISCOVERY_MAX_SEARCHES, ROUTE_CONFIG } from "./client.ts";
-import { asStored, edgarFindings, edgarIndexDocuments, lookupEdgar, normalizeName, SEC_HOST } from "./edgar.ts";
+import {
+  asStored, edgarFindings, edgarIndexDocuments, edgarProxy, lookupEdgar, normalizeName, SEC_HOST, type EdgarRecord,
+} from "./edgar.ts";
 import { fetchDocument, type FetchDeps, type FetchedDocument } from "./fetch.ts";
 import { buildPrompt, egressScan, PROMPT_VERSION, type PublicCompanyRow, type RestrictionSet } from "./prompt.ts";
 import type { Pass } from "./scope.ts";
@@ -581,6 +583,9 @@ export async function identityResume(
       for (const url of await edgarIndexDocuments(edgar.record.latestAnnual.indexUrl, deps.fetch)) {
         candidates.push({ url, kind: "sec_annual_report", fiscal_year: null, title: "annual report exhibit", provenance: "edgar" });
       }
+      if (edgar.record.latestAnnual.form === "10-K" && edgar.record.latestProxy) {
+        candidates.push(proxyCandidate(edgar.record.latestProxy));
+      }
     }
   } else {
     findings.push({ field_key: "sec_registrant", value: null, abstained: true,
@@ -983,11 +988,43 @@ export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFind
  * report beside it does.
  */
 function printsFees(c: CandidateDoc, row: Pick<PublicCompanyRow, "exchange" | "periodAsOf">): boolean {
-  return feeKinds(row.exchange).includes(c.kind) &&
-    c.fiscal_year !== null && c.fiscal_year >= Number(row.periodAsOf.slice(0, 4)) - 1;
+  return feeKinds(row.exchange).includes(c.kind) && c.fiscal_year !== null && c.fiscal_year >= currentFrom(row);
 }
 
-function rankCandidates(candidates: CandidateDoc[], allow: Set<string>, priority: readonly DocKind[]): CandidateDoc[] {
+/** The earliest fiscal year still current for a period: the one before the period's own. */
+function currentFrom(row: Pick<PublicCompanyRow, "periodAsOf">): number {
+  return Number(row.periodAsOf.slice(0, 4)) - 1;
+}
+
+/**
+ * The order filings are read in: current before stale, then by kind, then
+ * newest, then seen in a search before merely reported.
+ *
+ * Kind came first until 21 October 2026, so an AIF of any age was read before
+ * any current filing of another kind. Of the 24 fees the TSX run proposed that
+ * day, 8 were for FY2023 or earlier -- Erdene's for FY2019. A stale filing is
+ * still read, after every current one. A filing of no stated year counts as
+ * current: an EDGAR exhibit has none, and is read beside its annual report.
+ */
+export function readingOrder(priority: readonly DocKind[], currentFrom: number) {
+  const stale = (c: CandidateDoc) => (c.fiscal_year !== null && c.fiscal_year < currentFrom ? 1 : 0);
+  return (a: CandidateDoc, b: CandidateDoc): number =>
+    (stale(a) - stale(b)) ||
+    (priority.indexOf(a.kind) - priority.indexOf(b.kind)) ||
+    ((b.fiscal_year ?? 0) - (a.fiscal_year ?? 0)) ||
+    // Seen in a search result beats merely reported: a transcribed URL may not exist.
+    ((a.provenance === "reported" ? 1 : 0) - (b.provenance === "reported" ? 1 : 0));
+}
+
+/** A 10-K filer's proxy statement, read as its circular: Item 14's fee table is in it. */
+function proxyCandidate(proxy: NonNullable<EdgarRecord["latestProxy"]>): CandidateDoc {
+  return { url: proxy.url, kind: "information_circular", fiscal_year: Number(proxy.filed.slice(0, 4)) - 1,
+           title: "DEF 14A", provenance: "edgar" };
+}
+
+function rankCandidates(
+  candidates: CandidateDoc[], allow: Set<string>, order: (a: CandidateDoc, b: CandidateDoc) => number,
+): CandidateDoc[] {
   const allowed = (url: string) => {
     const h = hostOf(url);
     return Boolean(h) && [...allow].some((a) => h === a || h!.endsWith(`.${a}`));
@@ -996,11 +1033,7 @@ function rankCandidates(candidates: CandidateDoc[], allow: Set<string>, priority
   return candidates
     .filter((c) => allowed(c.url))
     .filter((c) => { const k = canonicalUrl(c.url); if (seen.has(k)) return false; seen.add(k); return true; })
-    .sort((a, b) =>
-      (priority.indexOf(a.kind) - priority.indexOf(b.kind)) ||
-      ((b.fiscal_year ?? 0) - (a.fiscal_year ?? 0)) ||
-      // Seen in a search result beats merely reported: a transcribed URL may not exist.
-      ((a.provenance === "reported" ? 1 : 0) - (b.provenance === "reported" ? 1 : 0)));
+    .sort(order);
 }
 
 /** Most fetches a pass-2 job makes, index pages included: bounded work per company. */
@@ -1027,7 +1060,7 @@ export function kindFromUrl(url: string): DocKind | null {
  * first. A link to anything that is not plausibly a filing is ignored.
  */
 export function linkedFilings(
-  links: string[], allow: Set<string>, seen: Set<string>, priority: readonly DocKind[],
+  links: string[], allow: Set<string>, seen: Set<string>, order: (a: CandidateDoc, b: CandidateDoc) => number,
 ): CandidateDoc[] {
   const allowed = (url: string) => {
     const h = hostOf(url);
@@ -1043,8 +1076,7 @@ export function linkedFilings(
     found.push({ url, kind, fiscal_year: years.length ? Math.max(...years) : null, title: "linked from the company's page",
                  provenance: "reported" });
   }
-  found.sort((a, b) =>
-    (priority.indexOf(a.kind) - priority.indexOf(b.kind)) || ((b.fiscal_year ?? 0) - (a.fiscal_year ?? 0)));
+  found.sort(order);
   const picked = found.slice(0, MAX_LINKS_PER_PAGE);
   for (const p of picked) seen.add(canonicalUrl(p.url));
   return picked;
@@ -1063,20 +1095,45 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
     return (found.report.documents ?? []).map((d) => ({ ...d,
       provenance: found.seenUrls.has(canonicalUrl(d.url)) ? "search_result" as const : "reported" as const }));
   };
-  const priority = kindPriority(job.row.exchange);
+  const order = readingOrder(kindPriority(job.row.exchange), currentFrom(job.row));
   let candidates = job.priorCandidates ?? [];
   if (candidates.length === 0) {
     candidates = await searched();
-  } else if (!rankCandidates(candidates, allow, priority).some((c) => printsFees(c, job.row))) {
-    // Pass 1 found filings, just not the one the fees are in. One more
-    // discovery, asking for that one, costs what a pass-1 search does.
+  }
+
+  // A 10-K's fee table is in the proxy statement it incorporates (Item 14).
+  // A list from before pass 1 recorded the proxy lacks it, so EDGAR is asked:
+  // a free read, no model call. International Tower Hill, 21 October: three
+  // filings read, not one with "audit fees" in it.
+  const tenK = candidates.find((c) => c.provenance === "edgar" && c.title === "10-K");
+  const cik = tenK && /\/edgar\/data\/(\d+)\//.exec(tenK.url)?.[1];
+  if (cik && !candidates.some((c) => c.title === "DEF 14A")) {
+    const proxy = await edgarProxy(cik, deps.fetch);
+    if (proxy) {
+      candidates = [...candidates, proxyCandidate(proxy)];
+      notes.push(`added the 10-K's proxy statement: ${proxy.url}`);
+    }
+  }
+
+  if (candidates.length > 0 && !rankCandidates(candidates, allow, order).some((c) => printsFees(c, job.row))) {
     const venture = job.row.exchange !== "TSX";
-    candidates = [...candidates, ...await searched(FEE_SEARCH[venture ? "venture" : "non_venture"])];
-    notes.push(`searched again: pass 1 found no current ${venture ? "circular" : "AIF or SEC annual report"}`);
+    const what = venture ? "circular" : "AIF or SEC annual report";
+    // Search again only for a company known to publish the filing: pass 1
+    // listed one, of an earlier year or on a host pass 2 cannot read. On 21
+    // October, of 56 companies searched again, the 28 whose list held no such
+    // filing of any year, anywhere, found no fee by it (US$8.70 between them);
+    // the other 28 found 4. Magna's current AIF, for one, was listed only on a
+    // news site, and the second search found its circular on its own site.
+    if (candidates.some((c) => feeKinds(job.row.exchange).includes(c.kind))) {
+      candidates = [...candidates, ...await searched(FEE_SEARCH[venture ? "venture" : "non_venture"])];
+      notes.push(`searched again: pass 1 found no current ${what}`);
+    } else {
+      notes.push(`not searched again: pass 1 found no ${what} of any year, anywhere`);
+    }
   }
 
   const docs: FetchedDocument[] = [];
-  const queue = rankCandidates(candidates, allow, priority);
+  const queue = rankCandidates(candidates, allow, order);
   const seen = new Set(queue.map((c) => canonicalUrl(c.url)));
   let fetches = 0;
   while (queue.length > 0 && docs.length < MAX_DOCUMENTS && fetches < MAX_FETCHES) {
@@ -1093,9 +1150,12 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
     // discovery often stops at "Investors" or "AGM materials" when its search
     // budget runs out (Run 1, Radisson). Follow its links, read none of it.
     if (doc.docType === "html") {
-      const linked = linkedFilings(doc.links ?? [], allow, seen, priority);
+      const linked = linkedFilings(doc.links ?? [], allow, seen, order);
       if (linked.length > 0) {
-        queue.unshift(...linked);
+        // Into the reading order, not ahead of it. Put first, a page of 2023
+        // filings had Andina read four of them before anything current.
+        queue.push(...linked);
+        queue.sort(order);
         notes.push(`followed ${linked.length} filing link(s) from ${c.url}`);
         continue;
       }

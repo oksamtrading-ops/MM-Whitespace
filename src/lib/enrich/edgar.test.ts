@@ -61,6 +61,16 @@ test("ARRAS: a Form 15 with nothing periodic after it ends the registration, wha
   assert.equal(parseSubmissions(text).latestAnnual?.form, "20-F");
 });
 
+test("the latest proxy statement is kept beside the annual report, for a 10-K's Item 14", () => {
+  const text = submissions("1134115", [["8-K", "2026-05-02"], ["DEF 14A", "2026-04-21"], ["10-K", "2026-03-02"],
+                                       ["DEF 14A", "2025-04-18"]]);
+  const r = parseSubmissions(text);
+  assert.equal(r.latestAnnual?.form, "10-K");
+  assert.deepEqual(r.latestProxy, { filed: "2026-04-21",
+    url: "https://www.sec.gov/Archives/edgar/data/1134115/000000000026000001/d1.htm" }, "the newest, not the year before's");
+  assert.equal(parseSubmissions(submissions("1", [["40-F", "2026-03-20"]])).latestProxy, null, "a 40-F filer files none");
+});
+
 test("a Form 15 for one class does not end the company's reporting while reports go on", () => {
   // Deregistering warrants, say, and filing 6-Ks and the 40-F after it.
   assert.deepEqual(registrationOf({ form: ["6-K", "40-F", "15-12G", "6-K", "40-F"], filingDate: [] }),
