@@ -62,7 +62,12 @@ async function china() {
     await recordDecision(db, { periodId, companyId, fieldKey, decision: "accept", findingId, actorId: null });
     await db.run("update review_decisions set decided_at = '2026-09-13 01:00:00' where finding_id = ?", findingId);
   };
-  return { db, periodId, companyId, doc, finding, accept };
+  /** Flagged that morning, as the stale fee tables were on 21 October. */
+  const flag = async (fieldKey: string, findingId: string, reason: string) => {
+    await recordDecision(db, { periodId, companyId, fieldKey, decision: "flag", findingId, actorId: null, reason });
+    await db.run("update review_decisions set decided_at = '2026-10-21 11:00:00' where finding_id = ?", findingId);
+  };
+  return { db, periodId, companyId, doc, finding, accept, flag };
 }
 
 const changed = { changed: true, date: "2025-06-26", previous_auditor: "Deloitte Touche Tohmatsu" };
@@ -162,4 +167,58 @@ test("the fetcher stores the year with the document", async () => {
   const row = await db.get("select reports_on, reports_on_version from documents where content_hash = ?", hash) as
     { reports_on: number; reports_on_version: string };
   assert.deepEqual([row.reports_on, row.reports_on_version], [2025, REPORTS_ON_VERSION]);
+});
+
+/*
+ * Entree and Marimaca, 21 October 2026. Their FY2022 and FY2023 fee tables were
+ * flagged as stale in the morning; the afternoon's run found the FY2025 ones.
+ * Only an accept could be overtaken by newer research, so the flagged rows
+ * kept no controls on either screen and the FY2025 fees could not be taken.
+ */
+const STALE = "Stale: FY2021 fee table, two or more fiscal years before the latest; not current, so not accepted.";
+const fee = (amount: number, fiscal_year: number) => ({ amount, currency: "USD", fiscal_year });
+
+test("ENTREE: a flagged stale value is offered research from a LATER filing, and taking it stores it", async () => {
+  const { db, periodId, companyId, doc, finding, flag } = await china();
+  const old = await doc("https://chinagoldintl.invalid/circular-2022.pdf", CIRCULAR_2022, "2026-10-20 23:00:00");
+  const current = await doc("https://chinagoldintl.invalid/circular-2026.pdf", CIRCULAR_2026, "2026-10-21 15:00:00");
+  await flag("audit_fee", await finding("audit_fee", fee(36936, 2021), old, "2026-10-20 23:55:00"), STALE);
+  const later = await finding("audit_fee", fee(54314, 2025), current, "2026-10-21 15:33:00");
+
+  const [row] = await fieldRows(db, periodId, "audit_fee", SUPERSEDED);
+  assert.equal(row.findingId, later, "the later filing's value is on Newer research");
+  assert.equal(row.decision, "flag");
+  assert.equal(row.newerThanDecision, true, "so the grid draws 'Take the newer research' for it");
+  assert.deepEqual([row.reportsOn, row.acceptedReportsOn], [2025, 2021]);
+  assert.equal((await queueBuckets(db, periodId)).find((b) => b.key === SUPERSEDED)?.count, 1);
+
+  await recordDecision(db, { periodId, companyId, fieldKey: "audit_fee", decision: "accept",
+                             findingId: later, actorId: null });
+  const value = await db.get(`select value from company_period_field_values
+      where period_id = ? and field_key = 'audit_fee'`, periodId) as { value: string };
+  assert.deepEqual(JSON.parse(value.value), fee(54314, 2025));
+  assert.deepEqual(await fieldRows(db, periodId, "audit_fee", SUPERSEDED), [], "once taken it stops asking");
+});
+
+test("a flagged value found again from the same year, an earlier one or an undated one is not offered", async () => {
+  // Titan, Torex, Liberty and GoGold, 21 October: 13 fee tables flagged as
+  // stale that morning were re-found from the same years that afternoon.
+  const { db, periodId, doc, finding, flag } = await china();
+  const current = await doc("https://chinagoldintl.invalid/circular-2026.pdf", CIRCULAR_2026, "2026-10-20 23:00:00");
+  const sameYear = await doc("https://www.sec.gov/Archives/edgar/data/1/000000000026000001/ex99.htm",
+    "Annual report on Form 40-F for the fiscal year ended December 31, 2025.", "2026-10-21 15:00:00");
+  const earlier = await doc("https://chinagoldintl.invalid/circular-2022.pdf", CIRCULAR_2022, "2026-10-21 15:00:00");
+  const silent = await doc("https://chinagoldintl.invalid/notice.pdf", NO_YEAR, "2026-10-21 15:00:00");
+  const reason = "Wrong company: the quote is the parent's fee table.";
+
+  for (const [fieldKey, later] of [["audit_fee", sameYear], ["tax_fee", earlier], ["other_fee", silent]] as const) {
+    await flag(fieldKey, await finding(fieldKey, fee(1000, 2025), current, "2026-10-20 23:55:00"), reason);
+    await finding(fieldKey, fee(2000, 2025), later, "2026-10-21 15:33:00");
+    assert.deepEqual(await fieldRows(db, periodId, fieldKey, SUPERSEDED), [], `${fieldKey}: not newer research`);
+    assert.deepEqual(await fieldRows(db, periodId, fieldKey, OLDER_FILING), [],
+                     `${fieldKey}: nor an older filing -- nothing was accepted for it to be older than`);
+    const [row] = await fieldRows(db, periodId, fieldKey, "all");
+    assert.equal(row.decision, "flag", `${fieldKey}: the flag stands, with no controls`);
+    assert.equal(row.newerThanDecision, false);
+  }
 });

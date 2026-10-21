@@ -318,7 +318,9 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                 <div className="acts">
                   {cell.decided && cell.newerThanDecision && (
                     <p className="hint" style={{ width: "100%" }}>
-                      Accepted before this proposal existed. Taking it replaces the stored value.
+                      {cell.decision === "flag"
+                        ? "Flagged before this proposal existed, which reads a later filing. Taking it stores this value."
+                        : "Accepted before this proposal existed. Taking it replaces the stored value."}
                     </p>
                   )}
                   {cell.conflict ? (

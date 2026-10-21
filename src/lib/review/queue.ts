@@ -174,7 +174,7 @@ export async function queueBuckets(
     bucket("conflict", "extract disagrees with AI", true),
     bucket("no_evidence", "no evidence found"),
     bucket("quarantined", "quarantined: excerpt did not anchor"),
-    bucket(SUPERSEDED, "accepted, then researched again"),
+    bucket(SUPERSEDED, "decided, then researched again"),
     bucket(OLDER_FILING, "researched again from an older filing"),
   ];
 }
@@ -194,6 +194,13 @@ export type Row = Candidate & {
    * the unfiltered version flagged 29 rows, of which most were "PwC" again.
    * And an override is never flagged: a person chose that value deliberately,
    * and a model proposing against it is not a reason to ask them twice.
+   *
+   * A FLAGGED value is newer research only when the later proposal reads a
+   * filing reporting on a later year than the flagged one. A flag says that
+   * finding is unusable; a later filing can change that, and the same filing
+   * read again cannot. Until 21 October 2026 a flag ended the row: Entree's
+   * and Marimaca's FY2025 fees, found after their FY2022 and FY2023 tables were
+   * flagged as stale, could not be taken from either review screen.
    */
   newerThanDecision: boolean;
   /**
@@ -204,7 +211,7 @@ export type Row = Candidate & {
   fromOlderFiling: boolean;
   /** The fiscal year this proposal's document reports on, when it says. */
   reportsOn: number | null;
-  /** The same, for the document behind the standing accept. */
+  /** The same, for the document behind the standing accept or flag. */
   acceptedReportsOn: number | null;
   abstained: boolean;
   band: ReturnType<typeof evidenceBand>;
@@ -293,7 +300,7 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
       bulkAcceptableField: Number(r.bulkAcceptableField) === 1,
       decided: decision !== null,
       decision,
-      newerThanDecision: decision === "accept" &&
+      newerThanDecision: (decision === "accept" || decision === "flag") &&
         String(r.findingId ?? "") !== String(r.decidedFindingId ?? "") &&
         (String(r.findingState) === "proposed" || String(r.findingState) === "anchor_mismatch") &&
         isAfter(r.findingCreatedAt, r.decidedAt) &&
@@ -327,11 +334,21 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
   // and the proposal's is the earlier, it is shown as from an older filing and
   // not offered. Where either says nothing, nothing changes: unknown demotes
   // nothing (docs/decisions/NEWER-RESEARCH-FROM-OLDER-FILINGS.md).
+  //
+  // A flag asks more: the proposal must read a LATER year than the flagged
+  // finding, and both must say which. Otherwise it is the flagged filing, or
+  // one like it, read again, and the flag already answered it -- on 21 October
+  // 13 stale fee tables flagged that morning were re-found from the same
+  // years that afternoon. It is not shown as an older filing either: nothing
+  // was accepted for it to be older than.
   const yearOf = new Map(candidates.map((c) => [String(c.findingId), c.reportsOn]));
   for (const c of candidates) {
     if (!c.newerThanDecision || !c.decidedFindingId) continue;
     c.acceptedReportsOn = yearOf.get(c.decidedFindingId) ?? null;
-    if (c.reportsOn !== null && c.acceptedReportsOn !== null && c.reportsOn < c.acceptedReportsOn) {
+    const known = c.reportsOn !== null && c.acceptedReportsOn !== null;
+    if (c.decision === "flag") {
+      if (!known || c.reportsOn! <= c.acceptedReportsOn!) c.newerThanDecision = false;
+    } else if (known && c.reportsOn! < c.acceptedReportsOn!) {
       c.newerThanDecision = false;
       c.fromOlderFiling = true;
     }
