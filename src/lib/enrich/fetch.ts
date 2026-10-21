@@ -362,6 +362,11 @@ export async function fetchDocument(
   } else {
     extracted = (extractors.html ?? defaultHtmlExtractor)(response.body);
   }
+  // Postgres refuses a NUL anywhere in text, so one in a filing failed the
+  // whole job (Triple Flag, 20 October 2026). A NUL is never part of a quote.
+  // The key below is unchanged: no text holding one was ever stored, so no
+  // earlier finding was checked against a version of it.
+  extracted = { ...extracted, text: extracted.text.replace(/\u0000/g, "") };
 
   // The document is keyed by the bytes we actually received AND the reader
   // that turned them into text, and the STORED TEXT is what anchoring later

@@ -129,11 +129,15 @@ function isAfter(later: unknown, earlier: unknown): boolean {
   return Number.isNaN(a) || Number.isNaN(b) ? String(later) > String(earlier) : a > b;
 }
 
+// Each undecided row is in exactly one bucket, so the board's total is their
+// sum. A conflict comes first: its diff is what has to be settled. Then nothing
+// found. An abstention has no excerpt to anchor, so it is not quarantined: in
+// both, every "not found" was counted twice (1,780 of 6,064 on 20 October 2026).
 export const IN_BUCKET: Record<string, (c: Bucketable, threshold: number) => boolean> = {
-  quarantined: (c) => c.findingState !== "proposed" ||
-                      c.anchorMode === "none" || c.anchorMode === "label_only",
-  no_evidence: (c) => c.sourceCount === 0 || Boolean(c.abstained),
   conflict: (c) => Boolean(c.conflict),
+  no_evidence: (c, t) => !IN_BUCKET.conflict(c, t) && (c.sourceCount === 0 || Boolean(c.abstained)),
+  quarantined: (c, t) => !IN_BUCKET.conflict(c, t) && !IN_BUCKET.no_evidence(c, t) &&
+                         (c.findingState !== "proposed" || c.anchorMode === "none" || c.anchorMode === "label_only"),
   bulkable: (c, t) => !IN_BUCKET.quarantined(c, t) && !IN_BUCKET.no_evidence(c, t) &&
                       !IN_BUCKET.conflict(c, t) &&
                       c.bulkAcceptableField && (c.evidenceStrength ?? 0) >= t &&

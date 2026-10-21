@@ -380,6 +380,17 @@ test("every bucket's count is the number of rows its link opens", async () => {
     { conflict: false, findingState: "proposed", anchorMode: "exact_normalized",
       sourceCount: 0, abstained: false, bulkAcceptableField: true,
       evidenceStrength: null, fieldKey: "auditor" },
+    // the model said "not found": no evidence, not "excerpt did not anchor".
+    // Counted in both, every abstention was on the board twice: 6,064 "in
+    // all" after pass 2 on 20 October 2026, with 1,780 not-founds among them.
+    { conflict: false, findingState: "abstained", anchorMode: "none",
+      sourceCount: 1, abstained: true, bulkAcceptableField: true,
+      evidenceStrength: 0.115, fieldKey: "auditor" },
+    // disagrees with the workbook AND never anchored: the conflict owns it,
+    // so the diff is what the reviewer opens it to.
+    { conflict: true, findingState: "anchor_mismatch", anchorMode: "label_only",
+      sourceCount: 1, abstained: false, bulkAcceptableField: true,
+      evidenceStrength: 0.447, fieldKey: "audit_fee" },
   ];
   const keys = ["bulkable", "need_review", "conflict", "no_evidence", "quarantined"];
   const counts: Record<string, number> = Object.fromEntries(
@@ -390,7 +401,7 @@ test("every bucket's count is the number of rows its link opens", async () => {
   const total = keys.reduce((n, k) => n + counts[k], 0);
   assert.equal(total, rows.length, "the buckets partition the undecided rows exactly once");
   assert.deepEqual(counts,
-    { bulkable: 1, need_review: 1, conflict: 1, no_evidence: 1, quarantined: 1 });
+    { bulkable: 1, need_review: 1, conflict: 2, no_evidence: 2, quarantined: 1 });
 });
 
 test("a conflict is only ever in the conflict bucket", async () => {

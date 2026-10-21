@@ -188,6 +188,25 @@ test("every character reference is decoded, so a quote from an SEC exhibit ancho
   assert.equal(defaultHtmlExtractor(bytes("<p>&lt;b&gt;x&lt;/b&gt;</p>")).text, "<b>x</b>");
 });
 
+test("a NUL in a document's text is dropped before it is stored, whichever reader produced it", async () => {
+  // Triple Flag, 20 October 2026: Postgres refuses a NUL in text ("invalid
+  // byte sequence for encoding UTF8: 0x00"), and the whole job failed with it.
+  const pdf = await fetchDocument("https://northco.invalid/aif.pdf", ALLOW, await deps({
+    extractors: { pdf: () => ({ text: "Audit fees\u0000 412", pageCount: 1, extractor: "pdf", extractorVersion: "1.0.0" }) },
+    responses: { "https://northco.invalid/aif.pdf":
+      { status: 200, headers: { "content-type": "application/pdf" }, body: bytes("%PDF-1.7\nfees") } },
+  }));
+  assert.equal(pdf.text, "Audit fees 412");
+  assert.equal(pdf.charCount, pdf.text.length, "the count is of the text that is stored");
+
+  const html = await fetchDocument("https://northco.invalid/fees.html", ALLOW, await deps({
+    responses: { "https://northco.invalid/fees.html": ok("<html><body><p>Tax\u0000 fees 118</p></body></html>") } }));
+  assert.equal(html.text, "Tax fees 118");
+  const text = await fetchDocument("https://northco.invalid/fees.txt", ALLOW, await deps({
+    responses: { "https://northco.invalid/fees.txt": ok("Audit-related fees\u0000 40", "text/plain") } }));
+  assert.equal(text.text, "Audit-related fees 40");
+});
+
 test("the same filing read by a better reader is a new document, not a rewrite of the old one", async () => {
   const html = "<html><body>Company&#8217;s</body></html>";
   const url = "https://northco.invalid/a.html";

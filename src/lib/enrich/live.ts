@@ -48,6 +48,13 @@ const MAX_DOCUMENTS = 5;
 const WINDOW_CHARS = 1200;
 const MAX_CHARS_PER_DOCUMENT = 30_000;
 const MAX_CHARS_TOTAL = 100_000;
+/**
+ * Pass 2's answer, thinking included. 16,000 stopped enCore Energy's on 20
+ * October 2026, when the run's other 243 answers peaked at 11,849. This is
+ * twice that, and at the ~100 tokens a second the run wrote, about four minutes:
+ * inside the vendor's five-minute timeout, which the SDK retries twice.
+ */
+const EXTRACTION_MAX_TOKENS = 24_000;
 
 /* ------------------------------------------------------------- the vendor */
 
@@ -994,7 +1001,7 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
   return {
     kind: "request",
     request: {
-      model: cfg.model, max_tokens: 16000, thinking: { type: "adaptive" },
+      model: cfg.model, max_tokens: EXTRACTION_MAX_TOKENS, thinking: { type: "adaptive" },
       output_config: { effort: cfg.effort, format: { type: "json_schema", schema: EXTRACTION_SCHEMA } },
       system: [{ type: "text", text: `${prompt.stablePrefix}\n\n${EXTRACTION_RULES}`,
                  cache_control: { type: "ephemeral", ttl: "1h" } }],

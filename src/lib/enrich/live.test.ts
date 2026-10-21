@@ -265,6 +265,21 @@ test("PASS 2: filings from the trusted domain only, the wrong company's filing r
   assert.equal(by.stage_evidence_state.state, "abstained");
 });
 
+test("pass 2's extraction has room for twice the longest answer it has written", async () => {
+  // enCore Energy, 20 October 2026: "extraction ran out of output tokens" at
+  // 16,000, thinking included. The run's other 243 answers peaked at 11,849.
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v, requests } = vendor();
+  const { fetchDeps } = world();
+  await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  const extraction = requests.find((r) => (r.output_config as Record<string, unknown>)?.format)!;
+  const limit = Number(extraction.max_tokens);
+  assert.ok(limit >= 2 * 11_849, `${limit} leaves no room for an answer twice the longest`);
+  // Pass 2 wrote about 100 tokens a second. Past five minutes of output the
+  // client times out instead, and the SDK sends the request twice more.
+  assert.ok(limit <= 30_000, `${limit} could outrun the client's five-minute timeout`);
+});
+
 test("pass 2 follows an index page's links to the filings, and reads only those", async () => {
   const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
   const { v } = vendor({ report: { ...DISCOVERY_REPORT, documents: [
