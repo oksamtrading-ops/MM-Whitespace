@@ -1,6 +1,19 @@
 # Handover — Market Assessment Tool
 
-> **Status at 21 October 2026, evening.** **Q4-2026 is published as revision
+> **Status at 22 October 2026.** **Q4-2026 is published as revision 4**
+> (17:47 UTC, through a blocked gate, 5,496 values). It adds one value:
+> Teck's **ERP change**, "Implementing". The ERP change is a new pass-2 field
+> (`eef3fc9`, migration `0036`, rules `2026-10-22.1`). It records whether a
+> filing says the company is selecting, implementing or has recently
+> completed a new ERP system, named or not. That matters because filings
+> almost never name the system: the incumbent ERP was asked for 248 of the
+> 266 Q4 companies and named for one, Cameco. Pass-2 run `c4c761ec` read the
+> 20 largest TSX companies for it (US$3.60) and found Teck alone. October's
+> recorded research spend is US$128.31 across thirteen runs. Everything on
+> `main` is deployed; migrations are applied through `0036`; the code last
+> changed at `eef3fc9`. See "Done on 22 October 2026".
+>
+> **21 October, evening:** **Q4-2026 was published as revision
 > 3** (19:27 UTC, through a blocked gate, 5,495 values). Audit-fee coverage is
 > **47.0%** (125 of 266), up from 34.2% at revision 1 that morning. Two
 > code changes made pass 2 find fees it had missed: the fee table is kept
@@ -85,28 +98,33 @@ anything.
 5. Everything is on `main` except one branch. The local branches
    `publish-diff`, `newer-research-dates`, `fix-sec-registrant`,
    `fix/review-page-one-load`, `fix-pass2-failures`, `fix/pass2-fee-search`,
-   `fix/pass2-fee-search-2`, `fix/review-flagged-newer` and
+   `fix/pass2-fee-search-2`, `fix/review-flagged-newer`,
+   `docs/handover-21-oct-evening`, `feat/erp-change-signal` and
    `claude/nostalgic-austin-62bc1b` (the scope rule, with its worktree in
    `.claude/worktrees/`) are merged and can be deleted.
    **`claude/cool-sinoussi-fb57b1` (`be511a7`) is not merged**: it fixes the
-   three review-screen defects in item 2 and waits on Samuel's decision. It
-   merges cleanly into `main` as at `1cd38e0`; run the checks on the merge
-   before pushing.
+   three review-screen defects in item 2 and waits on Samuel's decision.
+   Since `eef3fc9` it conflicts with `main` in one file,
+   `src/app/(analyst)/review/by-company/CompanyGrid.tsx`: the branch moves the
+   override hint into its own block, and `main` added an ERP change line to
+   the old one. Take the branch's block and add the `erp_change` line to it.
+   Run the checks on the merge before pushing.
 
 ## What is waiting on Samuel
 
-In order. Item 1 is what Q4 revision 3 left open.
+In order. Item 1 is what Q4 revision 4 left open.
 
-**1. What Q4 revision 3 left open.** Revisions 1 to 3 were published on
-21 October through a blocked gate, each with its basis on the dashboard
-header. Revision 3's three blocks:
+**1. What Q4 revision 4 left open.** Revisions 1 to 3 were published on
+21 October and revision 4 on 22 October, each through a blocked gate with
+its basis on the dashboard header. Revision 4's three blocks, the same as
+revision 3's:
 - **Tier distribution 92.1%** (245 of 266; floor 95%). 21 companies have no
   stage evidence decided, so they are unclassified: Amapá, Cadillac,
   Chesapeake, Copper Fox, Copper Giant, Discovery Silver, FireFly, Luca,
   Magna, Mega Uranium, Montage, Nevgold, PMET, Predictive Discovery, Revival,
   Rusoro, Sandfire America, Snowline, Southern Cross, Tudor and Westgold.
   (Revision 1's header named Lara instead of Rusoro; the list above is the
-  gate's own count on 21 October evening.) Their stage and auditor were researched by hand on
+  gate's own count, checked again on 22 October.) Their stage and auditor were researched by hand on
   21 October (`reference/q4-unread-companies-research.json`, git-ignored: 37
   stages and 49 auditors, each with its source; those for companies that
   had a finding were entered as overrides), but **the review screens cannot enter
@@ -114,8 +132,9 @@ header. Revision 3's three blocks:
   findings, and the by-company grid's empty cells ("—") take no keys. A
   small code change (an override on an empty cell) would let a later
   revision tier them; it is on the unmerged branch in item 2.
-- **Fabrication rate 2.8%** of 4,375 assessed findings (ceiling 2.0%; 2.3% of
-  3,280 at revision 1, raised by the 21 October afternoon runs). Review cannot
+- **Fabrication rate 2.8%**: 128 unsupported of 4,652 assessed findings
+  (ceiling 2.0%; 2.3% of 3,280 at revision 1, 2.8% of 4,375 at revision 3,
+  raised by the 21 October afternoon runs and run `c4c761ec`). Review cannot
   lower it. No unsupported finding was accepted; Vox's auditor change was
   quarantined but right, and was entered as an override, and quarantined fee
   rows were entered by hand only where the amount was checked in the filing.
@@ -125,7 +144,9 @@ header. Revision 3's three blocks:
   Liberty, Osisko Gold Group, Silver Mountain, Talamore, Titan, Ucore); head
   office for Magna (Dowling or Sudbury), Osisko Gold Group and Rio2 (Toronto
   or Vancouver); region for Bunker Hill (two spellings of Idaho) and Rio2.
-  Their values stand as in revision 1. Deciding a row clears it.
+  Run `c4c761ec` added a third commodity list for Franco-Nevada and First
+  Quantum, and no new conflict. Their values stand as in revision 1.
+  Deciding a row clears it.
 
 Also open, each recorded as a flag with its reason on `/review`:
 - **China Gold's auditor** (and its auditor-since): Deloitte retired at the
@@ -158,6 +179,22 @@ Also open, each recorded as a flag with its reason on `/review`:
   `965a1edc`). Corrections to decided rows show on each field's "Newer
   research" tab. China Gold's auditor tenure there proposes 2025 from a 2024
   report; the stored 2026 is right, so leave it.
+- **Unreviewed research from run `c4c761ec`** (22 October), for the 20
+  largest TSX companies: 237 proposals besides Teck's ERP change, plus 5
+  unsupported and 34 not anchored. Of the 237:
+  - **175 repeat the stored value.**
+  - **25 are for a field with no value yet.**
+  - **16 are stage proposals** that differ only in form, because the stored
+    stage is a summary.
+  - **21 differ:**
+    - 12 commodity lists;
+    - FY2025 fees replacing FY2024 for Ivanhoe (audit, audit-related) and
+      Pan American (audit, audit-related, tax);
+    - Lundin Gold's FY2025 total assets;
+    - Barrick's FY2025 net income, US$4,993M against the stored US$7,154M
+      (check which line of the statement each is);
+    - China Gold's auditor tenure (2010) and auditor change (none). Both
+      contradict what was established on 21 October; leave them.
 - **103 commodities conflicts** and 4 head office region conflicts (Bunker
   Hill, Energy Fuels, GoldQuest, Marimaca) were left undecided, so TSX's
   values stand.
@@ -183,7 +220,7 @@ row could not take newer research, so Entree's and Marimaca's FY2025 fees,
 found after their FY2022 and FY2023 tables were flagged as stale, could not
 be entered from either screen.
 
-**3. Things an agent did on Samuel's behalf on 20–21 October** that
+**3. Things an agent did on Samuel's behalf on 20–22 October** that
 Samuel should know: one research agent sent Samuel's email address to SEC
 EDGAR once as its User-Agent (EDGAR asks for a contact); a source link
 opened a file-save dialog in the browser (nothing was saved); and the review
@@ -195,7 +232,13 @@ matched Minera Alamos, and decision 2748 accepted its abstention, storing an
 empty audit fee. It was undone with the three newer audit-fee decisions
 (2752–2755) and those three redone. The undo leaves an empty audit-fee row
 for Minera Alamos, published blank in revisions 2 and 3, as it was blank in
-revision 1.
+revision 1. On 22 October, with Samuel's approval each time:
+- migration `0036` was applied to production through the Supabase connector
+  and recorded in `schema_migrations`;
+- `eef3fc9` was pushed to `main`;
+- run `c4c761ec` was started from `/runs`;
+- Teck's ERP change was accepted (decision 2831);
+- revision 4 was published.
 
 **4. `npm run pg:smoke` from Samuel's own terminal**, never yet run against
 this code. First load the address without echoing it:
@@ -271,7 +314,7 @@ source" is true on screen.
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
-Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. The code last changed at `119c84b`.
+Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. The code last changed at `eef3fc9`.
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -317,6 +360,81 @@ override must cite a public page (Release C): an ERP known from an engagement
 is client information.
 
 ## What exists, and what state it is in
+
+### Done on 22 October 2026 — the ERP change field, run `c4c761ec`, revision 4
+
+**Why the incumbent ERP is blank.** It was researched: pass 2 has asked for
+it since Release C (12 October), ran for 248 of the 266 Q4 companies, and
+by 21 October had written 353 ERP findings. But a filing names an ERP vendor only when a system
+change touches internal control over financial reporting. One named a
+system: Cameco, SAP S/4HANA. By a keyword grouping of their reasons, about
+250 of the 352 abstentions say the documents contain nothing about an ERP.
+
+**The options paper**, `reference/erp-research-options.md` (git-ignored,
+drafted for Samuel and Kay), sets out five ways to research the ERP beyond
+filings:
+- **A.** A change field read from what pass 2 already reads.
+- **B.** Search the company's own site and EDGAR full-text search: no new
+  source, and about US$5 to pilot on 20 TSX companies.
+- **C.** Analyst research, entered through the existing sourced override.
+- **D.** Third-party pages: vendor case studies, newswires, job boards.
+- **E.** Licensed technographic data.
+
+D and E need legal review first. LinkedIn, engagement knowledge and SEDAR+
+are ruled out. The paper recommends:
+- building A now;
+- piloting B;
+- using C for the top of the pursuit list;
+- taking D and E to legal only if B cannot reach enough.
+
+What was done:
+- **`eef3fc9`** (deployed): the `erp_change` field, option A.
+  - **The value is `{status, year}`.** The status is selecting,
+    implementing, or completed within the 24 months before the period date
+    (`formatErpChange`: "Implementing (2026)"). The year is the go-live or
+    completion year the passage gives.
+  - **The excerpt must mention an ERP and a change word**
+    (`describesErpChange` in `live.ts`), or the finding becomes an
+    abstention. A risk factor, a director's past role and a system merely
+    in use do not count. The rules version is `2026-10-22.1`.
+  - **It is a pass-2 group marked `required: false`** (`scope.ts`). It is
+    collected whenever pass 2 runs but does not decide whether a company's
+    pass 2 is done (`requiredGroups` in `start.ts`). Without that, every
+    company carried from earlier research would read "not yet done".
+  - **An override must cite a public page**, as for the incumbent ERP
+    (`SOURCED_OVERRIDES`): "Implementing 2026 https://…".
+  - **It is never bulk-accepted** and is re-researched after 365 days.
+  - **"ERP change" is a column** in the companies table and the export,
+    after Incumbent ERP.
+- **Migration `0036`** (applied 16:06 UTC with `execute_sql`, recorded in
+  `schema_migrations`): the `field_catalog` row. It creates no table, so it
+  is written to be safe to replay.
+- **Run `c4c761ec`** covered the 20 largest TSX companies by market cap
+  (AEM, ABX, WPM, FNV, CCO, K, NTR, TECK, FM, LUN, PAAS, LUG, AGI, EQX, EDV,
+  CDE, CGG, HBM, IVN, ELD). It ran 16:22–16:33 UTC and cost US$3.60 against
+  a quoted US$6.00, which is US$0.18 a company.
+  - **One ERP change: Teck, Implementing.** It comes from the audit
+    committee's report in Teck's 2026 management proxy circular (EDGAR
+    exhibit 99.1), which "reviewed matters related to the selection and
+    implementation of a new enterprise resource planning system". No year is
+    given, and the passage covers selection too. It was accepted as
+    Implementing (decision 2831). It is the one the options paper predicted
+    from Q4's abstention reasons.
+  - **19 abstentions.** For the 18 besides Cameco, no document the run cited
+    mentions an ERP at all. The check covers cited documents only, not every
+    page read.
+  - **Cameco abstained by the 24-month rule.** Its April 2024 SAP S/4HANA
+    go-live is 28 months before the period date (31 August 2026). Measured
+    from its fiscal year-end (31 December 2025) it would be 20 months, and
+    would count. That is a choice about the rule, left as written; the named
+    system is already accepted as Cameco's incumbent ERP.
+  - **The run re-researched every pass-2 field** for the 20. What it found
+    is unreviewed (item 1).
+- **Revision 4** (17:47 UTC, 5,496 values): Teck's ERP change alone.
+  Compared value by value, every other value, all 242 chart aggregates and
+  every tier are as in revision 3. The override reason is revision 3's, with
+  4,652 assessed findings and the 22 October research. The amendment reason
+  quotes Teck's circular.
 
 ### Done on 21 October 2026, afternoon — fees: three fixes, three runs, revisions 2 and 3
 
@@ -617,6 +735,9 @@ instructions of his own, are built:
   "SAP S/4HANA https://…", and the address becomes the citation.
 - **Not bulk-acceptable yet.**
 - **Live rules move to `2026-10-09.1`.**
+- **Since 22 October, an ERP change field beside it** (`erp_change`), for a
+  change the filings describe without naming the system. See "Done on
+  22 October 2026".
 
 **The batch fix (deployed 12 October, `037d5b1`).** C's pass-2 re-run stalled,
 and the cause was in how batched answers are saved.
@@ -1719,22 +1840,23 @@ database.
 
 ## What is left, in order
 
-As at 21 October 2026, evening, in the order worth doing:
+As at 22 October 2026, in the order worth doing:
 
 | | | Whose |
 |---|---|---|
-| **a** | **Merge `claude/cool-sinoussi-fb57b1`** (the three review defects, item 2), then **tier the 21 unclassified companies** from `reference/q4-unread-companies-research.json` and publish revision 4 (item 1) | Samuel's decision, then Samuel or Kay on `/review` |
-| **b** | **Review what the 21 October afternoon runs found** beyond the fees, for 108 companies, and check run `965a1edc`'s tax, audit-related and other fees against their tables (item 1) | Samuel or Kay on `/review` |
+| **a** | **Merge `claude/cool-sinoussi-fb57b1`** (the three review defects, item 2; one conflict since `eef3fc9`, see "First, before any work"), then **tier the 21 unclassified companies** from `reference/q4-unread-companies-research.json` and publish a later revision (item 1) | Samuel's decision, then Samuel or Kay on `/review` |
+| **b** | **Review what the 21 October afternoon runs found** beyond the fees, for 108 companies; check run `965a1edc`'s tax, audit-related and other fees against their tables; and **review run `c4c761ec`'s 237 proposals** for the 20 largest TSX companies (item 1) | Samuel or Kay on `/review` |
 | **c** | **The 19 gate conflicts** (14 commodity lists, three head offices, two regions) and the **two duplicate records**, Osisko Development and Fuerte (item 1) | Samuel or Kay; the merges are Samuel's call |
 | **d** | **China Gold's auditor**, and the other flagged rows on `/review` (item 1) | the practice, then Samuel or Kay |
-| **e** | **The 141 companies still without an audit fee**: most TSXV circulars are on SEDAR+ only, which Decision 1 rules out | a decision about sources, not a build |
-| **f** | **`pg:smoke`** (item 4) | Samuel's terminal |
-| **g** | **Unblock the second Admin** (item 5) | Samuel, on `/access` |
-| **h** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
-| **i** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
-| **j** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
-| **k** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
-| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections), ~~revision 12~~ (20 Oct), ~~the document backfill~~ (20 Oct, by SQL), ~~roll forward to Q4~~ (20 Oct), ~~Run 3 pass 1 and its SEC registrant correction~~ (20 Oct), ~~pass 2 for Q4~~ (20 Oct), ~~its review and Q4 revision 1~~ (21 Oct), ~~pass 2's fee search, former names, and Q4 revisions 2 and 3~~ (21 Oct) | done |
+| **e** | **The ERP change for the other 246 companies.** Pass 2 re-researches every field when it runs. The start form quotes US$0.30 a company; the largest 20 cost US$0.18. Decide first whether "completed" should be measured from the fiscal year-end rather than the period date (Cameco). Then pilot option B of `reference/erp-research-options.md` (the company's own site and EDGAR full-text search, about US$5 for 20 TSX companies) | Samuel's decision (paid runs) |
+| **f** | **The 141 companies still without an audit fee**: most TSXV circulars are on SEDAR+ only, which Decision 1 rules out | a decision about sources, not a build |
+| **g** | **`pg:smoke`** (item 4) | Samuel's terminal |
+| **h** | **Unblock the second Admin** (item 5) | Samuel, on `/access` |
+| **i** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
+| **j** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
+| **k** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
+| **l** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
+| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections), ~~revision 12~~ (20 Oct), ~~the document backfill~~ (20 Oct, by SQL), ~~roll forward to Q4~~ (20 Oct), ~~Run 3 pass 1 and its SEC registrant correction~~ (20 Oct), ~~pass 2 for Q4~~ (20 Oct), ~~its review and Q4 revision 1~~ (21 Oct), ~~pass 2's fee search, former names, and Q4 revisions 2 and 3~~ (21 Oct), ~~the ERP change field, run `c4c761ec` and Q4 revision 4~~ (22 Oct) | done |
 
 Rename the Vercel project, the URL and the repository only if Samuel decides
 to; they are outward-facing.
