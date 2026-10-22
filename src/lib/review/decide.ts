@@ -175,19 +175,21 @@ export type RecordOptions = {
 
 /**
  * Fields whose override must name the public page it came from. An Analyst may
- * know a company's ERP from an engagement, and that is Deloitte client
- * information, which this build does not store -- so an override is only ever
- * what a public source says, and the source becomes its citation.
+ * know a company's ERP, or an ERP project, from an engagement, and that is
+ * Deloitte client information, which this build does not store -- so an
+ * override is only ever what a public source says, and the source becomes its
+ * citation.
  */
-export const SOURCED_OVERRIDES = new Set(["incumbent_erp"]);
+export const SOURCED_OVERRIDES = new Set(["incumbent_erp", "erp_change"]);
 
 export async function recordDecision(db: Sql, opts: RecordOptions): Promise<string> {
   if (opts.decision === "flag" && !opts.reason?.trim()) {
     throw new Error("a flag requires a one-line reason");
   }
   if (opts.decision === "override" && SOURCED_OVERRIDES.has(opts.fieldKey) && !sourceUrlIn(opts.reason ?? "")) {
-    throw new Error("Name the public page that says so: type the system, then its address " +
-                    "(SAP S/4HANA https://…). What is known only from an engagement is client information.");
+    throw new Error("Name the public page that says so: type the value, then its address " +
+                    "(SAP S/4HANA https://…, or Implementing 2026 https://…). What is known only from an " +
+                    "engagement is client information.");
   }
   if (opts.decision === "override" && opts.overrideValue === undefined) {
     throw new Error("an override requires a value");

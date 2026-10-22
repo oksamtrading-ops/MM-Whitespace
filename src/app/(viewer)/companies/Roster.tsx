@@ -162,6 +162,7 @@ export default function Roster({ rows, deloitteAudits, initial }: {
                             value={r.auditFee === null || r.auditFee === undefined ? null : formatFee(r.auditFee)} />
                     </td>
                     <td><Cite row={r} field="incumbent_erp" value={r.erp} /></td>
+                    <td><Cite row={r} field="erp_change" value={r.erpChange} /></td>
                     <td className="n fig-sm">{r.marketCap === null ? "—" : formatMoney(r.marketCap, "CAD", { compact: true })}</td>
                   </tr>
                 ))}

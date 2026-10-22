@@ -36,6 +36,13 @@ const CIRCULAR = makePdf([
 ]);
 const SOMEONE_ELSE = makePdf(["Southco Resources Ltd.\nAnnual Information Form\nAudit fees 999"]);
 // Northco's own AIF from before its rename, naming it only as it was then.
+// An MD&A that says the ERP is changing, without naming it.
+const MDNA_ERP = makePdf([
+  "Northco Mining Corp.\nManagement's Discussion and Analysis for the year ended December 31, 2025",
+  "Changes in Internal Control over Financial Reporting\nDuring 2025 the Corporation began the selection " +
+  "and implementation of a new enterprise resource planning system, with go-live planned for 2026.",
+]);
+
 // Northco's AIFs from years past, and a current MD&A.
 const OLD_AIF = makePdf(["Northco Mining Corp.\nAnnual Information Form for the year ended December 31, 2019\n" +
   "Northco Mining Corp. is engaged in the exploration of gold properties in northern Ontario, as it has been for years."]);
@@ -68,6 +75,7 @@ const PAGES: Record<string, { type: string; body: Uint8Array | string }> = {
   "https://northco.invalid/docs/circular-2026.pdf": { type: "application/pdf", body: CIRCULAR },
   "https://northco.invalid/docs/southco-aif.pdf": { type: "application/pdf", body: SOMEONE_ELSE },
   "https://northco.invalid/docs/kirkland-aif-2025.pdf": { type: "application/pdf", body: BEFORE_RENAME },
+  "https://northco.invalid/docs/mda-2025.pdf": { type: "application/pdf", body: MDNA_ERP },
   "https://northco.invalid/docs/northco-mda-q1-2026.pdf": { type: "application/pdf", body: CURRENT_MDNA },
   // An archive page of filings from years past: where Andina's second search led, 21 October 2026.
   "https://northco.invalid/investors/archive/": { type: "text/html", body:
@@ -1377,6 +1385,48 @@ test("PASS 2: a commodities finding is anchored in the filing, with what the fil
   const { by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
   assert.equal(by.commodities.state, "proposed", "the quote is in the circular");
   assert.deepEqual(JSON.parse(by.commodities.proposed_value), ["Copper", "Gold"], "zinc is not in it");
+});
+
+test("an ERP change is a signal only where the passage says the company's own ERP is changing", () => {
+  // Teck, 21 October 2026: "selection and implementation of a new enterprise
+  // resource planning system", no vendor named. The named-system field had to
+  // abstain on it; this one records it.
+  const change = (text_value: string | null, evidence_excerpt: string, year_value: number | null = null) =>
+    toFinding({ ...erpBase, field_key: "erp_change", text_value, evidence_excerpt, year_value }, []);
+  assert.ok((EXTRACTED_FIELDS as readonly string[]).includes("erp_change"), "pass 2 asks for it");
+
+  const teck = change("implementing", "the selection and implementation of a new enterprise resource planning system", 2026)!;
+  assert.deepEqual(teck.value, { status: "implementing", year: 2026 });
+  assert.equal(teck.abstained, false);
+  assert.deepEqual(change("Under way", "migrating to SAP S/4HANA")!.value, { status: "implementing", year: null },
+                   "a named system counts too, and a status is read as a reviewer would write it");
+
+  for (const quote of ["our enterprise resource planning software supports every site",
+                       "the implementation of a new mine plan at Kirkland"]) {
+    const f = change("implementing", quote)!;
+    assert.equal(f.abstained, true, `"${quote}" says nothing about an ERP changing`);
+    assert.equal(f.value, null);
+    assert.match(f.abstention_reason ?? "", /does not describe a change to the company's ERP/);
+  }
+  assert.equal(change("thinking about it", "a new ERP system"), null, "a status that is none of the three is no value");
+  assert.deepEqual(change("completed", "went live on the new ERP", 1999)!.value, { status: "completed", year: null },
+                   "a year that cannot be the go-live is dropped, not stored");
+});
+
+test("PASS 2: an ERP change is anchored in the filing that says it, with no system named", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const [circular] = DISCOVERY_REPORT.documents;
+  const extraction = { findings: [...EXTRACTION.findings, {
+    field_key: "erp_change", document_index: 1, abstained: false, abstention_reason: null, self_confidence: 0.8,
+    evidence_excerpt: "began the selection and implementation of a new enterprise resource planning system",
+    text_value: "implementing", year_value: 2026, stage: null, auditor_change: null, fee: null,
+  }] } as typeof EXTRACTION;
+  const { v } = vendor({ extraction, report: { ...DISCOVERY_REPORT, documents: [circular,
+    { url: "https://northco.invalid/docs/mda-2025.pdf", kind: "annual_mdna", fiscal_year: 2025, title: "MD&A" }] } });
+  const { fetchDeps } = world();
+  const { by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.equal(by.erp_change.state, "proposed", "the quote is in the MD&A");
+  assert.deepEqual(JSON.parse(by.erp_change.proposed_value), { status: "implementing", year: 2026 });
 });
 
 test("a head office read from a French filing is stored as the workbook spells it; the quote is not", () => {

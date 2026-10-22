@@ -151,9 +151,14 @@ async function carriedRows(db: Sql, periodId: string, fields: string[]) {
                                      from_label: string }>;
 }
 
-/** Whether every field group of the pass is researched for the company. */
+/** The groups that decide whether a pass is done: every one but a signal (FieldGroup.required). */
+function requiredGroups(pass: Pass) {
+  return FIELD_GROUPS[pass].filter((g) => g.required !== false);
+}
+
+/** Whether every required field group of the pass is researched for the company. */
 function hadPass(groups: Map<string, Covered>, pass: Pass): boolean {
-  return FIELD_GROUPS[pass].every((g) => groups.has(g.key));
+  return requiredGroups(pass).every((g) => groups.has(g.key));
 }
 
 function inScope(coverage: PassCoverage, scope: Scope, pass: Pass): string[] {
@@ -171,7 +176,7 @@ export async function passScopes(db: Sql, periodId: string, pass: Pass): Promise
     if (hadPass(c.groups, pass)) {
       if ([...c.groups.values()].includes("here")) doneHere++; else doneCarried++;
     } else if (c.groups.size > 0) {
-      const lacking = FIELD_GROUPS[pass].filter((g) => !c.groups.has(g.key)).map((g) => g.label).join(" and ");
+      const lacking = requiredGroups(pass).filter((g) => !c.groups.has(g.key)).map((g) => g.label).join(" and ");
       partly.set(lacking, (partly.get(lacking) ?? 0) + 1);
     }
   }

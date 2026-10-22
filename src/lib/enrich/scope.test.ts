@@ -288,3 +288,16 @@ test("a run's rules are read from its prompt version and compared as numbers", (
   assert.equal(askedFor(october, "2026-09-04.1"), true, "replay counts as it always has");
   assert.equal(askedFor(FIELD_GROUPS.general[0], OCTOBER_13), true);
 });
+
+test("the ERP change signal is its own group, so research from before 22 October does not claim it", () => {
+  const signal = FIELD_GROUPS.general.find((g) => g.fields.includes("erp_change"))!;
+  assert.equal(signal.since, "2026-10-22.1");
+  assert.deepEqual([...signal.fields], ["erp_change"], "nothing older is folded into it");
+  assert.equal(askedFor(signal, "2026-09-04.1+live.2026-10-21.1"), false, "the fee runs of 21 October did not ask");
+  assert.equal(askedFor(signal, "2026-09-04.1+live.2026-10-22.1"), true);
+  assert.ok(compareRules(LIVE_RULES_VERSION, signal.since!) >= 0, "today's rules ask for it");
+  assert.equal(signal.required, false,
+               "a signal most filings are silent on would leave every carried company not yet done");
+  assert.ok(FIELD_GROUPS.general.filter((g) => g.required !== false).every((g) => g.fields.length > 1),
+            "the groups that decide what is done are the two halves, as before");
+});

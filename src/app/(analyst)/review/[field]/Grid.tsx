@@ -467,6 +467,7 @@ export default function Grid(props: Props) {
                            }
                          }} />
                   <p className="hint">
+                    {fieldKey === "erp_change" && <>Selecting, Implementing or Completed, the year if stated, then the public page that says so: Implementing 2026 https://… · </>}
                     {fieldKey === "incumbent_erp" && <>Name the system, then the public page that says so: SAP S/4HANA https://… · </>}
                     Enter commits · Esc returns to the cell
                   </p>

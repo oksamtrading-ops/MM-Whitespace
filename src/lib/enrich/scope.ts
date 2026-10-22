@@ -71,6 +71,15 @@ export type FieldGroup = {
    * does not count for them. Null: asked for from the start.
    */
   since: string | null;
+  /**
+   * false for a signal: collected whenever the pass runs, and never what
+   * decides whether a company still needs research. Research is carried into
+   * the next quarter through accepted values, and a field almost every
+   * company's filings are silent on would almost never have one, so as a
+   * required group it would leave every company "not yet done" after every
+   * roll-forward. Absent: required.
+   */
+  required?: false;
 };
 
 export const FIELD_GROUPS: Record<Pass, readonly FieldGroup[]> = {
@@ -92,6 +101,15 @@ export const FIELD_GROUPS: Record<Pass, readonly FieldGroup[]> = {
                "reporting_currency"],
       since: "2026-10-17.1",
     },
+    {
+      // Its own group, as the financials had: a run before 22 October never
+      // asked, so it cannot count as having researched it. Not required: see
+      // FieldGroup.required.
+      key: "erp_change", label: "the ERP change signal",
+      fields: ["erp_change"],
+      since: "2026-10-22.1",
+      required: false,
+    },
   ],
 };
 
@@ -104,7 +122,8 @@ export const DONE_COPY: Record<Pass, string> = {
            "earlier quarter and carried here: the filing fields (stage, auditor, tenure, change of auditor, " +
            "audit and tax fees, ERP), and commodities with the financials (revenue, net income, total assets, " +
            "audit-related and other fees, reporting currency), which pass 2 has asked for since 17 October. " +
-           "Research from before then covers the first half only.",
+           "Research from before then covers the first half only. The ERP change signal, asked for since " +
+           "22 October, is collected whenever pass 2 runs and does not decide what is done.",
 };
 
 /** The counts behind a pass's two options (start.ts, passScopes). */

@@ -219,6 +219,33 @@ export function canonicalErp(name: string): string {
   return ERP_NAMES.find(([re]) => re.test(t))?.[1] ?? t;
 }
 
+/** Whether a company is changing its ERP, and the year a filing gives for it. */
+export type ErpChange = { status: ErpChangeStatus; year: number | null };
+export type ErpChangeStatus = "selecting" | "implementing" | "completed";
+
+const ERP_CHANGE_WORDS: Record<ErpChangeStatus, string> = {
+  selecting: "Selecting", implementing: "Implementing", completed: "Completed",
+};
+
+/** A status as a model or a reviewer writes it, or null: "under way" is implementing. */
+export function erpChangeStatus(text: string | null | undefined): ErpChangeStatus | null {
+  const t = (text ?? "").trim().toLowerCase();
+  if (/^(?:selecting|selection|choosing|planning|planned|evaluating)\b/.test(t)) return "selecting";
+  if (/^(?:implementing|implementation|in progress|under ?way|migrating|upgrading|replacing)\b/.test(t)) {
+    return "implementing";
+  }
+  if (/^(?:completed?|finished|went live|live|implemented)\b/.test(t)) return "completed";
+  return null;
+}
+
+/** "Implementing (2026)"; the year only where a filing gave one. */
+export function formatErpChange(v: unknown): string {
+  const o = v && typeof v === "object" ? v as Record<string, unknown> : null;
+  const status = erpChangeStatus(typeof o?.status === "string" ? o.status : null);
+  if (!status) return "—";
+  return typeof o?.year === "number" ? `${ERP_CHANGE_WORDS[status]} (${o.year})` : ERP_CHANGE_WORDS[status];
+}
+
 /**
  * Does a passage name this system? A quote about "a new ERP" is evidence that
  * a company has an ERP, not which one -- so it is no evidence for the value.
@@ -369,6 +396,8 @@ export function formatFieldValue(fieldKey: string, raw: unknown): string {
       return typeof raw === "string" ? formatMonthDay(raw) : String(raw);
     case "auditor_since": case "tier":
       return String(raw);   // a year is not a quantity: 2017, never 2,017
+    case "erp_change":
+      return formatErpChange(raw);
     case "stage_evidence_state": case "property_evidence_state": {
       const flags = asStageFlags(raw);
       if (flags) return formatStages(flags);
@@ -464,6 +493,19 @@ export function parseFieldInput(fieldKey: string, text: string): Parsed {
       const system = t.replace(/https?:\/\/\S+/gi, "").replace(/[\s,;:—–-]+$/, "").trim();
       if (!system) return { ok: false, message: "Name the system, then the public page that says so: SAP S/4HANA https://…" };
       return { ok: true, value: canonicalErp(system) };
+    }
+    case "erp_change": {
+      // The status, the year if one is stated, then the public page:
+      // "Implementing 2026 https://...". As for the ERP itself, the address is
+      // the citation and only the status and year are the value.
+      const words = t.replace(/https?:\/\/\S+/gi, "").trim();
+      const status = erpChangeStatus(words);
+      if (!status) {
+        return { ok: false, message: "Write Selecting, Implementing or Completed, the year if stated, then the " +
+                                      "public page that says so: Implementing 2026 https://…" };
+      }
+      const year = words.match(/\b(20\d{2})\b/)?.[1];
+      return { ok: true, value: { status, year: year ? Number(year) : null } satisfies ErpChange };
     }
     case "website": {
       if (!t) return { ok: false, message: "Enter the address." };

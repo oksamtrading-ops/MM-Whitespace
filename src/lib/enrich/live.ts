@@ -23,7 +23,7 @@
  */
 import { currenciesMentioned, detectScale } from "./anchor.ts";
 import {
-  canonicalCommodities, canonicalErp, currencyCode, namesCommodity, namesSystem,
+  canonicalCommodities, canonicalErp, currencyCode, erpChangeStatus, namesCommodity, namesSystem,
 } from "../format/fields.ts";
 import { canonicalRegion } from "../publish/jurisdictions.ts";
 import type { Mode } from "./cassette.ts";
@@ -288,8 +288,10 @@ const REPORT_TOOL = {
  *
  * 2026-10-21.1: pass 2 searches again, with FEE_SEARCH, when pass 1 found no
  * current filing of the kind the fees are printed in.
+ * 2026-10-22.1: pass 2 asks whether the company is changing its ERP
+ * (erp_change), named or not.
  */
-export const LIVE_RULES_VERSION = "2026-10-21.1";
+export const LIVE_RULES_VERSION = "2026-10-22.1";
 
 /**
  * What produced a finding, for the record: the prefix's version alone in
@@ -632,6 +634,16 @@ const FEE_RESERVE = 9_000;
 const ERP_PATTERN = /enterprise resource planning|\bERP\b|S\s*\/\s*4\s*HANA|\bSAP\b|JD Edwards|NetSuite|Dynamics 365|Oracle (?:E-Business|Fusion|Cloud)|Sage (?:Intacct|X3)|Pronto Xi|Epicor/gi;
 const ERP_HITS = 2;
 
+/** An ERP named or described, for checking a quote: ERP_PATTERN without the global flag's state. */
+const ERP_TERM = new RegExp(ERP_PATTERN.source, "i");
+/** Words that say a system is changing, not merely in use. */
+const CHANGE_WORDS = /\b(?:new|implement\w*|select\w*|replac\w*|upgrad\w*|migrat\w*|transition\w*|go[- ]live|went live|deploy\w*|roll(?:ed|ing)?[- ]?out|conver(?:t|sion)\w*)\b/i;
+
+/** Does a passage speak of an ERP changing? Naming the system is not required. */
+export function describesErpChange(excerpt: string): boolean {
+  return ERP_TERM.test(excerpt) && CHANGE_WORDS.test(excerpt);
+}
+
 /**
  * Where a filing says what the company mines: its description of the business,
  * usually near the start of an AIF or MD&A, and often already inside the cover
@@ -743,8 +755,9 @@ export function windowsOf(text: string, cap = MAX_CHARS_PER_DOCUMENT): string {
 
 export const EXTRACTED_FIELDS = [
   "stage_evidence_state", "auditor", "auditor_since", "auditor_change", "fiscal_year_end",
-  "head_office_location", "head_office_region", "audit_fee", "tax_fee", "incumbent_erp", "commodities",
-  "audit_related_fee", "other_fee", "total_revenue", "net_income", "total_assets", "reporting_currency",
+  "head_office_location", "head_office_region", "audit_fee", "tax_fee", "incumbent_erp", "erp_change",
+  "commodities", "audit_related_fee", "other_fee", "total_revenue", "net_income", "total_assets",
+  "reporting_currency",
 ] as const;
 
 /** The researched amounts: each {amount, currency, fiscal_year}, read and checked as a fee is. */
@@ -846,6 +859,14 @@ Return one finding for EVERY field listed, in this form:
   Edwards, Microsoft Dynamics 365, Pronto Xi...). The excerpt must name the system. A system the
   company sells, implements for others, or mentions as a supplier's or customer's does not count;
   "a new ERP system" with no name is not a value. Abstain unless a document names the company's own.
+- erp_change: whether the COMPANY ITSELF is changing its ERP (enterprise resource planning) system,
+  named or not. text_value is "selecting" (choosing or planning a new system), "implementing" (the
+  change is under way) or "completed" (finished within the 24 months before the period date);
+  year_value is the go-live or completion year the passage gives, or null. The excerpt must say that
+  the company is selecting, implementing or has completed a new or upgraded ERP system. A risk
+  factor about what an implementation could do, a director's experience at other companies, a
+  system the company sells or implements for others, and a system merely in use are not a change.
+  Abstain unless a document says the company's own ERP is changing.
 - commodities: text_value, the commodities the company explores for, develops or produces, comma
   separated, each named (gold, copper, lithium...). The excerpt must name every commodity you list,
   so choose the passage that describes the company's business. "Base metals" or "precious metals"
@@ -938,6 +959,20 @@ export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFind
                  abstention_reason: `The passage cited does not name the system ("${system}").` };
       }
       return { ...base, value: system };
+    }
+    case "erp_change": {
+      const status = erpChangeStatus(e.text_value);
+      if (!status) return null;
+      // As for the named ERP, the gate proves the quote is in the document, not
+      // that it says what the value says. A quote that does not speak of an ERP
+      // changing -- "our ERP software", a director's past work -- is an
+      // abstention, kept and visible, not a signal.
+      if (!e.evidence_excerpt || !describesErpChange(e.evidence_excerpt)) {
+        return { ...base, abstained: true,
+                 abstention_reason: "The passage cited does not describe a change to the company's ERP." };
+      }
+      const year = e.year_value !== null && e.year_value >= 2000 && e.year_value <= 2040 ? e.year_value : null;
+      return { ...base, value: { status, year } };
     }
     case "commodities": {
       if (!e.text_value) return null;

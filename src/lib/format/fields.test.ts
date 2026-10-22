@@ -124,3 +124,20 @@ test("an ERP reads one way, and an override keeps the system and drops the addre
   assert.equal(sourceUrlIn("SAP S/4HANA https://northco.example/aif-2025.pdf."), "https://northco.example/aif-2025.pdf");
   assert.equal(parseFieldInput("incumbent_erp", "https://only.example").ok, false);
 });
+
+test("an ERP change reads as a status and a year, and an override keeps them and drops the address", async () => {
+  const { erpChangeStatus, formatErpChange } = await import("./fields.ts");
+  assert.equal(erpChangeStatus("Selection"), "selecting");
+  assert.equal(erpChangeStatus("under way"), "implementing");
+  assert.equal(erpChangeStatus("implemented"), "completed", "done, not doing");
+  assert.equal(erpChangeStatus("maybe"), null);
+  assert.equal(formatErpChange({ status: "implementing", year: 2026 }), "Implementing (2026)");
+  assert.equal(formatFieldValue("erp_change", { status: "selecting", year: null }), "Selecting");
+  assert.equal(formatFieldValue("erp_change", { status: "nonsense" }), "—", "only the three statuses are words");
+  assert.deepEqual(parseFieldInput("erp_change", "Implementing 2026 https://northco.example/mda-2025.pdf"),
+                   { ok: true, value: { status: "implementing", year: 2026 } });
+  assert.deepEqual(parseFieldInput("erp_change", "completed https://northco.example/news"),
+                   { ok: true, value: { status: "completed", year: null } });
+  const bad = parseFieldInput("erp_change", "SAP S/4HANA https://northco.example/mda-2025.pdf");
+  assert.equal(bad.ok, false, "a system is not a status: that belongs in the incumbent ERP");
+});

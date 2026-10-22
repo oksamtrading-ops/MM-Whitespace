@@ -11,7 +11,7 @@
  */
 import type { Sql } from "../db/sql.ts";
 import { shownPeriod } from "../db/periods.ts";
-import { formatFieldValue, STAGE_ORDER, type Stage } from "../format/fields.ts";
+import { formatErpChange, formatFieldValue, STAGE_ORDER, type Stage } from "../format/fields.ts";
 import { metaFor, type RosterRow, type StageEvidence } from "./roster.ts";
 import { citationOf, citationsForPeriod, type Citation } from "./citations.ts";
 
@@ -411,6 +411,7 @@ export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Pro
       hqCity: text("head_office_location"),
       auditFee: get("audit_fee"),
       erp: text("incumbent_erp"),
+      erpChange: get("erp_change") === null ? null : formatErpChange(get("erp_change")),
       commodities: listOfText(get("commodities")),
       stages: stageRows === null ? null : stageRows.get(id) ?? [],
       stageEvidence: evidence === "partial" || evidence === "complete" ? evidence : "none",

@@ -40,6 +40,8 @@ export type RosterRow = {
   /** As stored: a Money, or a bare number from before currencies were kept. */
   auditFee: unknown;
   erp: string | null;
+  /** Whether the company is changing its ERP, as the table words it: "Implementing (2026)". */
+  erpChange: string | null;
   /** What the company mines, as stored: TSX's list from the workbook, or research once accepted. */
   commodities: string[];
   /**
@@ -63,7 +65,7 @@ export type RosterRow = {
 /** The fields a column shows. Everything else public is searched through `meta`. */
 export const COLUMN_FIELDS = new Set([
   "company_name", "root_ticker", "exchange", "tier", "footprint", "auditor", "market_cap_cad",
-  "head_office_region", "head_office_location", "audit_fee", "incumbent_erp", "commodities",
+  "head_office_region", "head_office_location", "audit_fee", "incumbent_erp", "erp_change", "commodities",
 ]);
 
 /** Never searched: derived, or carried by a column under another name. */
@@ -124,7 +126,7 @@ export function cited(row: RosterRow, field: string): boolean {
 
 export type SortKey =
   | "name" | "ticker" | "tier" | "stage" | "footprint" | "commodities" | "hq" | "auditor" | "auditFee" | "erp"
-  | "marketCap";
+  | "erpChange" | "marketCap";
 
 export type RosterFilter = {
   q: string;
@@ -154,7 +156,8 @@ const MULTI = ["tier", "hq", "stage", "auditor", "footprint", "commodity", "prop
 type Multi = typeof MULTI[number];
 
 const SORT_KEYS: readonly SortKey[] =
-  ["name", "ticker", "tier", "stage", "footprint", "commodities", "hq", "auditor", "auditFee", "erp", "marketCap"];
+  ["name", "ticker", "tier", "stage", "footprint", "commodities", "hq", "auditor", "auditFee", "erp", "erpChange",
+   "marketCap"];
 
 export const TIER_TOKENS = ["1", "2", "3", "4", "5", "6", "no_stage", "no_property", "conflicting", "unclassified"];
 const STAGE_TOKENS = [...STAGE_ORDER, "none"];
@@ -293,6 +296,7 @@ function matchesStage(row: RosterRow, wanted: string[]): boolean {
 /** What the visible cells say, so a search for something on screen needs no hint. */
 function visibleText(row: RosterRow): string {
   return [row.name, row.ticker, row.exchange, hqWord(row), row.hqRegion, auditorWord(row.auditor), row.erp,
+          row.erpChange,
           row.commodities.join(" "),
           row.auditFee === null || row.auditFee === undefined ? null : formatFee(row.auditFee)]
     .filter(Boolean).join(" ").toLowerCase();
@@ -357,6 +361,7 @@ export function sortRows(list: Shown[], sort: SortKey, dir: 1 | -1): Shown[] {
       case "auditor": return r.auditor ? auditorWord(r.auditor) : null;
       case "auditFee": return feeKey(r.auditFee);
       case "erp": return r.erp;
+      case "erpChange": return r.erpChange;
       case "marketCap": return r.marketCap;
     }
   };
@@ -492,6 +497,7 @@ export const ROSTER_COLUMNS: Array<{ key: SortKey | Stage; label: string; numeri
   { key: "auditor", label: "Auditor" },
   { key: "auditFee", label: "Audit fees" },
   { key: "erp", label: "Incumbent ERP" },
+  { key: "erpChange", label: "ERP change" },
   { key: "marketCap", label: "Market cap", numeric: true },
 ];
 

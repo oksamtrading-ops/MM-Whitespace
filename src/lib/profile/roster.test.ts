@@ -9,7 +9,8 @@ function row(over: Partial<RosterRow> & { name: string }): RosterRow {
   return {
     companyId: over.name.toLowerCase().replace(/\W+/g, "-"),
     ticker: null, exchange: "TSX", tier: null, status: "unclassified_no_stage_evidence", footprint: "abroad",
-    auditor: null, marketCap: null, hqRegion: null, hqCity: null, auditFee: null, erp: null, commodities: [],
+    auditor: null, marketCap: null, hqRegion: null, hqCity: null, auditFee: null, erp: null, erpChange: null,
+    commodities: [],
     stages: [], stageEvidence: "none", regions: {}, sources: {}, meta: [],
     ...over,
   };

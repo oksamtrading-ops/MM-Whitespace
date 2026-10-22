@@ -63,7 +63,8 @@ test("a link is written only for a cited value, and only if it is http(s)", () =
   assert.equal(safeUrl(" https://ok.example/a "), "https://ok.example/a");
   const row = {
     companyId: "c1", name: "Northco", ticker: "N", exchange: "TSX", tier: 4, status: "classified", footprint: "none",
-    auditor: "PwC", marketCap: 1, hqRegion: "Ontario, Canada", hqCity: null, erp: null, commodities: ["Gold"],
+    auditor: "PwC", marketCap: 1, hqRegion: "Ontario, Canada", hqCity: null, erp: null, erpChange: null,
+    commodities: ["Gold"],
     auditFee: { amount: 10, currency: "CAD", fiscal_year: 2025 }, stages: [], stageEvidence: "complete" as const,
     regions: {}, meta: [], sources: { audit_fee: "ai_accepted", auditor: "extract", head_office_region: "manual_override" },
   };

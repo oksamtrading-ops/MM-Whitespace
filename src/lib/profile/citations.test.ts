@@ -201,6 +201,25 @@ test("an ERP override must name its public source, and that source is its citati
   assert.equal(row.sources.incumbent_erp, "manual_override");
 });
 
+test("an ERP change override must name its public source as well, and the table words it", async () => {
+  // An ERP project known from an engagement is client information, exactly as
+  // the system is.
+  const { db, periodId, companyId } = await committed();
+  await assert.rejects(
+    recordDecision(db, { periodId, companyId, fieldKey: "erp_change", decision: "override",
+                         overrideValue: { status: "implementing", year: 2026 }, reason: "From the engagement team" }),
+    /public page/);
+  await recordDecision(db, { periodId, companyId, fieldKey: "erp_change", decision: "override",
+                             overrideValue: { status: "implementing", year: 2026 },
+                             reason: "Public source: https://northco.example/mda-2025.pdf" });
+  const c = (await citationsForPeriod(db, periodId)).get(citeKey(companyId, "erp_change"))!;
+  assert.equal(c.citation.kind === "review" && c.citation.url, "https://northco.example/mda-2025.pdf");
+  const [row] = await listCompanies(db, { allowDraft: true });
+  assert.equal(row.erpChange, "Implementing (2026)");
+  assert.equal(row.sources.erp_change, "manual_override");
+  assert.ok(!row.meta.some((m) => m.field === "erp_change"), "it has a column, so it is not repeated as a search-only value");
+});
+
 test("a document is named by its title, else its file, and only last by its host", () => {
   const url = "https://s21.q4cdn.com/753203377/files/doc_financials/2025/sr/Management-Information-Circular-2025.pdf";
   assert.equal(documentLabel({ url, title: null, docType: null }), "Management Information Circular 2025 (PDF)");

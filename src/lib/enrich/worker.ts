@@ -122,7 +122,7 @@ const FIELD_CADENCE_DAYS: Record<string, number> = {
   stage_evidence_state: 180, auditor: 365, website: 365,
   audit_fee: 365, tax_fee: 365, property_regions: 365,
   audit_related_fee: 365, other_fee: 365, total_revenue: 365, net_income: 365, total_assets: 365,
-  reporting_currency: 365,
+  reporting_currency: 365, erp_change: 365,
 };
 
 export type RunOptions = {
