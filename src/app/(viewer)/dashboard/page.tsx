@@ -92,6 +92,12 @@ export default async function Dashboard() {
                action={canReview ? { href: "/review", label: "Open the review board" } : undefined} />
     );
   }
+  // The line this revision was drawn at, not the period's: a period widened
+  // after publishing has a lower threshold than the revisions before it.
+  const line = {
+    amount: Number(snap.publication.threshold_amount ?? period.threshold_amount),
+    currency: snap.publication.threshold_currency ?? period.threshold_currency,
+  };
   const publisher =snap.publication.published_by
     ? (await ctx.db.get("select email from app_users where id = ?",snap.publication.published_by) as { email: string } | undefined)?.email ?? null
     : null;
@@ -134,7 +140,7 @@ export default async function Dashboard() {
   // the precomputed aggregates, so an already-published revision grows these
   // views without being republished. One pass over 259 rows each.
   const matrix = await whitespaceMatrix(ctx.db, snap.publication.id,
-                                        Number(period.threshold_amount), period.threshold_currency);
+                                        line.amount, line.currency);
   const markets = await marketPenetration(ctx.db, snap.publication.id, "Foreign HQ — no Deloitte market");
   // Not for a picture any more — the by-value donut needs every company's
   // market cap and auditor, and this is the one pass that gets them.
@@ -143,7 +149,7 @@ export default async function Dashboard() {
   const tierProvinces = await provincesByTier(ctx.db, snap.publication.id);
   const tierGate = gateFor("tier_distribution");
   const auditorGate = gateFor("auditor_crosstab");
-  const money = (n: number) => formatMoney(n, period.threshold_currency, { compact: true });
+  const money = (n: number) => formatMoney(n, line.currency, { compact: true });
   const pctText = (part: number, whole: number) =>
     `${whole === 0 ? 0 : Math.round((1000 * part) / whole) / 10}%`;
   const oursCap = tm.marks.filter((m) => m.firm === "Deloitte").reduce((a, b) => a + b.cap, 0);
@@ -176,7 +182,7 @@ export default async function Dashboard() {
 
   const publishedOn = fmtDate(snap.publication.published_at);
   const { name: periodTitle } = periodName(period.label);
-  const threshold = formatMoney(Number(period.threshold_amount), period.threshold_currency, { compact: true });
+  const threshold = formatMoney(line.amount, line.currency, { compact: true });
 
   return (
     <Page title="Dashboard" count={population}
@@ -360,7 +366,7 @@ export default async function Dashboard() {
               </p>
             : (
               <>
-                <Heatmap matrix={matrix} currency={period.threshold_currency} />
+                <Heatmap matrix={matrix} currency={line.currency} />
                 <p className="note">
                   <b>The bottom band is almost entirely unresearched</b>, so the bottom-left of
                   this matrix will move once enrichment runs. The top rows will not: those

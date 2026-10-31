@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { commitPeriod } from "../../../lib/db/commit.ts";
-import { commitTsxPeriod } from "../../../lib/db/committsx.ts";
+import { commitTsxPeriod, widenTsxPeriod } from "../../../lib/db/committsx.ts";
 import { baseLeftovers, isTsxPayload, loadTsxPlan } from "../../../lib/ingest/tsx.ts";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { dropParse, ParseFailed, parseUpload, readParse } from "../../../lib/ingest/quarantine.ts";
@@ -51,24 +51,29 @@ export async function commitParsed(_prev: CommitResultMessage | null, form: Form
   if (parse.payload.report.blocking.length > 0) {
     return { ok: false, message: "This workbook has blocking findings and cannot be committed." };
   }
-  if (!label) {
-    return { ok: false, message: "Name the period before committing." };
-  }
   // TSX's list is planned against the database as it stands, so its own
   // refusals and warnings are read again here, as the report read them.
   const tsx = isTsxPayload(parse.payload);
   let warnings = parse.payload.report.warnings.length;
+  let widens = false;
   if (tsx) {
     const plan = await loadTsxPlan(db, parse.payload);
     if (plan.blocking.length > 0) return { ok: false, message: plan.blocking[0] };
-    warnings += (await baseLeftovers(db, plan.base)).length;
+    widens = plan.widens;
+    // Widening adds to the base period itself, so nothing is left behind in it.
+    if (!widens) warnings += (await baseLeftovers(db, plan.base)).length;
+  }
+  if (!label && !widens) {
+    return { ok: false, message: "Name the period before committing." };
   }
   if (warnings > 0 && form.get("acknowledged") !== "yes") {
     return { ok: false, message: "Acknowledge the warnings before committing." };
   }
 
   try {
-    if (tsx) {
+    if (widens) {
+      await widenTsxPeriod(db, parse.payload, { sourceSha256: parse.sha256, actorId: user.id });
+    } else if (tsx) {
       await commitTsxPeriod(db, parse.payload, { label, sourceSha256: parse.sha256, actorId: user.id });
     } else {
       await commitPeriod(db, parse.payload as Parameters<typeof commitPeriod>[1], {
@@ -81,5 +86,6 @@ export async function commitParsed(_prev: CommitResultMessage | null, form: Form
   await dropParse(db, id);
   // The top bar carries the period and its status.
   revalidatePath("/", "layout");
-  redirect("/review");
+  // The companies a widening adds have no research yet; pass 1 comes first.
+  redirect(widens ? "/runs" : "/review");
 }

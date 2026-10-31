@@ -51,7 +51,8 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
   // TSX's list is not a period by itself: it is planned against the last
   // published period, which it rolls forward.
   const plan = isTsxPayload(parse.payload) ? await loadTsxPlan(ctx.db, parse.payload) : null;
-  const warnings = [...report.warnings, ...(plan ? await baseLeftovers(ctx.db, plan.base) : [])];
+  // Widening adds to the base period itself, so nothing is left behind in it.
+  const warnings = [...report.warnings, ...(plan && !plan.widens ? await baseLeftovers(ctx.db, plan.base) : [])];
   const file = plan ? "list" : "workbook";
 
   const previous = await ctx.db.get("select label from periods order by market_cap_as_of desc limit 1") as { label: string } | undefined;
@@ -62,7 +63,8 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
     ? "The parser could not resolve a market-cap date, so there is no period to commit."
     : report.blocking.length > 0
       ? `${report.blocking.length} blocking finding${report.blocking.length === 1 ? "" : "s"} must be resolved in the ${file} first.`
-      : plan?.blocking[0] ?? await periodAdmissibility(ctx.db, asOf);
+      : plan?.blocking[0] ?? (plan?.widens ? null : await periodAdmissibility(ctx.db, asOf));
+  const widened = plan?.widens && plan.base ? periodName(plan.base.label).name : null;
 
   return (
     <Page title="Validation report" back={{ href: "/upload", label: "Upload" }}>
@@ -73,7 +75,8 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
             { label: "Market cap as of", value: asOf ? fmtDate(asOf) : "unresolved" },
             { label: "Issuers on the list", value: companies, figure: true },
             { label: "In the period", value: plan.population.length, figure: true },
-            { label: "Rolls forward", value: plan.base ? `${periodName(plan.base.label).name}, revision ${plan.base.revision}` : "nothing published" },
+            { label: widened ? "Widens" : "Rolls forward",
+              value: plan.base ? `${periodName(plan.base.label).name}, revision ${plan.base.revision}` : "nothing published" },
             { label: "Source SHA-256", value: <code>{parse.sha256.slice(0, 12)}</code> },
           ]
         : [
@@ -143,10 +146,11 @@ export default async function ValidationReport({ params }: { params: Promise<{ i
 
       <Section id="commit" title="Commit" index={plan ? 6 : 5}>
         <CommitForm parseId={parse.id}
-                    suggestedLabel={asOf ? await suggestLabel(previous?.label ?? null, asOf) : ""}
+                    suggestedLabel={asOf && !widened ? await suggestLabel(previous?.label ?? null, asOf) : ""}
                     warnings={warnings.length}
                     source={file}
-                    blocked={blocked} />
+                    blocked={blocked}
+                    widens={widened && plan ? { period: widened, adding: plan.entrants.length } : null} />
       </Section>
     </div>
     </Page>
@@ -197,6 +201,27 @@ function NextPeriod({ plan }: { plan: TsxPlan }) {
       lines: plan.entrants.filter((p) => deloitteMarketFor(p.issuer.head_office_region).unmapped)
         .map((p) => `${who(p.issuer.name, p.issuer.ticker, p.issuer.exchange)} — ${p.issuer.head_office_region}`) },
   ];
+
+  if (plan.widens && plan.base) {
+    // Widening touches only the companies it adds, so only their groups apply.
+    const name = periodName(plan.base.label).name;
+    const adds = new Set(["New to the population", "Near the line", "No Deloitte market for the head office yet"]);
+    return (
+      <Section id="next" title={`Widening ${name}`} index={1}
+               caption={`This list is dated the day of ${name}, so it adds to that period instead of making a new one. ` +
+                 `The companies ${line} that ${name} does not hold join it with TSX's name, ticker, exchange, market cap, ` +
+                 `commodities, head office and property regions, and nothing researched: pass 1 and pass 2 come next. The ` +
+                 `${plan.continuing.length} companies already in ${name} are not touched. ${name} takes the threshold now set; ` +
+                 `revision ${plan.base.revision} and those before it keep the one they were published at.`}>
+        <Facts items={[
+          { label: "Already in", value: plan.continuing.length, figure: true },
+          { label: "To add", value: plan.entrants.length, figure: true },
+          { label: "Near the line", value: plan.near.length, figure: true },
+        ]} />
+        <PlanGroups groups={groups.filter((g) => adds.has(g.label) && g.lines.length > 0)} />
+      </Section>
+    );
+  }
 
   return (
     <Section id="next" title="The next period" index={1}

@@ -99,6 +99,12 @@ export type TsxPlan = {
   dropOuts: DropOut[];
   /** Within the proximity band of the line, on either side. */
   near: Array<{ name: string; ticker: string; exchange: string; marketCap: number; inPeriod: boolean }>;
+  /**
+   * The list is dated the day of the base period itself, so it widens that
+   * period instead of making a new one: the entrants join it, and nothing
+   * already there is touched.
+   */
+  widens: boolean;
   /** Reasons the commit is refused. */
   blocking: string[];
 };
@@ -229,7 +235,7 @@ export function planFrom(
     population,
     entrants: population.filter((p) => !p.prior),
     continuing: population.filter((p) => p.prior),
-    dropOuts, near, blocking,
+    dropOuts, near, widens: false, blocking,
   };
 }
 
@@ -339,9 +345,44 @@ export async function loadTsxPlan(
                          `after ${base.label}, the last published period. Publish it first: a list rolls forward ` +
                          "from the last published period only.");
     }
+    // A list dated the day of the last published period cannot make a new
+    // period of that date; it widens that one, after the Admin lowers the
+    // threshold. Q4-2026 was published at C$200M, and the practice then asked
+    // for every company from C$100M.
+    if (payload.period === base.asOf) await planWidening(db, plan, base);
   }
   return plan;
 }
+
+/**
+ * The plan for widening the base period. Its entrants are the companies the
+ * threshold now set takes in and the period does not yet hold -- a company
+ * added by an earlier widening, not yet published, is already there. It adds
+ * and never removes, so a threshold that would drop a company is refused.
+ */
+async function planWidening(db: Sql, plan: TsxPlan, base: Base): Promise<void> {
+  plan.widens = true;
+  const held = new Set((await db.all("select company_id from tiers where period_id = ?", base.periodId) as
+    Array<{ company_id: string }>).map((r) => String(r.company_id)));
+  const already = plan.entrants.filter((p) => p.companyId !== null && held.has(p.companyId));
+  plan.entrants = plan.entrants.filter((p) => !(p.companyId !== null && held.has(p.companyId)));
+  plan.continuing = [...plan.continuing, ...already];
+
+  const name = periodName(base.label);
+  if (plan.dropOuts.length > 0) {
+    const shown = plan.dropOuts.slice(0, 3).map((d) => d.name).join(", ");
+    plan.blocking.push(`Widening ${name} adds companies and never removes them, but at the threshold now set ` +
+                       `${plan.dropOuts.length} of its companies would leave (${shown}` +
+                       `${plan.dropOuts.length > 3 ? ", …" : ""}). Lower the threshold in Settings instead of raising it.`);
+  } else if (plan.entrants.length === 0) {
+    plan.blocking.push(`Every company on this list at the threshold now set is already in ${name}, so there is ` +
+                       "nothing to add. Lower the threshold in Settings to widen it.");
+  }
+}
+
+/** "Q4-2026 (2026-08-31)" is called Q4 2026 in a sentence, as the screens call it. */
+const periodName = (label: string) =>
+  label.replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*$/, "").trim().replace(/^(Q[1-4])-(\d{4})$/, "$1 $2");
 
 /**
  * What the base period still holds that rolling forward will leave behind:

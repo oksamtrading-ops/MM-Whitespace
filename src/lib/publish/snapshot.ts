@@ -116,13 +116,17 @@ export async function publishPeriod(
     const revision = last.r + 1;
     result.revision = revision;
 
+    // The threshold is copied onto the revision: a period can be widened after
+    // it is published, and an earlier revision keeps the line it was drawn at.
     await db.run(`insert into period_publications
          (period_id, revision, published_by, unresolved_count,
-          override_reason, override_by, amendment_reason)
-       values (?, ?, ?, ?, ?, ?, ?)`, periodId, revision, opts.actorId ?? null,(await gate).unresolvedCount,
+          override_reason, override_by, amendment_reason,
+          threshold_amount, threshold_operator, threshold_currency)
+       select ?, ?, ?, ?, ?, ?, ?, threshold_amount, threshold_operator, threshold_currency
+         from periods where id = ?`, periodId, revision, opts.actorId ?? null,(await gate).unresolvedCount,
           opts.overrideReason ?? null,
           opts.overrideReason ? (opts.actorId ?? null) : null,
-          revision > 1 ? (opts.amendmentReason ?? "amendment") : null);
+          revision > 1 ? (opts.amendmentReason ?? "amendment") : null, periodId);
 
     const pub = await db.get(`select id from period_publications where period_id = ? and revision = ?`, periodId, revision) as { id: string };
     result.publicationId = pub.id;
@@ -301,10 +305,13 @@ export async function publishPeriod(
 
 /** What a dashboard reads. Never the live tables. */
 export async function readPublished(db: Sql, periodId: string) {
-  const pub = await db.get(`select id, revision, published_at, published_by, override_reason, unresolved_count
+  const pub = await db.get(`select id, revision, published_at, published_by, override_reason, unresolved_count,
+         threshold_amount, threshold_operator, threshold_currency
        from period_publications where period_id = ? order by revision desc limit 1`, periodId) as {
     id: string; revision: number; published_at: string; published_by: string | null;
     override_reason: string | null; unresolved_count: number;
+    /** The line this revision was drawn at; null only before migration 0037 ran. */
+    threshold_amount: number | null; threshold_operator: string | null; threshold_currency: string | null;
   } | undefined;
   if (!pub) return null;
 

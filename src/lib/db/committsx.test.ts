@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { memorySql } from "./open.ts";
 import type { Sql } from "./sql.ts";
 import { commitPeriod, type ParsedCompany } from "./commit.ts";
-import { commitTsxPeriod } from "./committsx.ts";
+import { commitTsxPeriod, widenTsxPeriod } from "./committsx.ts";
 import { baseLeftovers, loadTsxPlan, type TsxIssuer } from "../ingest/tsx.ts";
-import { publishPeriod } from "../publish/snapshot.ts";
+import { publishPeriod, readPublished } from "../publish/snapshot.ts";
+import { putSettings } from "../settings/index.ts";
 import { recordDecision, undoLast } from "../review/decide.ts";
 import { citationsForPeriod } from "../profile/citations.ts";
 import { listCompanies, readCompanyProfile } from "../profile/company.ts";
@@ -303,4 +304,101 @@ test("what the last period still holds is said before the commit leaves it behin
   const left = await baseLeftovers(db, base);
   assert.deepEqual(left.map((w) => w.code), ["base_unpublished_changes", "base_review_waiting"]);
   assert.match(left[0].detail, /1 company has changes in Q3-2026/);
+});
+
+/** Q4 rolled forward from Q3 at C$200M and published: six companies. */
+async function publishedQ4(): Promise<Sql> {
+  const db = await publishedQ3();
+  await commitTsxPeriod(db, AUGUST, { label: Q4, sourceSha256: "abc123" });
+  await publishPeriod(db, await periodId(db, Q4), { overrideReason: "test" });
+  return db;
+}
+
+const threshold = (db: Sql, amount: number) =>
+  putSettings(db, { default_threshold_amount: String(amount) }, null);
+
+test("the same list at a lower threshold widens the published period instead of making a new one", async () => {
+  const db = await publishedQ4();
+  const q4 = await periodId(db, Q4);
+  const before = await db.all(`select company_id, field_key, value, source from company_period_field_values
+      where period_id = ? order by company_id, field_key`, q4);
+
+  await threshold(db, 100_000_000);
+  const plan = await loadTsxPlan(db, AUGUST);
+  assert.equal(plan.widens, true);
+  assert.deepEqual(plan.blocking, []);
+  assert.deepEqual(plan.entrants.map((p) => p.issuer.ticker), ["DEVL", "WSTC"]);
+  assert.equal(plan.continuing.length, 6);
+  assert.deepEqual(plan.dropOuts, []);
+  await assert.rejects(commitTsxPeriod(db, AUGUST, { label: "Q4-2026 again" }), /widens that period/,
+                       "the list cannot make a second period of a published date");
+
+  const r = await widenTsxPeriod(db, AUGUST, { sourceSha256: "abc123" });
+  assert.equal(r.periodId, q4);
+  assert.deepEqual([r.held, r.added], [6, 2]);
+  assert.deepEqual(r.threshold, { from: 200_000_000, to: 100_000_000, currency: "CAD" });
+  assert.equal((await db.get("select count(*) n from periods") as { n: number }).n, 2, "no new period");
+
+  // The companies between the lines join with TSX's fields and nothing researched.
+  const cap = await valueOf(db, Q4, "Westco Gold Ltd.", "market_cap_cad");
+  assert.deepEqual([JSON.parse(cap!.value), cap!.source], [1.9e8, "extract"]);
+  for (const key of ["auditor", "website"]) {
+    const v = await valueOf(db, Q4, "Westco Gold Ltd.", key);
+    assert.deepEqual([JSON.parse(v!.value), v!.evidence_state], [null, "unknown"], key);
+  }
+  assert.equal(JSON.parse((await valueOf(db, Q4, "Westco Gold Ltd.", "stage_evidence_state"))!.value), "none");
+  // Devco was in Q3 and fell under the line in Q4: the same company, not a second one.
+  assert.equal((await db.get("select count(*) n from companies where canonical_name = 'Devco Development Ltd.'") as
+    { n: number }).n, 1);
+  assert.equal(JSON.parse((await valueOf(db, Q4, "Devco Development Ltd.", "market_cap_cad"))!.value), 1.5e8);
+  const tiers = await db.all("select company_id, tier from tiers where period_id = ?", q4) as Array<{ tier: number | null }>;
+  assert.equal(tiers.length, 8);
+
+  // Nothing already in the period is touched.
+  const after = await db.all(`select company_id, field_key, value, source from company_period_field_values
+      where period_id = ? and company_id in (select company_id from tiers where period_id = ?
+        and company_id not in (select id from companies where canonical_name in ('Westco Gold Ltd.', 'Devco Development Ltd.')))
+      order by company_id, field_key`, q4, q4);
+  assert.deepEqual(after, before);
+
+  // The period takes the new line; the revision published before keeps its own.
+  const period = await db.get("select threshold_amount, status from periods where id = ?", q4) as
+    { threshold_amount: number; status: string };
+  assert.deepEqual([Number(period.threshold_amount), period.status], [100_000_000, "published"]);
+  assert.equal(Number((await readPublished(db, q4))!.publication.threshold_amount), 200_000_000);
+  const audit = await db.get("select detail from audit_log where event = 'period_widened' and period_id = ?", q4) as
+    { detail: string };
+  assert.deepEqual(JSON.parse(audit.detail).added, ["Devco Development Ltd. (DEVL, TSXV)", "Westco Gold Ltd. (WSTC, TSX)"]);
+
+  // The next revision publishes them, at the new line.
+  await publishPeriod(db, q4, { overrideReason: "test", amendmentReason: "widened to C$100M" });
+  const rev2 = (await readPublished(db, q4))!.publication;
+  assert.deepEqual([rev2.revision, Number(rev2.threshold_amount)], [2, 100_000_000]);
+  assert.equal((await db.get("select count(*) n from published_period_tiers where publication_id = ?", rev2.id) as
+    { n: number }).n, 8);
+});
+
+test("widening adds and never removes, and refuses when there is nothing to add", async () => {
+  const db = await publishedQ4();
+  const plan = await loadTsxPlan(db, AUGUST);
+  assert.equal(plan.widens, true);
+  assert.match(plan.blocking[0], /already in Q4 2026, so there is nothing to add/);
+
+  await threshold(db, 600_000_000);
+  const raised = await loadTsxPlan(db, AUGUST);
+  assert.match(raised.blocking[0], /never removes them, but at the threshold now set 2 of its companies would leave/);
+  await assert.rejects(widenTsxPeriod(db, AUGUST), /would leave/);
+});
+
+test("a second widening counts the first one's companies as already there", async () => {
+  const db = await publishedQ4();
+  await threshold(db, 160_000_000);
+  assert.equal((await widenTsxPeriod(db, AUGUST)).added, 1, "Westco, at C$190M");
+
+  await threshold(db, 100_000_000);
+  const plan = await loadTsxPlan(db, AUGUST);
+  assert.deepEqual(plan.entrants.map((p) => p.issuer.ticker), ["DEVL"],
+                   "Westco joined Q4 before any revision published it, and is not added twice");
+  assert.equal(plan.continuing.length, 7);
+  assert.equal((await widenTsxPeriod(db, AUGUST)).added, 1);
 });
