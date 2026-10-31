@@ -46,6 +46,17 @@ test("private, loopback and link-local address space is blocked", async () => {
   }
 });
 
+test("only the special-purpose /24s of 192.0.0.0/16 are blocked", async () => {
+  // WordPress.com serves issuer sites from 192.0.78.x; blocking the whole /16
+  // refused every document those issuers publish.
+  for (const ip of ["192.0.0.8", "192.0.2.1"]) {
+    assert.equal(isBlockedAddress(ip), true, `${ip} must be blocked`);
+  }
+  for (const ip of ["192.0.78.24", "192.0.77.1", "::ffff:192.0.78.24"]) {
+    assert.equal(isBlockedAddress(ip), false, `${ip} must be allowed`);
+  }
+});
+
 test("a hostname that resolves into private space is refused after resolution", async () => {
   // The classic bypass: an allowlisted name whose DNS answer points at the
   // metadata endpoint. Checking the hostname alone would let this through.

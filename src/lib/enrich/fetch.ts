@@ -49,7 +49,7 @@ export function isBlockedAddress(ip: string): boolean {
   if (v === 4) {
     const p = ip.split(".").map(Number);
     if (p.length !== 4 || p.some((n) => Number.isNaN(n))) return true;
-    const [a, b] = p;
+    const [a, b, c] = p;
     if (a === 0) return true;                       // "this network"
     if (a === 10) return true;                      // private
     if (a === 127) return true;                     // loopback
@@ -57,7 +57,8 @@ export function isBlockedAddress(ip: string): boolean {
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
     if (a === 100 && b >= 64 && b <= 127) return true;  // carrier-grade NAT
-    if (a === 192 && b === 0) return true;          // protocol assignments
+    if (a === 192 && b === 0 && c === 0) return true;  // protocol assignments
+    if (a === 192 && b === 0 && c === 2) return true;  // TEST-NET-1
     if (a >= 224) return true;                      // multicast and reserved
     return false;
   }
