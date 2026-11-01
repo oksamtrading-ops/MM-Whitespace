@@ -43,6 +43,19 @@ export type StoredDocument = {
   normalizationVersion?: string;
 };
 
+/**
+ * How a claim that did not anchor was found in its document all the same:
+ *
+ *   punctuation  the quote, once punctuation and spacing are set aside
+ *   stitched     every passage of a quote joined with "..."
+ *   unlabelled   the figure at its declared scale, in a document with no label for it
+ *   quoted       the figure in the quote, and the quote in the document
+ *
+ * Mode stays "none" -- nothing here anchors -- and the gate holds it for a
+ * person rather than counting it as invented.
+ */
+export type Inexact = "punctuation" | "stitched" | "unlabelled" | "quoted";
+
 export type AnchorResult = {
   mode: AnchorMode;
   start: number | null;
@@ -51,6 +64,7 @@ export type AnchorResult = {
   /** Why it failed, when it did. Never a silent drop. */
   reason?: string;
   matched?: { numeral?: string; label?: string; year?: string; currency?: string };
+  inexact?: Inexact;
 };
 
 const SCALE_MULTIPLIER: Record<Scale, number> = {
@@ -312,6 +326,60 @@ export function anchorExcerpt(excerpt: string, doc: StoredDocument): AnchorResul
            documentHash: doc.contentHash, matched: { numeral: undefined } };
 }
 
+/** Fewer letters and digits than this, and a loose match proves nothing. */
+export const MIN_LOOSE_CHARS = 15;
+
+/** Escapes a quote picks up on its way through JSON: a literal \n, \", ’. */
+const ESCAPES = /\\+(?:[nrt]|u[0-9a-f]{4})/gi;
+/** Where a quote was cut: "...", "[...]", "[..]" ("…" is folded to "..." first). */
+const ELLIPSIS = /\[\s*\.{2,}\s*\]|\.{3,}/;
+
+/** Letters and digits only, each with its offset in `text`. */
+function lettersAndDigits(text: string): { chars: string; at: number[] } {
+  let chars = "";
+  const at: number[] = [];
+  for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+    chars += m[0];
+    for (let i = 0; i < m[0].length; i++) at.push(m.index + i);
+  }
+  return { chars, at };
+}
+
+/**
+ * A quote that is in the document, but not exactly as the model gave it.
+ *
+ * Of the 145 findings Q4 2026 called unsupported -- 2.63% against a 2.0%
+ * ceiling on publish -- most were in their own document once punctuation was
+ * set aside (a dash dropped, an apostrophe written \", a line break written
+ * \n) or were stitched from passages that are each there. Nothing in them was
+ * invented, and counting them as fabrication is what held the period.
+ *
+ * Only after an exact match fails, and never a proposal: offsets are into the
+ * normalised text, as for an exact match.
+ */
+export function anchorLoosely(excerpt: string, doc: StoredDocument): AnchorResult | null {
+  const parts = normalize((excerpt ?? "").replace(ESCAPES, " ")).split(ELLIPSIS)
+    .map(lettersAndDigits).filter((p) => p.chars.length > 0);
+  if (parts.reduce((n, p) => n + p.chars.length, 0) < MIN_LOOSE_CHARS) return null;
+  const hay = lettersAndDigits(normalize(doc.text));
+  let start = Infinity;
+  let end = -Infinity;
+  for (const p of parts) {
+    const i = hay.chars.indexOf(p.chars);
+    if (i === -1) return null;
+    start = Math.min(start, hay.at[i]);
+    end = Math.max(end, hay.at[i + p.chars.length - 1] + 1);
+  }
+  const stitched = parts.length > 1;
+  return {
+    mode: "none", start, end, documentHash: doc.contentHash,
+    inexact: stitched ? "stitched" : "punctuation",
+    reason: stitched
+      ? `the quote joins ${parts.length} passages with "..."; each is in the document, but not as one`
+      : "the quote is in the document once punctuation and spacing are set aside, not exactly",
+  };
+}
+
 export type NumericClaim = {
   /** The value as the finding asserts it, already in real units. */
   value: number;
@@ -347,6 +415,7 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
   ];
 
   let sawLabel = false;
+  let unlabelled: { at: number; needle: string } | null = null;
   let currencyClash: string | null = null;
   // A currency the document never names, in a document that names others, is
   // not this document's figure whatever the digits say.
@@ -400,12 +469,22 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
           matched: { numeral: needle, label, year: yearStr ?? undefined, currency: docCurrency ?? undefined },
         };
       }
+      unlabelled ??= { at, needle };
     }
   }
 
   if (sawLabel || labels.some((l) => hay.includes(l))) {
     return { mode: "label_only", start: null, end: null, documentHash: doc.contentHash,
              reason: currencyClash ?? "the label appears but the figure does not, at the declared scale" };
+  }
+  // A balance sheet's total row often has no words on it at all: most of Q4
+  // 2026's 24 unsupported total assets were a bare row of figures under a
+  // column of others. Five digits or more: a year heads every column, and a
+  // stray "2022" or "12" is not a find.
+  if (unlabelled && unlabelled.needle.replace(/\D/g, "").length >= 5) {
+    return { mode: "none", start: unlabelled.at, end: unlabelled.at + unlabelled.needle.length,
+             documentHash: doc.contentHash, inexact: "unlabelled",
+             reason: "the figure appears at its declared scale, but no label for it appears anywhere in the document" };
   }
   return { mode: "none", start: null, end: null, documentHash: doc.contentHash,
            reason: "neither the figure nor a controlled label appears in the document" };
@@ -468,9 +547,14 @@ export function gate(input: GateInput): GateVerdict {
     };
   }
 
-  const anchor = input.numeric
+  let anchor = input.numeric
     ? anchorNumeric(input.numeric, doc)
     : anchorExcerpt(input.excerpt ?? "", doc);
+  if (anchor.mode === "none" && !anchor.inexact) {
+    anchor = (input.numeric
+      ? quotedFigure(input.numeric, input.excerpt ?? "", doc)
+      : anchorLoosely(input.excerpt ?? "", doc)) ?? anchor;
+  }
 
   if (anchor.mode === "exact_normalized" || anchor.mode === "proximity") {
     const unsupported = input.stage ? unsupportedStage(input.stage, input.excerpt ?? "") : null;
@@ -488,9 +572,30 @@ export function gate(input: GateInput): GateVerdict {
     // beside the document so a human can adjudicate against the source.
     return { state: "anchor_mismatch", anchor, bulkAcceptable: false, reason: anchor.reason };
   }
+  if (anchor.inexact) {
+    // In the document, but not as claimed. Held the same way: a person reads
+    // it beside the source. Not a fabrication, so not counted as one.
+    return { state: "anchor_mismatch", anchor, bulkAcceptable: false, reason: anchor.reason };
+  }
   // Absent from the document. Never surfaced as a proposal; counted in the
   // per-run hallucination rate that gates publish.
   return { state: "unsupported", anchor, bulkAcceptable: false, reason: anchor.reason };
+}
+
+/**
+ * A figure whose quote is in the document (loosely) and contains the figure.
+ * Neither its label nor its scale was confirmed where it appears -- a
+ * thousandfold error would pass here -- which is why it is held, not proposed.
+ */
+function quotedFigure(claim: NumericClaim, excerpt: string, doc: StoredDocument): AnchorResult | null {
+  const found = anchorLoosely(excerpt, doc);
+  if (!found) return null;
+  const quote = numericHaystack(excerpt.replace(ESCAPES, " "));
+  const figures = [normalizeNumeral(claim.value / SCALE_MULTIPLIER[claim.scale]), normalizeNumeral(claim.value)];
+  if (!figures.some((n) => n && indexOfNumeral(quote, n, 0) !== -1)) return null;
+  return { ...found, inexact: "quoted",
+           reason: "the figure is in the quote and the quote is in the document; its label, scale and " +
+                   "currency were not confirmed where it appears" };
 }
 
 /**

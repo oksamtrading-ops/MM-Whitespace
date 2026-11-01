@@ -453,3 +453,101 @@ test("revenue, a net loss and total assets anchor in the statements, at their sc
                "claimed in Canadian dollars where the statements are in US dollars");
   assert.equal(at("total_assets", 512_870).mode, "label_only", "a thousandfold error is still caught");
 });
+
+/*
+ * Q4 2026, 1 November: 145 of 5,522 findings unsupported, 2.63% against the
+ * 2.0% ceiling on publish. Most were quotes that ARE in their document, but
+ * not character for character. Unsupported counts as invented; these are held.
+ */
+const CIRCULAR = `
+Appointment of Auditor. Brightwater & Company LLP, Chartered Professional
+Accountants, is the current auditor of the Company, and was first appointed as
+auditor of the Company on May 14, 2019. KPMG LLP, the Company’s former auditor,
+resigned effective August 8, 2018. The Board re-appointed the auditor for the
+2025-2026 financial year.
+
+INDEPENDENT AUDITOR’S REPORT
+To the Shareholders of Northco Mining Corp.
+`;
+
+test("Q4 2026: a quote in its document, but not exactly as given, is held -- not counted as invented", async () => {
+  for (const excerpt of [
+    "The Board re-appointed the auditor for the 2025 2026 financial year",   // a dropped dash
+    "KPMG LLP, the Company\\\"s former auditor, resigned",                     // an apostrophe written \"
+    "Brightwater & Company LLP, Chartered Professional\\nAccountants, is the current auditor", // a line break written \n
+  ]) {
+    const v = gate({ fieldKey: "auditor", excerpt, document: doc(CIRCULAR) });
+    assert.equal(v.state, "anchor_mismatch", excerpt);
+    assert.equal(v.anchor.mode, "none", "nothing here anchors; the grid still says so");
+    assert.equal(v.anchor.inexact, "punctuation");
+    assert.equal(v.bulkAcceptable, false);
+  }
+  const v = gate({ fieldKey: "auditor", excerpt: "KPMG LLP, the Company\\\"s former auditor", document: doc(CIRCULAR) });
+  assert.equal(normalize(CIRCULAR).slice(v.anchor.start!, v.anchor.end!), "kpmg llp, the company's former auditor",
+               "its span is in the normalised text, as an exact match's is");
+});
+
+test("Q4 2026: a quote stitched with \"...\" is held when every passage is in the document", async () => {
+  const stitched = gate({ fieldKey: "auditor", document: doc(CIRCULAR),
+    excerpt: "Brightwater & Company LLP ... INDEPENDENT AUDITOR’S REPORT To the Shareholders of Northco Mining Corp." });
+  assert.equal(stitched.state, "anchor_mismatch");
+  assert.equal(stitched.anchor.inexact, "stitched");
+  const unspaced = gate({ fieldKey: "auditor", document: doc(CIRCULAR),
+    excerpt: "the current auditor of the Company...first appointed as auditor of the Company on May 14, 2019" });
+  assert.equal(unspaced.anchor.inexact, "stitched");
+
+  const oneInvented = gate({ fieldKey: "auditor", document: doc(CIRCULAR),
+    excerpt: "Brightwater & Company LLP ... the engagement partner is Jane Q. Example" });
+  assert.equal(oneInvented.state, "unsupported", "every passage, not most of them");
+});
+
+test("Q4 2026: an invented quote, or one too short to prove anything, is still unsupported", async () => {
+  // The partner named in the finding appears nowhere in the company's filings.
+  const invented = gate({ fieldKey: "auditor", document: doc(CIRCULAR),
+    excerpt: "The engagement partner on the audit resulting in this report is Jane Q. Example." });
+  assert.equal(invented.state, "unsupported");
+  // Ten letters: "Northco-Mining" would be found in half the filings stored.
+  const short = gate({ fieldKey: "auditor", excerpt: "Northco-Mining", document: doc(CIRCULAR) });
+  assert.equal(short.state, "unsupported");
+});
+
+/** A statement of financial position whose total rows carry no words. */
+const POSITION = `
+CONSOLIDATED STATEMENTS OF FINANCIAL POSITION
+(Expressed in Canadian dollars)
+                              2023            2022
+Cash                     1,204,551       2,330,118
+Receivables                 84,210          61,904
+Mineral properties      13,688,599      11,412,007
+                        14,977,360      13,804,029
+Accounts payable           402,113         388,021
+`;
+
+test("Q4 2026: a total row with no label is held, at its declared scale and currency", async () => {
+  const claim = (value: number, currency = "CAD") => gate({ fieldKey: "total_assets", document: doc(POSITION),
+    numeric: { value, scale: "units", fiscalYear: 2023, fieldKey: "total_assets", currency } });
+  const total = claim(14_977_360);
+  assert.equal(total.state, "anchor_mismatch");
+  assert.equal(total.anchor.inexact, "unlabelled");
+  assert.equal(claim(14_977_630).state, "unsupported", "a figure that is not there");
+  assert.equal(claim(14_977_360, "USD").state, "unsupported", "nor one in a currency the document never names");
+  assert.equal(claim(2_022).state, "unsupported", "a column's year is not a find");
+});
+
+test("Q4 2026: a figure in a quote that is in the document is held, even at a scale not confirmed", async () => {
+  const inThousands = `(in thousands of Canadian dollars)
+                          2023        2022
+Mineral properties      13,689      11,412
+Total                   14,977      13,804`;
+  // Read as units under a thousands heading: the thousandfold error the gate
+  // exists to stop. It is not proposed; it is put in front of a person.
+  const held = gate({ fieldKey: "total_assets", document: doc(inThousands), excerpt: "Total 14,977 13,804",
+    numeric: { value: 14_977, scale: "units", fiscalYear: 2023, fieldKey: "total_assets", currency: "CAD" } });
+  assert.equal(held.state, "anchor_mismatch");
+  assert.equal(held.anchor.inexact, "quoted");
+  assert.equal(held.bulkAcceptable, false);
+
+  const notInQuote = gate({ fieldKey: "total_assets", document: doc(inThousands), excerpt: "Total 14,977 13,804",
+    numeric: { value: 15_977, scale: "units", fiscalYear: 2023, fieldKey: "total_assets", currency: "CAD" } });
+  assert.equal(notInQuote.state, "unsupported", "the quote is real, but it does not carry the figure");
+});
