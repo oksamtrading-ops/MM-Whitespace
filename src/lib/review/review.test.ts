@@ -240,6 +240,21 @@ test("an override lands as manual_override, which a re-import cannot overwrite",
   assert.equal(JSON.parse(row.value), "KPMG");
 });
 
+test("an override after a flag stands, and stores its value", async () => {
+  // A flag says the proposal cannot be used; the value found afterwards
+  // replaces it without walking back anything recorded in between.
+  const { db, periodId, companyId } = await seeded();
+  await recordDecision(db, {
+    periodId, companyId, fieldKey: "auditor", decision: "flag", reason: "named from another filing" });
+  await recordDecision(db, {
+    periodId, companyId, fieldKey: "auditor", decision: "override", overrideValue: "MNP" });
+  assert.equal((await effectiveDecision(db, periodId, companyId, "auditor"))?.decision, "override");
+  const row = await db.get(`select value, source from company_period_field_values
+      where period_id = ? and company_id = ? and field_key = 'auditor'`, periodId, companyId) as { value: string; source: string };
+  assert.equal(row.source, "manual_override");
+  assert.equal(JSON.parse(row.value), "MNP");
+});
+
 // ------------------------------------------------------------ presentation
 
 test("evidence has four ordinal bands, so it is never colour alone", async () => {

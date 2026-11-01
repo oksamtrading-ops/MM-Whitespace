@@ -25,6 +25,7 @@ import {
 } from "react";
 import Icon from "../../../_ui/Icon.tsx";
 import Callout from "../../../_ui/Callout.tsx";
+import { canAct, canOverride } from "../../../../lib/review/actable.ts";
 import { bulkAccept, confirmationText } from "./actions.ts";
 import { useDecide } from "../useDecide.ts";
 import BulkDialog from "./BulkDialog.tsx";
@@ -54,20 +55,6 @@ export type GridRow = {
   cellLabel: string;
   tierNote: string | null;
 };
-
-/**
- * Whether this row can still be decided -- one answer for the buttons and for
- * the keys.
- *
- * The two disagreed: a decided row drew no controls but still answered A, O
- * and F, so O opened the override editor where no Override button existed.
- * That is how two of the corrections on 13 September were made -- the shortcut
- * doing work the screen said was not available. A row research has overtaken
- * is the exception, and it draws its controls.
- */
-function canAct(row: GridRow | undefined): row is GridRow {
-  return row !== undefined && (!row.decided || row.newerThanDecision);
-}
 
 type Props = {
   periodId: string;
@@ -155,7 +142,9 @@ export default function Grid(props: Props) {
       extra,
       optimistic: () => applyPatch({ companyId: row.companyId, decision }),
       consequence: row.tierNote,
-      remainingAfter: Math.max(0, remaining - 1),
+      // A decided row -- a flag overridden, newer research taken -- was not
+      // among the remaining.
+      remainingAfter: row.decided ? remaining : Math.max(0, remaining - 1),
     });
     advance();
   }, [target, row, record, applyPatch, remaining, advance]);
@@ -224,7 +213,7 @@ export default function Grid(props: Props) {
         if (canAct(row)) { event.preventDefault(); submit("accept"); }
         break;
       case "o": case "O":
-        if (canAct(row)) { event.preventDefault(); setEditing(true); }
+        if (canOverride(row)) { event.preventDefault(); setEditing(true); }
         break;
       case "f": case "F":
         if (canAct(row)) { event.preventDefault(); setFlagging(true); }
@@ -411,9 +400,10 @@ export default function Grid(props: Props) {
               )}
 
               {/* A decided row has no controls -- its decision stands, and Undo
-                  walks it back. The exception is a row research has overtaken:
+                  walks it back. The exceptions are a row research has overtaken:
                   the whole point of surfacing it is that it can be taken, and
-                  with the controls hidden there was no way to (Run 1, twice). */}
+                  with the controls hidden there was no way to (Run 1, twice);
+                  and a flagged row, which can be overridden (below). */}
               {canAct(row) && (
                 /* On a conflict the choice is between two named values, so the
                    controls name them. No default is pre-selected and nothing
@@ -452,6 +442,18 @@ export default function Grid(props: Props) {
                   <button type="button" className="btn quiet" disabled={busy}
                           onClick={() => setFlagging(true)}>
                     <Icon name="flag" size={15} />Flag <kbd>F</kbd></button>
+                </div>
+              )}
+              {/* A flag says the proposal cannot be used, not what the value
+                  is; the value found afterwards replaces it here. */}
+              {!canAct(row) && canOverride(row) && (
+                <div className="acts">
+                  <p className="hint" style={{ width: "100%" }}>
+                    Flagged, so this proposal is not used. An override stores the value in its place.
+                  </p>
+                  <button type="button" className="btn secondary" disabled={busy}
+                          onClick={() => setEditing(true)}>
+                    <Icon name="pencil" size={15} />Override <kbd>O</kbd></button>
                 </div>
               )}
 

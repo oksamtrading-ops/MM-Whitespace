@@ -17,6 +17,7 @@ import { useDecide } from "../useDecide.ts";
 import ShortcutsDialog from "../[field]/ShortcutsDialog.tsx";
 import Icon from "../../../_ui/Icon.tsx";
 import Callout from "../../../_ui/Callout.tsx";
+import { canAct, canOverride } from "../../../../lib/review/actable.ts";
 
 export type Cell = {
   fieldKey: string;
@@ -109,7 +110,9 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
   const opts = useCallback(() => ({
     optimistic: () => row && applyPatch({ companyId: row.companyId, column, decision: "accept" }),
     consequence: cell?.tierNote,
-    remainingAfter: Math.max(0, remaining - 1),
+    // A decided cell -- a flag overridden, newer research taken -- was not
+    // among the remaining.
+    remainingAfter: cell?.decided ? remaining : Math.max(0, remaining - 1),
   }), [row, column, applyPatch, cell, remaining]);
 
   const submit = useCallback((decision: string, extra: Record<string, string> = {}) => {
@@ -162,17 +165,19 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
         event.preventDefault(); setRowIndex(visible.length - 1); break;
       case " ":
         event.preventDefault(); setExpanded((v) => !v); break;
+      // The same rule as the buttons below, so a key never does what the
+      // screen says is not available, nor refuses what it offers.
       case "a": case "A":
-        if (cell && !cell.decided) { event.preventDefault(); submit("accept"); }
+        if (canAct(cell)) { event.preventDefault(); submit("accept"); }
         break;
       case "o": case "O":
-        if (cell && !cell.decided) { event.preventDefault(); setEditing(true); }
+        if (canOverride(cell)) { event.preventDefault(); setEditing(true); }
         break;
       case "f": case "F":
-        if (cell && !cell.decided) { event.preventDefault(); setFlagging(true); }
+        if (canAct(cell)) { event.preventDefault(); setFlagging(true); }
         break;
       case "k": case "K":
-        if (cell?.conflict && !cell.decided) { event.preventDefault(); keep(); }
+        if (cell?.conflict && canAct(cell)) { event.preventDefault(); keep(); }
         break;
       case "e": case "E":
         if (cell?.sourceUrl) window.open(cell.sourceUrl, "_blank", "noopener,noreferrer");
@@ -313,8 +318,9 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
               )}
 
               {/* Decided rows keep their decision and are walked back with Undo
-                  -- except one research has overtaken, which must be takeable. */}
-              {(!cell.decided || cell.newerThanDecision) && (
+                  -- except one research has overtaken, which must be takeable,
+                  and a flagged one, which can be overridden (below). */}
+              {canAct(cell) && (
                 <div className="acts">
                   {cell.decided && cell.newerThanDecision && (
                     <p className="hint" style={{ width: "100%" }}>
@@ -339,6 +345,15 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                     Override <kbd>O</kbd></button>
                   <button type="button" className="btn quiet" disabled={busy} onClick={() => setFlagging(true)}>
                     Flag <kbd>F</kbd></button>
+                </div>
+              )}
+              {!canAct(cell) && canOverride(cell) && (
+                <div className="acts">
+                  <p className="hint" style={{ width: "100%" }}>
+                    Flagged, so this proposal is not used. An override stores the value in its place.
+                  </p>
+                  <button type="button" className="btn secondary" disabled={busy} onClick={() => setEditing(true)}>
+                    Override <kbd>O</kbd></button>
                 </div>
               )}
 
