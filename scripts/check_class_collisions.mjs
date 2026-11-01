@@ -98,6 +98,7 @@ const EXEMPT = new Map([
   ["commit", "the confirm-and-commit form, worn by five screens"],
   ["steps", "a numbered list of steps"],
   ["sw", "a chart swatch"],
+  ["map-switch", "the tier switch, one labelled dropdown on the dashboard and the footprint map; the journeys find it by name"],
   ["editor", "the inline editor, in both review grids"],
   // Utilities: worn by most screens, and meaning one thing in all of them.
   ["page", "the page wrapper"],

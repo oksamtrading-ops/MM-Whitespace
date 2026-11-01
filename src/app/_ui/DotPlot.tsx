@@ -17,6 +17,10 @@ export default function DotPlot({ rows, unit = "companies" }: {
   // Inset both ends: a dot at zero is half outside the track otherwise, and a
   // market with no client is exactly the row that must not look clipped.
   const pos = (v: number) => 1.5 + (v / max) * 96;
+  // A dot near either end opens its label inward. Centred there, the label runs
+  // past the track, and on a phone the track runs to the edge of the page: the
+  // hidden label alone made the whole page scroll sideways.
+  const side = (at: number) => (at < 30 ? " start" : at > 70 ? " end" : "");
   return (
     <div className="dotplot">
       {rows.map((r) => {
@@ -27,10 +31,10 @@ export default function DotPlot({ rows, unit = "companies" }: {
             <span className="track" role="img"
                   aria-label={`${r.market}: ${r.companies} ${unit}, ${r.deloitte} audited by Deloitte, ${pct} percent`}>
               <span className="rule" style={{ left: `${pos(r.deloitte)}%`, width: `${pos(r.companies) - pos(r.deloitte)}%` }} />
-              <span className="dot all" style={{ left: `${pos(r.companies)}%` }}>
+              <span className={`dot all${side(pos(r.companies))}`} style={{ left: `${pos(r.companies)}%` }}>
                 <span className="tipbox">{r.companies} in this market</span>
               </span>
-              <span className={`dot ours${r.deloitte === 0 ? " none" : ""}`} style={{ left: `${pos(r.deloitte)}%` }}>
+              <span className={`dot ours${r.deloitte === 0 ? " none" : ""}${side(pos(r.deloitte))}`} style={{ left: `${pos(r.deloitte)}%` }}>
                 <span className="tipbox">{r.deloitte === 0 ? "No Deloitte audit client" : `${r.deloitte} audited by Deloitte`}</span>
               </span>
             </span>

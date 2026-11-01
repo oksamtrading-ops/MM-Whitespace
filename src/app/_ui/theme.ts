@@ -6,3 +6,7 @@ export const THEME_COOKIE = "mm_theme";
 /** The rail's collapsed state. A cookie, so the server renders it at the width
     the reader chose and it does not jump on first paint. */
 export const RAIL_COOKIE = "mm_rail";
+/** "Show working": the reader's choice, else on for anyone who can review and off for a Viewer. */
+export const WORKING_COOKIE = "mm_working";
+export const showsWorking = (cookie: string | undefined, canReview: boolean): boolean =>
+  cookie === "1" ? true : cookie === "0" ? false : canReview;
