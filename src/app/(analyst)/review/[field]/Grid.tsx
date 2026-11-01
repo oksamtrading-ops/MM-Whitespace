@@ -243,11 +243,94 @@ export default function Grid(props: Props) {
     }
   }, [busy, visible.length, row, submit, doUndo, openBulk, keepExtract]);
 
-  if (rows.length === 0) {
-    return (
-      <p className="empty rise">
-        <b>Nothing in this view.</b> Choose another filter above, or go back to the review board.
+  // Rows are findings, so a company research never reached has none and
+  // nothing to accept. A search that finds one offers an override, which
+  // must name the public page it came from: that page is its citation.
+  const notResearched = unreached.length > 0 && (
+    <section className="unresearched rise" aria-label={`Not researched for ${fieldLabel}`}
+             style={{ "--i": 4 } as React.CSSProperties}>
+      <p className="eyebrow"><Icon name="search-x" size={12} /> Not researched</p>
+      <p className="meta">
+        No run found a document to read for {unreached.length === 1 ? "this company" : "these companies"},
+        so there is no proposal to accept. An override needs the public page that says so, which
+        becomes its citation.
       </p>
+      {unreached.map((u) => u.decided !== null
+        ? (
+          <p key={u.companyId} className="settled">
+            <b>{u.companyName}</b>
+            <span className="tag done"><Icon name="check" size={11} />override</span>
+            <span>{u.decided}</span>
+            {u.sourceUrl && (
+              <a href={u.sourceUrl} target="_blank" rel="noopener noreferrer">
+                source<Icon name="external-link" size={12} />
+              </a>
+            )}
+          </p>
+        )
+        : (
+          <form key={u.companyId} className="editor"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const data = new FormData(e.currentTarget);
+                  record({ companyId: u.companyId, fieldKey, findingId: null, findingAttempt: null }, "override", {
+                    extra: {
+                      overrideValue: String(data.get("overrideValue") ?? ""),
+                      source: String(data.get("source") ?? ""),
+                    },
+                  });
+                }}>
+            <label htmlFor={`override-${u.companyId}`}>Override {fieldLabel} for {u.companyName}</label>
+            <input id={`override-${u.companyId}`} name="overrideValue" autoComplete="off" required
+                   placeholder={isStageField ? "production + exploration"
+                     : fieldKey === "property_regions" ? "Canada: ON · USA: NV" : undefined} />
+            <label htmlFor={`source-${u.companyId}`}>The public page that says so</label>
+            <input id={`source-${u.companyId}`} name="source" type="url" autoComplete="off" required
+                   placeholder="https://…" />
+            <div className="acts">
+              <button type="submit" className="btn secondary" disabled={busy}>
+                <Icon name="pencil" size={15} />Override</button>
+            </div>
+          </form>
+        ))}
+    </section>
+  );
+
+  if (rows.length === 0) {
+    // A field no run researched has no rows at all, but its companies can
+    // still be found and overridden with their source -- otherwise nothing
+    // on any screen reaches them.
+    if (props.bucket !== "all" || props.unresearched.length === 0) {
+      return (
+        <p className="empty rise">
+          <b>Nothing in this view.</b> Choose another filter above, or go back to the review board.
+        </p>
+      );
+    }
+    return (
+      <>
+        <div className="tools rise" style={{ "--i": 2 } as React.CSSProperties}>
+          <div className="find">
+            <input type="search" name="q" placeholder="Find a company…" aria-label="Find a company"
+                   value={query} autoComplete="off" spellCheck={false}
+                   onChange={(e) => setQuery(e.target.value)} />
+          </div>
+          <span className="spacer" />
+          <span className="statusline">
+            <span aria-live="polite" aria-atomic="true" role="status">{announcement}</span>
+          </span>
+        </div>
+        {!query.trim() && (
+          <p className="empty rise">
+            <b>No run researched {fieldLabel.toLowerCase()}.</b> Find a company to override it with the
+            public page that says so.
+          </p>
+        )}
+        {query.trim() && unreached.length === 0 && (
+          <p className="empty rise">No company matches “{query}”.</p>
+        )}
+        {notResearched}
+      </>
     );
   }
 
@@ -510,57 +593,7 @@ export default function Grid(props: Props) {
         </section>
       </div>
 
-      {/* Rows are findings, so a company research never reached has none and
-          nothing to accept. A search that finds one offers an override, which
-          must name the public page it came from: that page is its citation. */}
-      {unreached.length > 0 && (
-        <section className="unresearched rise" aria-label={`Not researched for ${fieldLabel}`}
-                 style={{ "--i": 4 } as React.CSSProperties}>
-          <p className="eyebrow"><Icon name="search-x" size={12} /> Not researched</p>
-          <p className="meta">
-            No run found a document to read for {unreached.length === 1 ? "this company" : "these companies"},
-            so there is no proposal to accept. An override needs the public page that says so, which
-            becomes its citation.
-          </p>
-          {unreached.map((u) => u.decided !== null
-            ? (
-              <p key={u.companyId} className="settled">
-                <b>{u.companyName}</b>
-                <span className="tag done"><Icon name="check" size={11} />override</span>
-                <span>{u.decided}</span>
-                {u.sourceUrl && (
-                  <a href={u.sourceUrl} target="_blank" rel="noopener noreferrer">
-                    source<Icon name="external-link" size={12} />
-                  </a>
-                )}
-              </p>
-            )
-            : (
-              <form key={u.companyId} className="editor"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const data = new FormData(e.currentTarget);
-                      record({ companyId: u.companyId, fieldKey, findingId: null, findingAttempt: null }, "override", {
-                        extra: {
-                          overrideValue: String(data.get("overrideValue") ?? ""),
-                          source: String(data.get("source") ?? ""),
-                        },
-                      });
-                    }}>
-                <label htmlFor={`override-${u.companyId}`}>Override {fieldLabel} for {u.companyName}</label>
-                <input id={`override-${u.companyId}`} name="overrideValue" autoComplete="off" required
-                       placeholder={isStageField ? "production + exploration" : undefined} />
-                <label htmlFor={`source-${u.companyId}`}>The public page that says so</label>
-                <input id={`source-${u.companyId}`} name="source" type="url" autoComplete="off" required
-                       placeholder="https://…" />
-                <div className="acts">
-                  <button type="submit" className="btn secondary" disabled={busy}>
-                    <Icon name="pencil" size={15} />Override</button>
-                </div>
-              </form>
-            ))}
-        </section>
-      )}
+      {notResearched}
 
       <BulkDialog open={bulk.open} text={bulk.text} needsStage={isStageField}
                   onConfirm={confirmBulk}

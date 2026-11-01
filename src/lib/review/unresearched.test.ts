@@ -92,6 +92,36 @@ test("Q4 2026: its override must name a public page, and that page is its citati
   assert.equal(c.citation.kind === "review" && c.citation.url, "https://southco.example/aif-2025.pdf");
 });
 
+test("Q4 2026: a field no run researched lists every company, and a sourced region override retiers", async () => {
+  const { db, periodId, south } = await period();
+  const REGIONS = "property_regions";
+  const rows = await fieldRows(db, periodId, REGIONS, "all");
+  assert.equal(rows.length, 0, "no finding for this field at all");
+  assert.equal((await unresearched(db, periodId, REGIONS, rows)).length, 2, "both companies can still be reached");
+
+  // Discovery: a producer whose workbook regions held only its abroad project.
+  const source = "Public source: https://southco.example/q2-2026-results.pdf";
+  const stage = parseFieldInput(STAGE, "production + exploration");
+  assert.ok(stage.ok);
+  await recordDecision(db, { periodId, companyId: south, fieldKey: STAGE, decision: "override",
+                             overrideValue: stage.value, reason: source });
+  const abroad = parseFieldInput(REGIONS, "Latin America: Mexico");
+  assert.ok(abroad.ok);
+  await recordDecision(db, { periodId, companyId: south, fieldKey: REGIONS, decision: "override",
+                             overrideValue: abroad.value, reason: source });
+  const tier = async () => await db.get("select tier, footprint from tiers where period_id = ? and company_id = ?",
+                                        periodId, south) as { tier: number | null; footprint: string };
+  assert.equal((await tier()).tier, 3, "production abroad only");
+
+  assert.match(await unresearchedOverrideRefusal(db, { periodId, companyId: south, fieldKey: REGIONS, reason: null }) ?? "",
+               /public page/);
+  const both = parseFieldInput(REGIONS, "Canada: ON · Latin America: Mexico");
+  assert.ok(both.ok);
+  await recordDecision(db, { periodId, companyId: south, fieldKey: REGIONS, decision: "override",
+                             overrideValue: both.value, reason: source });
+  assert.deepEqual(await tier(), { tier: 1, footprint: "canada_and_abroad" });
+});
+
 test("Q4 2026: a superseded finding is not research that reached the company", async () => {
   const { db, periodId, north, finding } = await period();
   assert.equal(await researched(db, periodId, north, STAGE), true);
