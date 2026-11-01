@@ -13,6 +13,7 @@ import { requireRole } from "../../../../lib/auth/context.ts";
 import {
   extractedFact,
   bulkConfirmation, partitionForBulkAccept, recordDecision, SOURCED_OVERRIDES, undoLast,
+  unresearchedOverrideRefusal,
 } from "../../../../lib/review/decide.ts";
 import { parseFieldInput, sourceUrlIn } from "../../../../lib/format/fields.ts";
 import { fieldRows } from "../../../../lib/review/queue.ts";
@@ -58,6 +59,14 @@ export async function decide(form: FormData): Promise<ActionResult> {
       // company page shows as the citation.
       const url = SOURCED_OVERRIDES.has(fieldKey) ? sourceUrlIn(String(rawOverride)) : null;
       if (url && !reason) sourcedReason = `Public source: ${url}`;
+      // A company research never reached has no row, so its override is typed
+      // with the page it came from in a box of its own, and must have one.
+      const source = form.get("source") ? sourceUrlIn(String(form.get("source"))) : null;
+      if (source && !reason && !sourcedReason) sourcedReason = `Public source: ${source}`;
+      const refusal = await unresearchedOverrideRefusal(db, {
+        periodId, companyId, fieldKey, reason: reason ?? sourcedReason,
+      });
+      if (refusal) return { ok: false, message: refusal };
     }
   }
 

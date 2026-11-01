@@ -182,6 +182,41 @@ export type RecordOptions = {
  */
 export const SOURCED_OVERRIDES = new Set(["incumbent_erp", "erp_change"]);
 
+/**
+ * Whether research reached a company for a field this period: a finding the
+ * review screens show, whatever it says. A superseded one is not shown, so it
+ * does not count.
+ */
+export async function researched(
+  db: Sql, periodId: string, companyId: string, fieldKey: string,
+): Promise<boolean> {
+  return Boolean(await db.get(`select 1 as hit from enrichment_findings e
+      join enrichment_runs r on r.id = e.run_id and r.period_id = ?
+      where e.company_id = ? and e.field_key = ? and e.state != 'superseded' limit 1`,
+    periodId, companyId, fieldKey));
+}
+
+/**
+ * Why an override cannot be recorded without a source, or null when it can.
+ *
+ * Where research never reached the company there is no finding: no excerpt
+ * and no document behind the value. So the override names the public page it
+ * came from, and that page is its citation -- as the ERP fields always have.
+ * On 1 November 2026 fourteen Q4 companies had their stage found by hand, on
+ * pages the fetcher could not read, and no row in review to record it on.
+ *
+ * Checked where the review screens record a decision, not in recordDecision:
+ * a workbook value corrected in a test or a script has never needed a page.
+ */
+export async function unresearchedOverrideRefusal(db: Sql, opts: {
+  periodId: string; companyId: string; fieldKey: string; reason: string | null;
+}): Promise<string | null> {
+  if (sourceUrlIn(opts.reason ?? "")) return null;
+  if (await researched(db, opts.periodId, opts.companyId, opts.fieldKey)) return null;
+  return "Research never reached this company for this field, so nothing stands behind the value. " +
+         "Give the public page that says so (https://…); it becomes the citation.";
+}
+
 export async function recordDecision(db: Sql, opts: RecordOptions): Promise<string> {
   if (opts.decision === "flag" && !opts.reason?.trim()) {
     throw new Error("a flag requires a one-line reason");

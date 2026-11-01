@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import { isStageField } from "../../../../lib/review/decide.ts";
-import { cellLabel, fieldRows, formatValue, inBucket, olderFilingNote, tierConsequence } from "../../../../lib/review/queue.ts";
+import {
+  cellLabel, fieldRows, formatValue, inBucket, olderFilingNote, tierConsequence, unresearched,
+} from "../../../../lib/review/queue.ts";
 import { chosenThreshold, DEFAULT_THRESHOLD, THRESHOLDS } from "../../../../lib/review/threshold.ts";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Facts from "../../../_ui/Facts.tsx";
@@ -90,6 +92,10 @@ export default async function FieldReview(
     tierNote: await tierConsequence(ctx.db, period.id, r),
   })));
 
+  // The companies with no row at all: research never reached them for this
+  // field. A search that finds one offers an override with its source.
+  const notResearched = await unresearched(ctx.db, period.id, field, all);
+
   // A count on every filter, so the choice of batch is made before the click.
   const counts = Object.fromEntries(BUCKETS.map(([key]) =>
     [key, key === bucket ? raw.length : inBucket(all, key, threshold).length]));
@@ -131,6 +137,7 @@ export default async function FieldReview(
         threshold={threshold}
         isStageField={isStageField(field)}
         rows={rows}
+        unresearched={notResearched}
         initialQuery={q}
       />
     </Page>

@@ -11,7 +11,7 @@
  * So the Analyst lands on a triage board and picks a batch. They never face
  * 2,590 undifferentiated cells.
  */
-import { formatFieldValue } from "../format/fields.ts";
+import { formatFieldValue, sourceUrlIn } from "../format/fields.ts";
 import type { Sql } from "../db/sql.ts";
 import { evidenceBand, isConflict, isStageField, type Candidate } from "./decide.ts";
 import { EDGAR_PROFILE_FIELDS } from "../enrich/sources.ts";
@@ -490,6 +490,50 @@ export async function companyRows(
 
   const rows = [...byCompany.values()].sort((a, b) => a.companyName.localeCompare(b.companyName));
   return { fields, rows };
+}
+
+export type Unresearched = {
+  companyId: string;
+  companyName: string;
+  /** The standing override, as the grid words a value; null until one is recorded. */
+  decided: string | null;
+  /** The public page that override cites. */
+  sourceUrl: string | null;
+};
+
+/**
+ * The period's companies research never reached for a field. Each has no row
+ * in the grid, because rows are findings, so there is nothing to accept --
+ * only an override with the public page it came from
+ * (decide.ts, unresearchedOverrideRefusal).
+ *
+ * `rows` is the field's whole column, every bucket: a company in any of them
+ * was reached.
+ */
+export async function unresearched(
+  db: Sql, periodId: string, fieldKey: string, rows: Row[],
+): Promise<Unresearched[]> {
+  const reached = new Set(rows.map((r) => r.companyId));
+  const all = await db.all(`select c.id as "companyId", c.canonical_name as "companyName",
+            d.override_value as "overrideValue", d.reason
+       from tiers t
+       join companies c on c.id = t.company_id
+       left join review_decisions d on d.id = (
+         select s.id from review_decisions s
+          where s.period_id = t.period_id and s.company_id = c.id and s.field_key = ?
+            and s.decision = 'override'
+            and not exists (select 1 from review_decisions u where u.undoes_id = s.id)
+          order by s.seq desc limit 1)
+      where t.period_id = ?
+      order by c.canonical_name`, fieldKey, periodId) as Array<{
+    companyId: string; companyName: string; overrideValue: string | null; reason: string | null;
+  }>;
+  return all.filter((c) => !reached.has(c.companyId)).map((c) => ({
+    companyId: c.companyId,
+    companyName: c.companyName,
+    decided: c.overrideValue === null ? null : formatValue(safeParse(c.overrideValue), fieldKey),
+    sourceUrl: sourceUrlIn(c.reason ?? ""),
+  }));
 }
 
 /**

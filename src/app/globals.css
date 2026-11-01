@@ -1390,6 +1390,12 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 }
 .editor input:focus { border-color: var(--green-mark); }
 .editor .hint { font-size: var(--fs-caption); color: var(--ink-3); margin: var(--space-2) 0 0; }
+/* Under the grid: companies research never reached, each an override and its source. */
+.unresearched { max-width: 640px; margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--rule); }
+.unresearched .eyebrow { margin: 0 0 var(--space-1); }
+.unresearched .editor input + label { margin-top: var(--space-3); }
+.unresearched .editor .acts { display: flex; margin-top: var(--space-3); }
+.unresearched .settled { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; font-size: var(--fs-body-sm); margin: var(--space-3) 0 0; }
 .empty { color: var(--ink-2); font-size: var(--fs-body); padding: var(--space-8) 0; }
 .section .empty { padding: 0; font-size: 14px; }
 .empty b { color: var(--ink); }

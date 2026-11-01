@@ -26,6 +26,7 @@ import {
 import Icon from "../../../_ui/Icon.tsx";
 import Callout from "../../../_ui/Callout.tsx";
 import { canAct, canOverride } from "../../../../lib/review/actable.ts";
+import type { Unresearched } from "../../../../lib/review/queue.ts";
 import { bulkAccept, confirmationText } from "./actions.ts";
 import { useDecide } from "../useDecide.ts";
 import BulkDialog from "./BulkDialog.tsx";
@@ -64,6 +65,8 @@ type Props = {
   threshold: number;
   isStageField: boolean;
   rows: GridRow[];
+  /** Companies with no row: research never reached them for this field. */
+  unresearched: Unresearched[];
   initialQuery?: string;
 };
 
@@ -110,6 +113,12 @@ export default function Grid(props: Props) {
   }, [optRows, query]);
   const row = visible[Math.min(index, Math.max(0, visible.length - 1))];
   const remaining = useMemo(() => optRows.filter((r) => !r.decided).length, [optRows]);
+  // Only on a search: listed whole, a period's unresearched companies would
+  // bury the grid under forms.
+  const unreached = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? props.unresearched.filter((u) => u.companyName.toLowerCase().includes(q)) : [];
+  }, [props.unresearched, query]);
 
   useEffect(() => {
     if (!editing && !flagging && !bulk.open && !showHelp) cellRefs.current[index]?.focus();
@@ -292,7 +301,11 @@ export default function Grid(props: Props) {
           </div>
 
           {visible.length === 0 && (
-            <div className="grow"><span className="meta">No company matches “{query}”.</span></div>
+            <div className="grow"><span className="meta">
+              {unreached.length > 0
+                ? <>Nothing researched matches “{query}”. Research never reached the {unreached.length === 1 ? "company" : "companies"} below.</>
+                : <>No company matches “{query}”.</>}
+            </span></div>
           )}
 
           {visible.map((r, i) => (
@@ -496,6 +509,58 @@ export default function Grid(props: Props) {
           )}
         </section>
       </div>
+
+      {/* Rows are findings, so a company research never reached has none and
+          nothing to accept. A search that finds one offers an override, which
+          must name the public page it came from: that page is its citation. */}
+      {unreached.length > 0 && (
+        <section className="unresearched rise" aria-label={`Not researched for ${fieldLabel}`}
+                 style={{ "--i": 4 } as React.CSSProperties}>
+          <p className="eyebrow"><Icon name="search-x" size={12} /> Not researched</p>
+          <p className="meta">
+            No run found a document to read for {unreached.length === 1 ? "this company" : "these companies"},
+            so there is no proposal to accept. An override needs the public page that says so, which
+            becomes its citation.
+          </p>
+          {unreached.map((u) => u.decided !== null
+            ? (
+              <p key={u.companyId} className="settled">
+                <b>{u.companyName}</b>
+                <span className="tag done"><Icon name="check" size={11} />override</span>
+                <span>{u.decided}</span>
+                {u.sourceUrl && (
+                  <a href={u.sourceUrl} target="_blank" rel="noopener noreferrer">
+                    source<Icon name="external-link" size={12} />
+                  </a>
+                )}
+              </p>
+            )
+            : (
+              <form key={u.companyId} className="editor"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const data = new FormData(e.currentTarget);
+                      record({ companyId: u.companyId, fieldKey, findingId: null, findingAttempt: null }, "override", {
+                        extra: {
+                          overrideValue: String(data.get("overrideValue") ?? ""),
+                          source: String(data.get("source") ?? ""),
+                        },
+                      });
+                    }}>
+                <label htmlFor={`override-${u.companyId}`}>Override {fieldLabel} for {u.companyName}</label>
+                <input id={`override-${u.companyId}`} name="overrideValue" autoComplete="off" required
+                       placeholder={isStageField ? "production + exploration" : undefined} />
+                <label htmlFor={`source-${u.companyId}`}>The public page that says so</label>
+                <input id={`source-${u.companyId}`} name="source" type="url" autoComplete="off" required
+                       placeholder="https://…" />
+                <div className="acts">
+                  <button type="submit" className="btn secondary" disabled={busy}>
+                    <Icon name="pencil" size={15} />Override</button>
+                </div>
+              </form>
+            ))}
+        </section>
+      )}
 
       <BulkDialog open={bulk.open} text={bulk.text} needsStage={isStageField}
                   onConfirm={confirmBulk}
