@@ -407,7 +407,7 @@ export default async function Styleguide() {
             <li><a href="#components"><span className="fig-lg">44</span>
               <span className="lab"><Icon name="search-x" size={13} />No evidence found</span></a></li>
             <li><span className="cell"><span className="fig-lg">0</span>
-              <span className="lab"><Icon name="history" size={13} />Accepted, then researched again</span></span></li>
+              <span className="lab"><Icon name="history" size={13} />Decided, then researched again</span></span></li>
           </ul>
           <ul className="gatelist" style={{ maxWidth: 640, marginTop: 16 }}>
             <li className="gateline no"><span className="mark"><Icon name="octagon-alert" size={16} /></span><span className="what">Stage coverage 6.6% — floor is 95%</span><span className="fig-sm">17 of 259</span></li>
