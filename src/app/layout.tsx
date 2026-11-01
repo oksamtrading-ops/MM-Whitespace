@@ -5,7 +5,7 @@ import { Archivo, Open_Sans } from "next/font/google";
 import { authContext } from "../lib/auth/context.ts";
 import { resolveUser } from "../lib/auth/session.ts";
 import Sidebar, { type NavItem } from "./_ui/Sidebar.tsx";
-import { RAIL_COOKIE, THEME_COOKIE, type Theme } from "./_ui/theme.ts";
+import { RAIL_COOKIE, showsWorking, THEME_COOKIE, WORKING_COOKIE, type Theme } from "./_ui/theme.ts";
 import { periodName } from "./_ui/format.ts";
 
 /* Open Sans is the brand face and carries everything you read. Archivo carries
@@ -59,6 +59,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const jar = await cookies();
   const theme = await readTheme();
   const railCollapsed = jar.get(RAIL_COOKIE)?.value === "1";
+  const working = showsWorking(jar.get(WORKING_COOKIE)?.value, canReview);
 
   /* Three groups, because the destinations are three things: the product a
      partner reads, the period an analyst builds, and the administration
@@ -92,7 +93,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en-CA" data-theme={theme} className={`${text.variable} ${figure.variable}`}>
-      <body className={canReview ? undefined : "working-off"}>
+      <body className={working ? undefined : "working-off"}>
         <a className="skip" href="#main">Skip to content</a>
         <div className="app">
           <Sidebar items={items} collapsed={railCollapsed} theme={theme}

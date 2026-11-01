@@ -261,6 +261,46 @@ for (const theme of ["light", "dark"]) {
   }
 }
 
+console.log("\nthe grey ramp — another firm's companies: the same steps, no hue\n");
+for (const theme of ["light", "dark"]) {
+  const steps = ["grey-1", "grey-2", "grey-3", "grey-4", "grey-5"].map((k) => resolve(theme, k));
+  const L = steps.map(oklabL);
+  const dir = theme === "light" ? -1 : 1;
+  const gaps = L.slice(1).map((l, i) => dir * (l - L[i]));
+  ok(gaps.every((g) => g >= RAMP_MIN_STEP),
+     `${theme}: every adjacent step differs by >= ${RAMP_MIN_STEP} OKLab L (${gaps.map((g) => g.toFixed(3)).join(", ")})`);
+  for (let i = 1; i <= 5; i++) {
+    const fill = resolve(theme, `grey-${i}`), ink = resolve(theme, `on-grey-${i}`);
+    const ratio = contrast(ink, fill);
+    ok(ratio >= TEXT_FLOOR, `${theme}: --on-grey-${i} ${ink} on --grey-${i} ${fill}  ${ratio.toFixed(2)}:1  (floor ${TEXT_FLOOR})`);
+  }
+}
+
+// The globe (doc 19). A place with no companies must not pass for a place
+// with one, on either ramp; a disc must be findable on the land under it;
+// and a label is text, set on a halo of its own.
+console.log("\nthe globe — an empty place, a disc, a label\n");
+for (const theme of ["light", "dark"]) {
+  const t = (name) => resolve(theme, name);
+  const land = t("globe-land");
+  for (const step of ["seq-1", "grey-1"]) {
+    const dE = deltaE(land, t(step));
+    ok(dE >= NORMAL_FLOOR, `${theme}: an empty place against --${step}: dE ${dE.toFixed(1)} (floor ${NORMAL_FLOOR})`);
+  }
+  const sea = Math.min(deltaE(land, t("globe-lit")), deltaE(land, t("globe-dark")));
+  note(`${theme}: land against the sea, the nearer of its two shades: dE ${sea.toFixed(1)}`);
+  for (const c of [
+    { label: "a disc's rim (non-text) on empty land", fg: t("disc"), bg: land, floor: NON_TEXT_FLOOR },
+    { label: "a disc's rim (non-text) on the sea", fg: t("disc"), bg: t("globe-lit"), floor: NON_TEXT_FLOOR },
+    { label: "a disc's green core (non-text) on empty land", fg: t("green-mark"), bg: land, floor: NON_TEXT_FLOOR },
+    { label: "a place's name on its halo", fg: t("ink"), bg: t("globe-halo"), floor: TEXT_FLOOR },
+    { label: "a place's count on its halo", fg: t("ink-2"), bg: t("globe-halo"), floor: TEXT_FLOOR },
+  ]) {
+    const ratio = contrast(c.fg, c.bg);
+    ok(ratio >= c.floor, `${theme}: ${c.label.padEnd(46)} ${ratio.toFixed(2)}:1  (floor ${c.floor})`);
+  }
+}
+
 console.log("\ncategorical palette — adjacent pairs, CVD and normal vision\n");
 for (const theme of ["light", "dark"]) {
   const slots = [];
