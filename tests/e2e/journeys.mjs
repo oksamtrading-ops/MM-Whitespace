@@ -631,8 +631,10 @@ async function journeys(dbPath) {
   // -- with its controls hidden too, so even finding it left nothing to click.
   supersedeDecision(dbPath, "auditor", '"Ernst & Young"');
   const supersededBoard = (await get("/review", analyst.cookie)).html;
+  // "Decided", not "accepted": since 21 October a flagged row can be overtaken too.
   check("the board counts values that later research disagrees with",
-        supersededBoard.includes("accepted, then researched again"));
+        supersededBoard.includes("decided, then researched again"),
+        supersededBoard.match(/[^<>]*researched again[^<>]*/)?.[0] ?? "no bucket for overtaken decisions on the board");
   const superseded = await get("/review/auditor?bucket=superseded", analyst.cookie);
   check("the row is listed, and says its decision has been overtaken",
         superseded.html.includes("newer research") && superseded.html.includes("Ernst &amp; Young"),
