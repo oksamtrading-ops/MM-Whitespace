@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import type { Metadata, Route } from "next";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
@@ -84,8 +85,12 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
     <Page title={p.name}
           back={{ href: "/companies", label: "Companies" }}
           meta={p.ticker ? `${p.ticker}${p.exchange ? ` · ${p.exchange}` : ""}` : undefined}>
-    <div className="withrail">
-      <div className="reading">
+    {/* Three parts, not two: the verdict, the company's facts, then the
+        argument. Beside each other the facts sit in the rail; on a narrow
+        screen they fold in under the verdict instead of after the last
+        section, where nobody scrolls. */}
+    <div className="withrail profile">
+      <div className="reading co-head">
 
         {pending && (pending.fields.length > 0 || pending.tier) && (
           <Callout tone="warn" live title="Not yet published" className="rise">
@@ -121,40 +126,76 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
                 : <>Audited by <b>{auditorName}</b>. <span className="quiet">Not a Deloitte audit client — this is the whitespace.</span></>)
             : <>The auditor is <b>not yet known</b>. <span className="quiet">Nothing can be said about the relationship until it is.</span></>}
         </p>
+      </div>
 
+      <aside className="rail rise" aria-label="About this company">
+        <p className="k">This company</p>
+        <Facts items={[
+          ...(p.ticker ? [{ label: "Ticker", value: `${p.ticker}${p.exchange ? ` · ${p.exchange}` : ""}`, figure: true }] : []),
+          ...p.values.filter((v) => ["market_cap_cad", "head_office_location", "head_office_region", "dtt_market"].includes(v.fieldKey))
+            .map((v) => ({ label: v.label, value: v.display, figure: v.fieldKey === "market_cap_cad" })),
+          { label: "Stage of operations", value: stageWords(p.stages, p.stageEvidence) },
+          // What it mines sits beside the stage, where a reader looks first,
+          // rather than only in the long list of every value below.
+          { label: "Commodities", value: commodityWords(p.values.find((v) => v.fieldKey === "commodities")) },
+          { label: "Period", value: periodName(p.period.label).name },
+          { label: p.publication ? "Published" : "Status",
+            value: p.publication
+              ? <>Revision {p.publication.revision}<span className="sub">{fmtDate(p.publication.publishedAt)}</span></>
+              : <span className="pill warn">draft</span> },
+        ]} />
+        {websiteUrl && (
+          <p className="site">
+            <a className="btn sm secondary" href={websiteUrl} target="_blank" rel="noopener noreferrer">
+              <Icon name="external-link" size={13} />Company website
+            </a>
+          </p>
+        )}
+        {!p.publication && (
+          <p className="meta site">
+            This period is not published. A Viewer sees nothing here until it is.
+          </p>
+        )}
+      </aside>
+
+      <div className="reading co-body">
         <Section id="why" title="Why this tier" index={1} icon="layers" lead
                  caption={p.trace
                    ? "Each rule in order. The one that fired decides, and the inputs it read are shown beside it."
                    : "The rule trace is not part of the frozen snapshot, and the rules have been re-run since this revision was published."}>
-          <div className="glance">
-          <div>
           {p.trace && p.trace.length > 0 ? (
             <ol className="trace">
-              {p.trace.map((step) => (
-                <li key={step.ord} className={step.matched ? "fired" : ""}>
-                  <span className="mark"><Icon name={step.matched ? "circle-check" : "circle-dashed"} size={14} /></span>
-                  {/* An unmapped rule id shows as itself once, not twice: the
-                      map is a courtesy and the id is the fact. */}
-                  <span className="what">
-                    {RULE[step.ruleId] ?? ""}
-                    <code>{step.ruleId}</code>
-                  </span>
-                  <span className="inputs">
-                    {Object.entries(step.inputs).map(([k, v]) => (
-                      <span key={k}>{k} <b>{Array.isArray(v) ? (v.length ? v.join(", ") : "none") : String(v)}</b></span>
-                    ))}
-                  </span>
-                  <span className="sr-only">{step.matched ? "This rule fired." : "Did not match."}</span>
-                </li>
-              ))}
+              {p.trace.map((step) => {
+                const inputs = Object.entries(step.inputs);
+                return (
+                  <li key={step.ord} className={step.matched ? "fired" : ""}>
+                    <span className="mark"><Icon name={step.matched ? "circle-check" : "circle-dashed"} size={14} /></span>
+                    {/* An unmapped rule id shows as itself once, not twice: the
+                        map is a courtesy and the id is the fact. */}
+                    <span className="what">
+                      {RULE[step.ruleId] && <span className="rule">{RULE[step.ruleId]}</span>}
+                      <code>{step.ruleId}</code>
+                    </span>
+                    {inputs.length > 0 && (
+                      <dl className="inputs">
+                        {inputs.map(([k, v]) => (
+                          <div key={k}>
+                            <dt>{k}</dt>
+                            <dd>{Array.isArray(v) ? (v.length ? v.join(", ") : "none") : String(v)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                    <span className="sr-only">{step.matched ? "This rule fired." : "Did not match."}</span>
+                  </li>
+                );
+              })}
             </ol>
           ) : p.trace ? <p className="empty">No rule was recorded for this company.</p> : null}
-          </div>
           <Glance values={researched} />
-          </div>
           {p.tier && (
-            <p className="note">
-              Rule set <code>{p.tier.ruleSetVersion}</code>.{" "}
+            <p className="note ruleset">
+              <span>Rule set <code>{p.tier.ruleSetVersion}</code>.</span>
               {/* Not when review has already classified it: the stage is
                   researched, and only waiting to be published. */}
               {p.tier.tier === null && canReview && !pending?.tier && (
@@ -177,12 +218,15 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
 
         <Section id="values" title="Every value, and where it came from" index={3} icon="scroll-text"
                  caption="Nothing here is presented without its source. A researched value names the filing it was read from and the passage that says it.">
-          <table className="provenance">
-            <thead>
-              <tr><th scope="col">Field</th><th scope="col">Value</th>
-                  <th scope="col">Source</th><th scope="col">Evidence</th></tr>
+          {/* On a phone each row is set as a block of its own (field, value,
+              source), so the table says its roles out loud: WebKit drops a
+              table's semantics once its cells stop being table cells. */}
+          <table className="provenance" role="table">
+            <thead role="rowgroup">
+              <tr role="row"><th scope="col" role="columnheader">Field</th><th scope="col" role="columnheader">Value</th>
+                  <th scope="col" role="columnheader">Source</th><th scope="col" role="columnheader">Evidence</th></tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {p.values.map((v) => <ValueRow key={v.fieldKey} v={v} showReasons={canReview} />)}
             </tbody>
           </table>
@@ -200,42 +244,14 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
                 This is the first published period, so there is nothing to compare against.
                 Next quarter this says what moved and why.
               </p>
-            : <p>
-                {`Tier ${p.tier.priorTier} → ${p.tier.tier ?? "Unclassified"}`}
-                {p.tier.changed ? " — changed" : " — unchanged"}.
+            : <p className="since">
+                <span className="fig">{`Tier ${p.tier.priorTier}`}</span>
+                <Icon name="arrow-right" size={14} />
+                <span className="fig">{p.tier.tier === null ? "Unclassified" : `Tier ${p.tier.tier}`}</span>
+                <span className="quiet">{p.tier.changed ? "Changed since last period." : "Unchanged since last period."}</span>
               </p>}
         </Section>
       </div>
-
-      <aside className="rail rise" aria-label="About this company">
-        <p className="k">This company</p>
-        <Facts items={[
-          ...(p.ticker ? [{ label: "Ticker", value: `${p.ticker}${p.exchange ? ` · ${p.exchange}` : ""}`, figure: true }] : []),
-          ...p.values.filter((v) => ["market_cap_cad", "head_office_location", "head_office_region", "dtt_market"].includes(v.fieldKey))
-            .map((v) => ({ label: v.label, value: v.display, figure: v.fieldKey === "market_cap_cad" })),
-          { label: "Stage of operations", value: stageWords(p.stages, p.stageEvidence) },
-          // What it mines sits beside the stage, where a reader looks first,
-          // rather than only in the long list of every value below.
-          { label: "Commodities", value: commodityWords(p.values.find((v) => v.fieldKey === "commodities")) },
-          { label: "Period", value: periodName(p.period.label).name },
-          { label: p.publication ? "Published" : "Status",
-            value: p.publication
-              ? <>Revision {p.publication.revision}<span className="sub">{fmtDate(p.publication.publishedAt)}</span></>
-              : <span className="pill warn">draft</span> },
-        ]} />
-        {websiteUrl && (
-          <p style={{ marginTop: 20 }}>
-            <a className="btn sm secondary" href={websiteUrl} target="_blank" rel="noopener noreferrer">
-              <Icon name="external-link" size={13} />Company website
-            </a>
-          </p>
-        )}
-        {!p.publication && (
-          <p className="meta" style={{ marginTop: 20 }}>
-            This period is not published. A Viewer sees nothing here until it is.
-          </p>
-        )}
-      </aside>
     </div>
     </Page>
   );
@@ -243,30 +259,41 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
 
 const BAND_CELLS: Record<string, number> = { low: 1, medium: 2, high: 3, "very high": 4 };
 
-/** Evidence at a glance: one line per researched value, beside the trace. */
+/** Four cells, as many lit as the band is strong; the figure and the word say it too. */
+function Strength({ strength }: { strength: number }) {
+  const band = evidenceBand(strength);
+  return (
+    <span className="ev">
+      <span aria-hidden="true" className={`strip b-${band.replace(" ", "-")}`}>
+        {[1, 2, 3, 4].map((c) => <i key={c} className={c <= (BAND_CELLS[band] ?? 0) ? "on" : ""} />)}
+      </span>
+      <span className="num">{strength.toFixed(2)}</span>
+      <span className="bandword">{band}</span>
+    </span>
+  );
+}
+
+/**
+ * Evidence at a glance: one line per researched value, under the trace, each
+ * a link to its row in the table below. Every one, not the first eight: the
+ * weakest is the one worth seeing, and it was as likely to be ninth.
+ */
 function Glance({ values }: { values: ProfileValue[] }) {
   if (values.length === 0) return null;
   return (
-    <div>
-      <p className="k">Evidence at a glance</p>
-      <ul className="ev-list">
-        {values.slice(0, 8).map((v) => {
-          const band = v.strength === null ? null : evidenceBand(v.strength);
-          return (
-            <li key={v.fieldKey}>
-              <span className="f">{v.label}</span>
-              {band === null
-                ? <span className="meta">accepted</span>
-                : <span className="ev">
-                    <span aria-hidden="true" className={`strip b-${band.replace(" ", "-")}`}>
-                      {[1, 2, 3, 4].map((c) => <i key={c} className={c <= (BAND_CELLS[band] ?? 0) ? "on" : ""} />)}
-                    </span>
-                    <span className="num">{v.strength!.toFixed(2)}</span>
-                    <span className="bandword">{band}</span>
-                  </span>}
-            </li>
-          );
-        })}
+    <div className="glance">
+      <p className="k" id="glance-k">Evidence at a glance</p>
+      {/* Down the first column, then the second, as a list is read. */}
+      <ul className="ev-list" aria-labelledby="glance-k"
+          style={{ "--rows": Math.ceil(values.length / 2) } as CSSProperties}>
+        {values.map((v) => (
+          <li key={v.fieldKey}>
+            <a className="f" href={`#v-${v.fieldKey}`}>{v.label}</a>
+            {v.strength === null
+              ? <span className="meta">accepted</span>
+              : <Strength strength={v.strength} />}
+          </li>
+        ))}
       </ul>
     </div>
   );
@@ -282,12 +309,11 @@ function commodityWords(v: ProfileValue | undefined): string {
 }
 
 function ValueRow({ v, showReasons }: { v: ProfileValue; showReasons: boolean }) {
-  const band = v.strength === null ? null : evidenceBand(v.strength);
   return (
-    <tr id={`v-${v.fieldKey}`}>
-      <th scope="row">{v.label}</th>
-      <td className="wrap">
-        {v.display}
+    <tr id={`v-${v.fieldKey}`} role="row">
+      <th scope="row" role="rowheader" className="wrap">{v.label}</th>
+      <td className="wrap value" role="cell">
+        <span className="shown">{v.display}</span>
         {v.inheritedFrom && (
           <span className="pill warn" title={`From ${v.inheritedFrom.label}`}>
             <Icon name="history" size={12} />inherited · {v.inheritedFrom.ageDays}d old
@@ -300,19 +326,16 @@ function ValueRow({ v, showReasons }: { v: ProfileValue; showReasons: boolean })
           </details>
         )}
       </td>
-      <td className="meta wrap">
+      <td className="meta wrap src" role="cell">
         {v.source === "extract" && v.citation?.kind === "workbook" && v.citation.source === "tsx_list"
           ? "From TSX’s list"
           : SOURCE_LABEL[v.source] ?? v.source}
         <CitationLine citation={v.citation} showReasons={showReasons} />
       </td>
-      <td>
-        {band === null
+      <td className="wrap strength" role="cell">
+        {v.strength === null
           ? <span className="meta">{v.evidenceState === "asserted" ? "—" : v.evidenceState.replace(/_/g, " ")}</span>
-          : <span className="ev">
-              <span className="num">{v.strength!.toFixed(2)}</span>
-              <span className="bandword">{band}</span>
-            </span>}
+          : <Strength strength={v.strength} />}
       </td>
     </tr>
   );

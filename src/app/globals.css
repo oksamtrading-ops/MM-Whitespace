@@ -1489,36 +1489,125 @@ dialog td:first-child { width: 112px; }
 .verdict .quiet, .verdict-2 .quiet { color: var(--ink-2); }
 .verdict-2 { font-size: var(--fs-subtitle); margin: 10px 0 var(--space-2); line-height: 1.45; }
 
-/* Evidence at a glance: one line per researched field, beside the trace. */
-.glance { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
-@media (max-width: 860px) { .glance { grid-template-columns: 1fr; } }
-.glance .ev-list { list-style: none; margin: 0; padding: 0; }
-.glance .ev-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; padding: 9px 0; border-bottom: 1px solid var(--rule); font-size: 14px; }
-.glance .ev-list li:last-child { border-bottom: 0; }
-.glance .ev-list .f { color: var(--ink-2); }
-.glance .ev-list .v { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The profile in three parts: the verdict, the company's facts, the argument.
+   Under 1100px they stack in that order, the facts as a grid of small labelled
+   values under the verdict; from 1100px the facts are the rail beside both,
+   and stay in view as the argument scrolls. */
+@media (max-width: 1099px) {
+  .profile > .rail { margin: var(--space-6) 0 0; padding: var(--space-4) 0 var(--space-5); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  .profile > .rail .facts {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+    gap: var(--space-4) var(--space-5); max-width: none; margin: 0;
+  }
+  .profile > .rail .facts dd { white-space: normal; overflow-wrap: break-word; }
+  .profile > .rail .facts dd .sub { display: block; margin: 2px 0 0; }
+}
+.profile > .rail .site { margin: var(--space-4) 0 0; }
+@media (min-width: 1100px) {
+  .profile { grid-template-rows: auto 1fr; row-gap: 0; }
+  .profile > .co-body { grid-column: 1; grid-row: 2; }
+  .profile > .rail { grid-row: 1 / span 2; }
+  .profile > .rail .site { margin-top: var(--space-5); }
+}
 
-.trace { list-style: none; margin: 0; padding: 0; }
+/* The trace: one row per rule, in the order the rules ran. Every row has the
+   same three columns -- its mark, the rule, the inputs it read -- so the rule's
+   words keep a column of their own however many inputs it read, and the
+   inputs line up down the list. The rule that fired is lit. */
+.trace { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
 .trace li {
-  display: grid; grid-template-columns: 20px minmax(0, 1fr) minmax(0, auto);
-  gap: 4px var(--space-3); align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--rule);
-  color: var(--ink-3);
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) minmax(0, 17rem);
+  gap: var(--space-2) var(--space-4); align-items: start;
+  padding: 11px var(--space-3); border-bottom: 1px solid var(--rule); color: var(--ink-3);
 }
-.trace li:last-child { border-bottom: 0; }
-.trace li.fired { color: var(--ink); }
-.trace .mark { color: var(--rule); font-size: var(--fs-label); }
+.trace li.fired { color: var(--ink); background: var(--green-soft); box-shadow: inset 2px 0 0 var(--green-mark); }
+.trace .mark { display: flex; align-items: center; height: 20px; color: var(--rule-raised); }
 .trace li.fired .mark { color: var(--green-mark); }
-.trace .what { font-size: 14px; }
-.trace .what code { background: none; padding: 0 0 0 var(--space-2); font-size: var(--fs-caption); color: var(--ink-3); }
-.trace .inputs { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--fs-caption); color: var(--ink-3); }
-.trace .inputs b { color: var(--ink-2); font-weight: 600; }
+.trace .what { min-width: 0; }
+.trace .rule { display: block; font-size: 14px; line-height: 20px; }
+.trace li.fired .rule { font-weight: 600; }
+.trace .what code {
+  display: block; margin-top: 2px; padding: 0; background: none;
+  font-size: var(--fs-mono); line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere;
+}
+/* What the rule read, as a key over its value: mono, because both are the
+   engine's own words, and a fixed key column so the values line up. */
+.trace .inputs { margin: 0; padding-top: 2px; font-family: var(--mono); font-size: var(--fs-mono); line-height: 1.5; }
+.trace .inputs > div { display: grid; grid-template-columns: 17ch minmax(0, 1fr); gap: var(--space-2); }
+.trace .inputs dt { color: var(--ink-3); overflow-wrap: anywhere; }
+.trace .inputs dd { margin: 0; color: var(--ink-2); font-weight: 600; overflow-wrap: anywhere; }
+.trace li.fired .inputs dd { color: var(--ink); }
 @media (max-width: 640px) {
-  .trace li { grid-template-columns: 20px minmax(0, 1fr); }
-  .trace .inputs { grid-column: 2; }
+  .trace li { grid-template-columns: 20px minmax(0, 1fr); padding-inline: var(--space-2); }
+  .trace .inputs { grid-column: 2; padding-top: 0; }
 }
 
-table.provenance td:first-child { white-space: nowrap; }
-table.provenance .pill { margin-left: var(--space-2); }
+/* Evidence at a glance, under the trace: two columns read downward, and every
+   line the same parts at the same widths, so the strips and figures line up
+   from one line to the next. Each field links to its row in the table. */
+.glance { margin-top: var(--space-7); }
+.glance > .k { margin: 0 0 var(--space-2); }
+.glance .ev-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows, 1), auto); grid-auto-flow: column; column-gap: var(--space-8);
+}
+.glance .ev-list li {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center;
+  min-height: 38px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 14px;
+}
+.glance .ev-list .f { color: var(--ink-2); text-decoration: none; overflow-wrap: anywhere; }
+.glance .ev-list .f:hover { color: var(--ink); text-decoration: underline; text-decoration-color: var(--green-mark); }
+@media (max-width: 640px) {
+  .glance .ev-list { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-flow: row; }
+}
+/* An evidence strength on the profile: strip, figure and band word in fixed
+   columns, so a "low" lines up under a "very high". */
+.profile .ev { display: inline-grid; grid-template-columns: 26px 2.5em 4.6em; gap: var(--space-2); align-items: center; }
+.profile .ev .num { text-align: right; }
+.profile .ev .bandword { text-align: left; }
+
+/* The rule set, and beside it the button that researches the stage: one line, centred on each other. */
+.section .note.ruleset { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+
+/* What moved since the last period: the two tiers as figures, then the word. */
+.since { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; }
+.since .fig { font-size: var(--fs-fig-md); font-weight: 600; }
+.since .icon { color: var(--ink-3); }
+.since .quiet { margin-left: var(--space-2); font-size: 14px; color: var(--ink-2); }
+
+/* Every value: top-aligned throughout, so a field's name sits on the first
+   line of its value and its source however many lines those run to. */
+table.provenance { position: relative; }
+table.provenance tbody th, table.provenance tbody td { height: auto; padding-top: 10px; padding-bottom: 10px; }
+table.provenance tbody th { width: 18%; font-weight: 600; color: var(--ink); }
+table.provenance tbody tr:hover > th { background: var(--surface-2); }
+table.provenance .value { width: 28%; }
+table.provenance .value .shown { display: block; overflow-wrap: anywhere; }
+table.provenance .value .pill { margin-top: 6px; }
+table.provenance .src { overflow-wrap: anywhere; }
+table.provenance thead th:last-child, table.provenance .strength { text-align: right; white-space: nowrap; width: 1%; }
+/* On a phone a row is a block: the field and its strength on one line, the
+   value under them, and the source under that. Nothing is wider than the screen. */
+@media (max-width: 640px) {
+  table.provenance, table.provenance tbody { display: block; }
+  table.provenance thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  table.provenance tbody tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-3);
+    padding: var(--space-3) 0; border-bottom: 1px solid var(--rule);
+  }
+  table.provenance tbody tr:last-child { border-bottom: 0; }
+  table.provenance tbody th, table.provenance tbody td,
+  table.provenance .value, table.provenance .strength { display: block; width: auto; padding: 0; border: 0; }
+  table.provenance tbody tr:hover > th, table.provenance tbody tr:hover > td { background: none; }
+  table.provenance tbody th { grid-column: 1; grid-row: 1; }
+  table.provenance .strength { grid-column: 2; grid-row: 1; }
+  table.provenance .value { grid-column: 1 / -1; margin-top: var(--space-1); }
+  table.provenance .src { grid-column: 1 / -1; margin-top: var(--space-2); }
+  table.provenance tr:target { background: var(--surface-2); }
+}
 /* Every value's citation, under its provenance word (CitationLine). */
 table.provenance .cite { display: block; margin-top: 3px; color: var(--ink-2); }
 table.provenance .citedoc { display: block; }
@@ -2373,6 +2462,7 @@ button.switch { background: none; border: 0; padding: 0; color: var(--ink); font
   .map .prov.q1, .map .prov.q2 { fill: GrayText; }
   .ev .strip i.on { background: CanvasText; }
   .grow.sel { outline: 2px solid Highlight; }
+  .trace li.fired { outline: 2px solid Highlight; outline-offset: -2px; }
   .footing .total { border-color: CanvasText; }
   .signin .orb { display: none; }
   .btn[aria-disabled="true"] { color: GrayText; border-color: GrayText; }
