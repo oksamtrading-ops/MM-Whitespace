@@ -1048,6 +1048,26 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .roster .citelink:hover { text-decoration: underline; text-decoration-color: var(--green-mark); }
 .roster .notfound { color: var(--ink-3); font-style: italic; }
 .roster-legend { font-size: var(--fs-body-sm); color: var(--ink-3); margin: var(--space-3) 0 0; max-width: 96ch; }
+/* On a phone the Company column, as wide as its longest name, would fill the
+   box, and every other column would pass under it unseen. There it takes 40%
+   of the box at most, a long name cut short, and each other column the 60%
+   beside it at most, a longer value wrapping: so a column always shows beside
+   the names, and any column can be scrolled fully into view. A cell's own
+   percentage would be of the table, so the box is the container and the shares
+   are cqi. The names give up 2px more, because Safari scrolls by whole pixels:
+   a column exactly as wide as the room beside them could not be brought whole
+   into view there. The table keeps its natural width, or the cells now free to
+   wrap would be squeezed into its 940px. The column's header always fits its
+   word; at 320px only the sort mark runs over, and a clipped mark reads better
+   than an ellipsis after "Company". */
+@media (max-width: 640px) {
+  .roster { container-type: inline-size; }
+  .roster table { width: max-content; }
+  .roster th:first-child, .roster td:first-child { max-width: calc(40cqi - 2px); }
+  .roster thead th:first-child { text-overflow: clip; }
+  .roster td { white-space: normal; max-width: 60cqi; line-height: 1.35; padding-block: 6px; }
+  .roster td.wrap { min-width: 0; max-width: min(34ch, 60cqi); }
+}
 
 /* The filter bar: one MultiSelect per filter, then the count and the export. */
 .filterbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: 0 0 14px; }
