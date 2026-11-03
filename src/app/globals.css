@@ -1104,8 +1104,8 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 
    Visual height is --control-h, 36px, like every list and field beside it,
    and 28px in a table row; .sm is a smaller label at the same height. The
-   TOUCH target is still 44px: a pseudo-element expands it on coarse pointers,
-   where the 44px obligation actually applies. */
+   TOUCH target is still 44px, and 36px in a table row: a pseudo-element
+   expands it on coarse pointers, where the 44px obligation actually applies. */
 .btn {
   font: 600 var(--fs-body-sm)/1 var(--font-text); height: var(--control-h); padding: 0 13px;
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -1126,6 +1126,13 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 @media (pointer: coarse) {
   .btn::after { content: ""; position: absolute; left: 0; right: 0; top: 50%;
                 height: 44px; transform: translateY(-50%); }
+  /* In a table row the target is 36px, a row's height. At 44px it would reach
+     4px into each neighbouring row, and the later row's target, drawn on top,
+     would take a tap meant for the row above: on /access, a Deactivate, which
+     acts at once. An action cell an issued password makes taller would set
+     its buttons on the row's edges; this padding keeps their targets inside. */
+  td .btn::after { height: var(--row-h-dense); }
+  td.act:has(.issued, .issued-refused) { padding-block: var(--space-2); }
 }
 .btn.primary { background: var(--brand-fill); color: var(--on-brand); font-weight: 700; border-color: transparent; }
 .btn.primary:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--brand-hover); }
@@ -1157,10 +1164,13 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
   content: ""; position: absolute; inset: 0; margin: auto; width: 15px; height: 15px;
   border: 2px solid currentColor; border-radius: 50%; opacity: .35;
 }
+/* The spinner is the same ::after a coarse pointer's target uses, so it resets
+   the target's geometry, transform included: left in, the target's translate
+   makes the spin a slide, and with reduced motion sets the ring 7.5px high. */
 .btn.loading::after {
   content: ""; position: absolute; inset: 0; margin: auto; width: 15px; height: 15px;
   border: 2px solid transparent; border-top-color: var(--ink); border-radius: 50%;
-  height: 15px; top: 0; bottom: 0; left: 0; right: 0;
+  height: 15px; top: 0; bottom: 0; left: 0; right: 0; transform: none;
 }
 .btn.primary.loading::after { border-top-color: var(--on-brand); }
 @media (prefers-reduced-motion: no-preference) {
