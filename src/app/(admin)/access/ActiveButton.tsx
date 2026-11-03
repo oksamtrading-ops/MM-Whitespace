@@ -6,9 +6,10 @@ import Icon from "../../_ui/Icon.tsx";
 /**
  * The row's one control, showing that it is working while the action runs.
  *
- * Small, so it fits inside a 36px row rather than hanging below it, and
- * drawn as a danger outline when it removes access -- the only thing in this
- * application that takes something away from somebody.
+ * A small label, at the 28px every button in a table row takes, so it fits
+ * inside a 36px row rather than hanging below it, and drawn as a danger
+ * outline when it removes access -- the only thing in this application that
+ * takes something away from somebody.
  */
 export default function ActiveButton({ label, disabled }: { label: string; disabled: boolean }) {
   const { pending } = useFormStatus();

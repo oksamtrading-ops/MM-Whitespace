@@ -227,10 +227,12 @@ export default async function Styleguide() {
                  caption="Default, hover, focus-visible, pressed, selected, disabled, loading, error. Hover and focus are the browser's to show; move the pointer or tab through.">
           <h3>Buttons</h3>
           <p className="note" style={{ marginTop: 0 }}>
-            Five variants, three sizes. The primary is the brand green with black on it, 9.23:1
+            Five variants, one height. The primary is the brand green with black on it, 9.23:1
             in both themes: doc 09&rsquo;s fills-only rule governs a chart mark whose value has to
-            be readable another way, not a control carrying its own label. Visual height is 36px
-            on a fine pointer; the touch target is 44px on a coarse one.
+            be readable another way, not a control carrying its own label. Every button is 36px,
+            like the lists, fields and choices beside it, and 28px in a table row; on a coarse
+            pointer its touch target grows to 44px. Small is a smaller label, not a shorter
+            button.
           </p>
           <div className="row">
             <button type="button" className="btn primary"><Icon name="badge-check" size={15} />Publish</button>
@@ -240,9 +242,8 @@ export default async function Styleguide() {
             <button type="button" className="btn danger"><Icon name="user-x" size={15} />Deactivate</button>
           </div>
           <div className="row">
-            <button type="button" className="btn primary lg"><Icon name="upload" size={15} />Large, 44px</button>
             <button type="button" className="btn secondary">Default, 36px</button>
-            <button type="button" className="btn secondary sm"><Icon name="pencil" size={13} />Small, 28px</button>
+            <button type="button" className="btn secondary sm"><Icon name="pencil" size={13} />Small label, 36px</button>
             <button type="button" className="btn secondary icon-only" aria-label="More"><Icon name="chevron-down" size={15} /></button>
             <button type="button" className="btn secondary" aria-pressed="true"><Icon name="check" size={15} />Pressed</button>
             <button type="button" className="btn primary" disabled><Icon name="lock" size={15} />Disabled</button>
