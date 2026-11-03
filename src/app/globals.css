@@ -1629,6 +1629,68 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
 .commit .check input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; accent-color: var(--green-mark); }
 .commit .check label { margin: 0; font-weight: 400; }
 
+/* -------------------------------------------------------------- access */
+
+/* The action column takes only what it needs, so the address column gets the
+   slack rather than a gulf opening between status and the control. */
+table.accounts td:last-child, table.accounts th:last-child { width: 1%; }
+/* The address is the row's header cell. A long one breaks rather than widening
+   the table, and the "you" pill keeps its distance from it. */
+table.accounts tbody th { overflow-wrap: anywhere; }
+table.accounts .you { margin-left: var(--space-2); }
+
+/* ------------------------------------------------------------ skeleton */
+
+.sk { background: var(--surface-2); border-radius: var(--radius-2); }
+.sk.line { height: 14px; }
+.sk-hero { height: 64px; width: 60%; margin: var(--space-2) 0 14px; }
+.sk-map { height: 320px; width: 100%; border-radius: var(--radius-4); margin: var(--space-6) 0; }
+.sk-panel { height: 84px; border-radius: var(--radius-4); margin: var(--space-8) 0; }
+.sk-rows > div { height: var(--row-h); border-bottom: 1px solid var(--rule); }
+
+/* ------------------------------------------------------------ triage */
+
+/* The queue. Equal cells inside a panel, ordered by what to do first, so the
+   sixth count cannot wrap onto a row of its own and a zero reads as dead
+   rather than merely small. */
+.queue { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1400px) { .withrail .queue { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 700px) { .queue { grid-template-columns: 1fr; } }
+/* A last tile on a row of its own stretches rather than leaving a hole. */
+.queue li:last-child:nth-child(3n - 2) { grid-column: span 3; }
+@media (max-width: 1400px) { .withrail .queue li:last-child:nth-child(3n - 2) { grid-column: auto; }
+  .withrail .queue li:last-child:nth-child(2n - 1) { grid-column: span 2; } }
+.queue li > a, .queue li > .cell {
+  display: flex; flex-direction: column; gap: 7px; padding: 14px 16px; min-height: 78px;
+  text-decoration: none; color: var(--ink); border-right: 1px solid var(--rule); border-top: 1px solid var(--rule);
+  transition: background var(--dur-1) var(--ease);
+}
+/* A tile fills its row, so its divider runs the full height beside a taller
+   neighbour ("start here" adds a line). In a panel, the panel's own lines are
+   the top and right edges, rather than doubled by the tiles' borders. */
+.queue li { display: grid; }
+.panel .queue { margin: -1px -1px 0 0; }
+.queue li > a:hover { background: var(--surface-2); }
+.queue li > .cell { opacity: .45; }
+.queue .fig-lg { font-size: 24px; }
+.queue li.here > a { background: var(--green-soft); box-shadow: inset 2px 0 0 var(--green-mark); }
+.queue li.here .fig-lg { color: var(--green-deep); }
+.queue .lab { font-size: var(--fs-caption); color: var(--ink-3); line-height: 1.35; display: flex; gap: 6px; align-items: flex-start; }
+.queue .lab .icon { flex: 0 0 auto; margin-top: 1px; }
+/* The caption ink is 4.43:1 on the soft green in the light theme, short of the
+   text floor; the secondary ink clears it. */
+.queue li.here .lab { color: var(--ink-2); }
+.queue .start { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--green-deep); letter-spacing: .04em; text-transform: uppercase; }
+
+/* The gate's lines. What each says, its link and its figure are set with the
+   upload screen's rules above. */
+.gatelist { list-style: none; margin: 0; padding: 0; }
+.gateline { display: flex; gap: var(--space-3); align-items: center; padding: 11px 15px; border-bottom: 1px solid var(--rule); font-size: 14px; margin: 0; }
+.gateline:last-child { border-bottom: 0; }
+.gateline .mark { display: inline-flex; flex: 0 0 auto; }
+.gateline.no .mark { color: var(--alert); }
+.gateline.ok .mark { color: var(--green-text); }
+
 input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 
 /* ----------------------------------------------------------- the map */
