@@ -584,6 +584,10 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
 .withrail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-items: start; }
 .rail { min-width: 0; }
 .rail .facts { margin-bottom: var(--space-5); }
+/* Folded into a spec line, each fact keeps its own width, and a value wider than the
+   column (a stage with its caveat, a long run of commodities) wraps inside it rather
+   than pushing the page sideways. */
+.rail .facts dd { white-space: normal; }
 .rail .notice { margin: 0 0 var(--space-6); }
 .contents { display: none; }
 @media (min-width: 1100px) {
@@ -591,7 +595,6 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
   .withrail > .reading { grid-column: 1; grid-row: 1; }
   .rail { grid-column: 2; grid-row: 1; position: sticky; top: calc(var(--header-h) + 36px); padding-top: 6px; }
   .rail .facts { flex-direction: column; gap: var(--space-4); margin-bottom: var(--space-6); padding-bottom: var(--space-6); border-bottom: 1px solid var(--rule); }
-  .rail .facts dd { white-space: normal; }
   .rail .facts dd .sub { display: block; margin: 2px 0 0; }
   .rail .notice { margin: -8px 0 var(--space-6); padding-bottom: var(--space-6); border-bottom: 1px solid var(--rule); border-left: 0; padding-left: 0; }
   .rail .notice b { color: var(--warn); }
@@ -725,7 +728,7 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
    The whitespace matrix. Shading is the firm's share of the row, the count
    sits in the cell in ink chosen for that step, and the research gap is
    hatched and outside the ramp so the darkest cell is always an incumbent. */
-.heatwrap { overflow-x: auto; }
+.heatwrap { position: relative; overflow-x: auto; }
 .heatmap { border-collapse: separate; border-spacing: 0; min-width: 640px; }
 .heatmap caption { caption-side: bottom; text-align: left; font-size: var(--fs-caption); color: var(--ink-3); padding: var(--space-3) 0 0; }
 .heatmap thead th { background: none; border: 0; height: auto; padding: 0 6px 10px; font-size: 11.5px; color: var(--ink-2); text-align: center; vertical-align: bottom; }
@@ -1001,8 +1004,15 @@ th .sort:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; 
 .matrix td.research { color: var(--neutral); }
 table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body-sm); color: var(--ink-3); padding: var(--space-3) 0 0; }
 
-/* The all-companies table: full width, compact, sticky header and first column. */
-.roster { overflow: auto; max-height: calc(100vh - var(--header-h) - 190px); border: 1px solid var(--rule-raised); border-radius: var(--radius); background: var(--surface-1); }
+/* A table too wide for its column scrolls in place and the page does not: the
+   data-table exception (doc 18 §14), the way the dashboard's memo does it.
+   Positioned, so the screen-reader words in its cells scroll with the table
+   instead of widening the page. */
+.tablewrap { position: relative; overflow-x: auto; }
+
+/* The all-companies table: full width, compact, sticky header and first column.
+   Positioned for the same reason as .tablewrap: the stage columns' words. */
+.roster { position: relative; overflow: auto; max-height: calc(100vh - var(--header-h) - 190px); border: 1px solid var(--rule-raised); border-radius: var(--radius); background: var(--surface-1); }
 .roster table { min-width: 940px; }
 .roster th, .roster td { height: var(--row-h-dense); white-space: nowrap; }
 /* Commodities run long (one company lists 14), and the whole list is the point,
@@ -1038,6 +1048,26 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .roster .citelink:hover { text-decoration: underline; text-decoration-color: var(--green-mark); }
 .roster .notfound { color: var(--ink-3); font-style: italic; }
 .roster-legend { font-size: var(--fs-body-sm); color: var(--ink-3); margin: var(--space-3) 0 0; max-width: 96ch; }
+/* On a phone the Company column, as wide as its longest name, would fill the
+   box, and every other column would pass under it unseen. There it takes 40%
+   of the box at most, a long name cut short, and each other column the 60%
+   beside it at most, a longer value wrapping: so a column always shows beside
+   the names, and any column can be scrolled fully into view. A cell's own
+   percentage would be of the table, so the box is the container and the shares
+   are cqi. The names give up 2px more, because Safari scrolls by whole pixels:
+   a column exactly as wide as the room beside them could not be brought whole
+   into view there. The table keeps its natural width, or the cells now free to
+   wrap would be squeezed into its 940px. The column's header always fits its
+   word; at 320px only the sort mark runs over, and a clipped mark reads better
+   than an ellipsis after "Company". */
+@media (max-width: 640px) {
+  .roster { container-type: inline-size; }
+  .roster table { width: max-content; }
+  .roster th:first-child, .roster td:first-child { max-width: calc(40cqi - 2px); }
+  .roster thead th:first-child { text-overflow: clip; }
+  .roster td { white-space: normal; max-width: 60cqi; line-height: 1.35; padding-block: 6px; }
+  .roster td.wrap { min-width: 0; max-width: min(34ch, 60cqi); }
+}
 
 /* The filter bar: one MultiSelect per filter, then the count and the export. */
 .filterbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: 0 0 14px; }
@@ -1058,12 +1088,15 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .picker-v { color: var(--ink); font-weight: 700; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; }
 .picker-set .picker-sum { border-color: var(--ink-2); background: var(--surface-2); }
 .picker[open] .picker-sum svg { transform: rotate(180deg); }
+/* Hung from its button's left edge; MultiSelect moves it sideways as it opens,
+   toward the side with room, so it stays in the window. Never wider than the
+   window less MultiSelect's EDGE a side, so on a 320px phone it still fits. */
 .picker-pop {
-  position: absolute; z-index: var(--z-tooltip); top: calc(100% + 6px); left: 0; min-width: 240px; max-width: 340px;
+  position: absolute; z-index: var(--z-tooltip); top: calc(100% + 6px); left: 0;
+  min-width: 240px; max-width: min(340px, calc(100vw - 2 * var(--space-2)));
   padding: var(--space-3); background: var(--surface-3); border: 1px solid var(--rule-raised);
   border-radius: var(--radius); box-shadow: var(--shadow-3);
 }
-.picker-end { left: auto; right: 0; }
 .picker-head { margin: 0 0 var(--space-2); font-size: var(--fs-label); letter-spacing: var(--track-label);
   text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
 .picker-find {
@@ -1104,8 +1137,8 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 
    Visual height is --control-h, 36px, like every list and field beside it,
    and 28px in a table row; .sm is a smaller label at the same height. The
-   TOUCH target is still 44px: a pseudo-element expands it on coarse pointers,
-   where the 44px obligation actually applies. */
+   TOUCH target is still 44px, and 36px in a table row: a pseudo-element
+   expands it on coarse pointers, where the 44px obligation actually applies. */
 .btn {
   font: 600 var(--fs-body-sm)/1 var(--font-text); height: var(--control-h); padding: 0 13px;
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -1126,6 +1159,13 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 @media (pointer: coarse) {
   .btn::after { content: ""; position: absolute; left: 0; right: 0; top: 50%;
                 height: 44px; transform: translateY(-50%); }
+  /* In a table row the target is 36px, a row's height. At 44px it would reach
+     4px into each neighbouring row, and the later row's target, drawn on top,
+     would take a tap meant for the row above: on /access, a Deactivate, which
+     acts at once. An action cell an issued password makes taller would set
+     its buttons on the row's edges; this padding keeps their targets inside. */
+  td .btn::after { height: var(--row-h-dense); }
+  td.act:has(.issued, .issued-refused) { padding-block: var(--space-2); }
 }
 .btn.primary { background: var(--brand-fill); color: var(--on-brand); font-weight: 700; border-color: transparent; }
 .btn.primary:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--brand-hover); }
@@ -1157,10 +1197,13 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
   content: ""; position: absolute; inset: 0; margin: auto; width: 15px; height: 15px;
   border: 2px solid currentColor; border-radius: 50%; opacity: .35;
 }
+/* The spinner is the same ::after a coarse pointer's target uses, so it resets
+   the target's geometry, transform included: left in, the target's translate
+   makes the spin a slide, and with reduced motion sets the ring 7.5px high. */
 .btn.loading::after {
   content: ""; position: absolute; inset: 0; margin: auto; width: 15px; height: 15px;
   border: 2px solid transparent; border-top-color: var(--ink); border-radius: 50%;
-  height: 15px; top: 0; bottom: 0; left: 0; right: 0;
+  height: 15px; top: 0; bottom: 0; left: 0; right: 0; transform: none;
 }
 .btn.primary.loading::after { border-top-color: var(--on-brand); }
 @media (prefers-reduced-motion: no-preference) {
@@ -1652,8 +1695,12 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
   content: counter(step); position: absolute; left: 0; top: 1px;
   font-family: var(--font-figure); font-size: var(--fs-caption); font-weight: 600; color: var(--ink-3);
 }
-.steps b { display: block; font-size: 14px; }
-.steps span { display: block; font-size: var(--fs-body-sm); color: var(--ink-2); margin-top: 2px; }
+/* The other screens a rail points to (Settings' "Also yours"): set like steps,
+   without the numerals. They are places, in no order; a numeral would rank them. */
+.also { list-style: none; margin: 0; padding: 0; }
+.also li { padding: 0 0 18px; }
+.steps b, .also b { display: block; font-size: 14px; }
+.steps span, .also span { display: block; font-size: var(--fs-body-sm); color: var(--ink-2); margin-top: 2px; }
 
 .findings { list-style: none; margin: 0; padding: 0; }
 .findings > li { padding: var(--space-3) 0; border-bottom: 1px solid var(--rule); }
@@ -1717,6 +1764,68 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
 .commit .check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 var(--space-5); }
 .commit .check input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; accent-color: var(--green-mark); }
 .commit .check label { margin: 0; font-weight: 400; }
+
+/* -------------------------------------------------------------- access */
+
+/* The action column takes only what it needs, so the address column gets the
+   slack rather than a gulf opening between status and the control. */
+table.accounts td:last-child, table.accounts th:last-child { width: 1%; }
+/* The address is the row's header cell. A long one breaks rather than widening
+   the table, and the "you" pill keeps its distance from it. */
+table.accounts tbody th { overflow-wrap: anywhere; }
+table.accounts .you { margin-left: var(--space-2); }
+
+/* ------------------------------------------------------------ skeleton */
+
+.sk { background: var(--surface-2); border-radius: var(--radius-2); }
+.sk.line { height: 14px; }
+.sk-hero { height: 64px; width: 60%; margin: var(--space-2) 0 14px; }
+.sk-map { height: 320px; width: 100%; border-radius: var(--radius-4); margin: var(--space-6) 0; }
+.sk-panel { height: 84px; border-radius: var(--radius-4); margin: var(--space-8) 0; }
+.sk-rows > div { height: var(--row-h); border-bottom: 1px solid var(--rule); }
+
+/* ------------------------------------------------------------ triage */
+
+/* The queue. Equal cells inside a panel, ordered by what to do first, so the
+   sixth count cannot wrap onto a row of its own and a zero reads as dead
+   rather than merely small. */
+.queue { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1400px) { .withrail .queue { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 700px) { .queue { grid-template-columns: 1fr; } }
+/* A last tile on a row of its own stretches rather than leaving a hole. */
+.queue li:last-child:nth-child(3n - 2) { grid-column: span 3; }
+@media (max-width: 1400px) { .withrail .queue li:last-child:nth-child(3n - 2) { grid-column: auto; }
+  .withrail .queue li:last-child:nth-child(2n - 1) { grid-column: span 2; } }
+.queue li > a, .queue li > .cell {
+  display: flex; flex-direction: column; gap: 7px; padding: 14px 16px; min-height: 78px;
+  text-decoration: none; color: var(--ink); border-right: 1px solid var(--rule); border-top: 1px solid var(--rule);
+  transition: background var(--dur-1) var(--ease);
+}
+/* A tile fills its row, so its divider runs the full height beside a taller
+   neighbour ("start here" adds a line). In a panel, the panel's own lines are
+   the top and right edges, rather than doubled by the tiles' borders. */
+.queue li { display: grid; }
+.panel .queue { margin: -1px -1px 0 0; }
+.queue li > a:hover { background: var(--surface-2); }
+.queue li > .cell { opacity: .45; }
+.queue .fig-lg { font-size: 24px; }
+.queue li.here > a { background: var(--green-soft); box-shadow: inset 2px 0 0 var(--green-mark); }
+.queue li.here .fig-lg { color: var(--green-deep); }
+.queue .lab { font-size: var(--fs-caption); color: var(--ink-3); line-height: 1.35; display: flex; gap: 6px; align-items: flex-start; }
+.queue .lab .icon { flex: 0 0 auto; margin-top: 1px; }
+/* The caption ink is 4.43:1 on the soft green in the light theme, short of the
+   text floor; the secondary ink clears it. */
+.queue li.here .lab { color: var(--ink-2); }
+.queue .start { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--green-deep); letter-spacing: .04em; text-transform: uppercase; }
+
+/* The gate's lines. What each says, its link and its figure are set with the
+   upload screen's rules above. */
+.gatelist { list-style: none; margin: 0; padding: 0; }
+.gateline { display: flex; gap: var(--space-3); align-items: center; padding: 11px 15px; border-bottom: 1px solid var(--rule); font-size: 14px; margin: 0; }
+.gateline:last-child { border-bottom: 0; }
+.gateline .mark { display: inline-flex; flex: 0 0 auto; }
+.gateline.no .mark { color: var(--alert); }
+.gateline.ok .mark { color: var(--green-text); }
 
 input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 
@@ -2410,15 +2519,34 @@ button.switch { background: none; border: 0; padding: 0; color: var(--ink); font
 .sg .pane { padding: var(--space-5); border: 1px solid var(--rule); border-radius: var(--radius-4); background: var(--ground); color: var(--ink); }
 .sg .pane h3 { margin-bottom: var(--space-4); }
 .sg .row { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center; margin-bottom: var(--space-3); }
+/* The surfaces that float, shown open: the menu drops into the room the row keeps under it. */
+.sg .floats { align-items: flex-start; min-height: 200px; }
+.sg .floats > .has-tip { margin-left: 200px; }
+.sg .floats > .toast { margin-left: auto; }
+/* On a phone they stack in the column, each in the room it takes: the menu under its button,
+   the tooltip over its own, its words wrapped. */
+@media (max-width: 640px) {
+  .sg .floats { flex-direction: column; min-height: 0; }
+  .sg .floats .menu { position: static; margin-top: var(--space-1); }
+  .sg .floats > .has-tip { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 6px; margin-left: 0; }
+  .sg .floats .tooltip { position: static; transform: none; white-space: normal; }
+  .sg .floats > .toast { margin-left: 0; flex-wrap: wrap; padding-block: var(--space-2); }
+}
 .sg .states { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-3); align-items: start; }
 .sg .state { display: flex; flex-direction: column; gap: 6px; }
 .sg .state .k { margin: 0; }
 .sg .scale li { display: grid; grid-template-columns: 120px 1fr auto; gap: var(--space-4); align-items: baseline; padding: var(--space-2) 0; border-bottom: 1px solid var(--rule); }
 .sg .scale { list-style: none; margin: 0; padding: 0; }
 .sg .scale code { font-size: var(--fs-mono); }
+/* On a phone the token and its class share a line, and the sample takes the one under it. */
+@media (max-width: 640px) {
+  .sg .scale li { grid-template-columns: minmax(0, 1fr) auto; }
+  .sg .scale li > span { grid-row: 2; grid-column: 1 / -1; }
+}
 .sg .spaces { display: flex; align-items: flex-end; gap: var(--space-3); }
 .sg .spaces div { background: var(--green-mark); border-radius: 2px; }
 .sg .tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
+@media (max-width: 640px) { .sg .tiers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sg .tier { padding: var(--space-4); border-radius: var(--radius-4); border: 1px solid var(--rule); min-height: 96px; font-size: var(--fs-body-sm); }
 .sg .tier.t0 { background: var(--ground); }
 .sg .tier.t1 { background: var(--surface-1); }

@@ -75,24 +75,26 @@ export default async function Settings() {
 
         <Section id="floors" title="Coverage floors" index={3}
                  caption="Not editable here, and that is the design. A chart below its floor is replaced by a gauge and blocks a publish; the way past it is an override with a recorded reason that prints on the dashboard header. A quietly lowered floor is the same decision with nobody named against it.">
-          <table>
-            <thead>
-              <tr><th scope="col">Chart</th><th scope="col">Driven by</th>
-                  <th scope="col" className="n">Floor</th><th scope="col">Blocks publish</th></tr>
-            </thead>
-            <tbody>
-              {floors.map((f) => (
-                <tr key={f.chart}>
-                  <td>{f.label}</td>
-                  <td className="meta"><code>{f.driving_field}</code></td>
-                  <td className="n">{f.floor_pct === null ? "—" : `${Number(f.floor_pct)}%`}</td>
-                  <td>{f.blocks_publish
-                    ? <span className="pill quiet">yes</span>
-                    : <span className="pill quiet">no</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr><th scope="col">Chart</th><th scope="col">Driven by</th>
+                    <th scope="col" className="n">Floor</th><th scope="col">Blocks publish</th></tr>
+              </thead>
+              <tbody>
+                {floors.map((f) => (
+                  <tr key={f.chart}>
+                    <td>{f.label}</td>
+                    <td className="meta"><code>{f.driving_field}</code></td>
+                    <td className="n">{f.floor_pct === null ? "—" : `${Number(f.floor_pct)}%`}</td>
+                    <td>{f.blocks_publish
+                      ? <span className="pill quiet">yes</span>
+                      : <span className="pill quiet">no</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <p className="note">
             <b>Fees carry no percentage floor.</b> “Found for 61 of 259” is honest, where
             “24%” invites the question of what the other 76% are — and the answer is not
@@ -114,35 +116,37 @@ export default async function Settings() {
         {changes.length > 0 && (
           <Section id="history" title="Recent changes" index={5}
                    caption="One line per setting changed, not one per save.">
-            <table>
-              <thead><tr><th>Setting</th><th>From</th><th>To</th><th>By</th><th>When</th></tr></thead>
-              <tbody>
-                {changes.map((c, i) => {
-                  const d = safeDetail(c.detail);
-                  return (
-                    <tr key={i}>
-                      <td className="meta"><code>{d.key}</code></td>
-                      <td className="meta">{d.from ?? "—"}</td>
-                      <td>{d.to}</td>
-                      <td className="meta">{c.email ?? "—"}</td>
-                      <td className="meta">{fmtDate(c.created_at)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="tablewrap">
+              <table>
+                <thead><tr><th>Setting</th><th>From</th><th>To</th><th>By</th><th>When</th></tr></thead>
+                <tbody>
+                  {changes.map((c, i) => {
+                    const d = safeDetail(c.detail);
+                    return (
+                      <tr key={i}>
+                        <td className="meta"><code>{d.key}</code></td>
+                        <td className="meta">{d.from ?? "—"}</td>
+                        <td>{d.to}</td>
+                        <td className="meta">{c.email ?? "—"}</td>
+                        <td className="meta">{fmtDate(c.created_at)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </Section>
         )}
       </div>
 
       <aside className="rail rise" aria-label="Other admin screens">
         <p className="k">Also yours</p>
-        <ul className="steps" style={{ counterReset: "none" }}>
-          <li style={{ paddingLeft: 0 }}>
+        <ul className="also">
+          <li>
             <b><Link href="/access" prefetch={false}>Access review</Link></b>
             <span>Who has an account, what they may do, and who has not signed in.</span>
           </li>
-          <li style={{ paddingLeft: 0 }}>
+          <li>
             <b><Link href="/publish" prefetch={false}>Publish</Link></b>
             <span>Including the override, which is the sanctioned way past a blocked gate.</span>
           </li>

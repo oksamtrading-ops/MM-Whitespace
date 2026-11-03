@@ -141,24 +141,26 @@ export default async function ReviewBoard() {
         <Section id="fields" title="Fields" index={3}
                  caption={<>Reviewed one field down the column, not one company across the row.{" "}
                    <Link href="/review/by-company" prefetch={false}>Look by company instead →</Link></>}>
-          <table>
-            <thead>
-              <tr><th scope="col">Field</th><th scope="col" className="n">Proposals</th>
-                  <th scope="col" className="n">Decided</th><th scope="col">Bulk accept</th></tr>
-            </thead>
-            <tbody>
-              {fields.map((f) => (
-                <tr key={f.fieldKey}>
-                  <th scope="row"><Link href={`/review/${f.fieldKey}` as Route} prefetch={false}>{f.label}</Link></th>
-                  <td className="n">{f.proposals}</td>
-                  <td className="n">{f.decided}</td>
-                  <td>{f.bulkAcceptable
-                    ? <span className="pill ok"><Icon name="list-checks" size={12} />allowed above threshold</span>
-                    : <span className="pill no"><Icon name="lock" size={12} />never</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr><th scope="col">Field</th><th scope="col" className="n">Proposals</th>
+                    <th scope="col" className="n">Decided</th><th scope="col">Bulk accept</th></tr>
+              </thead>
+              <tbody>
+                {fields.map((f) => (
+                  <tr key={f.fieldKey}>
+                    <th scope="row"><Link href={`/review/${f.fieldKey}` as Route} prefetch={false}>{f.label}</Link></th>
+                    <td className="n">{f.proposals}</td>
+                    <td className="n">{f.decided}</td>
+                    <td>{f.bulkAcceptable
+                      ? <span className="pill ok"><Icon name="list-checks" size={12} />allowed above threshold</span>
+                      : <span className="pill no"><Icon name="lock" size={12} />never</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Section>
       )}
 

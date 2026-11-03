@@ -142,6 +142,7 @@ const COMMON = (t) => [
   { label: "caption ink on the raised surface", fg: t("ink-3"), bg: t("surface-2"), floor: TEXT_FLOOR },
   { label: "deep green text on the soft green", fg: t("green-deep"), bg: t("green-soft"), floor: TEXT_FLOOR },
   { label: "body ink on the soft green (marks)", fg: t("ink"), bg: t("green-soft"), floor: TEXT_FLOOR },
+  { label: "secondary ink on the soft green (start-here tile)", fg: t("ink-2"), bg: t("green-soft"), floor: TEXT_FLOOR },
   { label: "text on the primary button", fg: t("btn-primary-ink"), bg: t("btn-primary-bg"), floor: TEXT_FLOOR },
   { label: "text on the hovered primary button", fg: t("btn-primary-ink"), bg: t("btn-primary-hover"), floor: TEXT_FLOOR },
   { label: "text on the skip link", fg: t("skip-ink"), bg: t("skip-bg"), floor: TEXT_FLOOR },

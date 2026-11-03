@@ -186,18 +186,20 @@ export default async function Runs() {
         <Section id="progress" title="Progress" index={1}
                  caption={`${current.finished} of ${current.total} jobs have finished. A job is finished when it completed, halted, or was abandoned.`}>
           <StateBar run={current} />
-          <table>
-            <thead><tr><th scope="col">State</th><th scope="col" className="n">Jobs</th><th scope="col">Meaning</th></tr></thead>
-            <tbody>
-              {STATE_ORDER.filter((s) => current.counts.some((c) => c.state === s)).map((s) => (
-                <tr key={s}>
-                  <td>{STATE_LABEL[s] ?? s}</td>
-                  <td className="n">{current.counts.find((c) => c.state === s)!.n}</td>
-                  <td className="meta">{STATE_MEANING[s]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="tablewrap">
+            <table>
+              <thead><tr><th scope="col">State</th><th scope="col" className="n">Jobs</th><th scope="col">Meaning</th></tr></thead>
+              <tbody>
+                {STATE_ORDER.filter((s) => current.counts.some((c) => c.state === s)).map((s) => (
+                  <tr key={s}>
+                    <td>{STATE_LABEL[s] ?? s}</td>
+                    <td className="n">{current.counts.find((c) => c.state === s)!.n}</td>
+                    <td className="meta">{STATE_MEANING[s]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Section>
 
         <Section id="spend" title="Spend against the cap" index={2}
@@ -233,19 +235,21 @@ export default async function Runs() {
         {current.deadLetters.length > 0 && (
           <Section id="abandoned" title="Abandoned" index={4}
                    caption="These exhausted their attempts. They are not stalled; they are finished and wrong.">
-            <table>
-              <thead><tr><th scope="col">Company</th><th scope="col">Fields</th><th scope="col" className="n">Attempts</th><th scope="col">Last error</th></tr></thead>
-              <tbody>
-                {current.deadLetters.map((d, i) => (
-                  <tr key={i}>
-                    <td>{d.companyName}</td>
-                    <td className="meta">{d.fieldGroup}</td>
-                    <td className="n">{d.attempts}</td>
-                    <td className="meta wrap">{d.lastError ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="tablewrap">
+              <table>
+                <thead><tr><th scope="col">Company</th><th scope="col">Fields</th><th scope="col" className="n">Attempts</th><th scope="col">Last error</th></tr></thead>
+                <tbody>
+                  {current.deadLetters.map((d, i) => (
+                    <tr key={i}>
+                      <td>{d.companyName}</td>
+                      <td className="meta">{d.fieldGroup}</td>
+                      <td className="n">{d.attempts}</td>
+                      <td className="meta wrap">{d.lastError ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Section>
         )}
 
@@ -253,27 +257,29 @@ export default async function Runs() {
 
         {earlier.length > 0 && (
           <Section id="earlier" title="Earlier runs" index={6}>
-            <table>
-              <thead>
-                <tr><th scope="col">Started</th><th scope="col">State</th><th scope="col" className="n">Jobs</th><th scope="col" className="n">Spend</th><th scope="col">Mode</th></tr>
-              </thead>
-              <tbody>
-                {earlier.map((r) => (
-                  <tr key={r.runId}>
-                    <td>{fmtDate(r.createdAt)}</td>
-                    <td>
-                      <span className={`pill ${ALARMING.has(r.phase) ? "no" : r.phase.startsWith("completed") ? "ok" : "quiet"}`}>
-                        <Icon name={ALARMING.has(r.phase) ? "octagon-x" : r.phase.startsWith("completed") ? "circle-check" : "play"} size={12} />
-                        {PHASE_COPY[r.phase].label}
-                      </span>
-                    </td>
-                    <td className="n">{r.finished}/{r.total}</td>
-                    <td className="n">{fmtMoney(r.budget.spend)}</td>
-                    <td className="meta">{r.mode}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="tablewrap">
+              <table>
+                <thead>
+                  <tr><th scope="col">Started</th><th scope="col">State</th><th scope="col" className="n">Jobs</th><th scope="col" className="n">Spend</th><th scope="col">Mode</th></tr>
+                </thead>
+                <tbody>
+                  {earlier.map((r) => (
+                    <tr key={r.runId}>
+                      <td>{fmtDate(r.createdAt)}</td>
+                      <td>
+                        <span className={`pill ${ALARMING.has(r.phase) ? "no" : r.phase.startsWith("completed") ? "ok" : "quiet"}`}>
+                          <Icon name={ALARMING.has(r.phase) ? "octagon-x" : r.phase.startsWith("completed") ? "circle-check" : "play"} size={12} />
+                          {PHASE_COPY[r.phase].label}
+                        </span>
+                      </td>
+                      <td className="n">{r.finished}/{r.total}</td>
+                      <td className="n">{fmtMoney(r.budget.spend)}</td>
+                      <td className="meta">{r.mode}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Section>
         )}
       </div>

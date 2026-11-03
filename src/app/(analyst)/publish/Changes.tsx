@@ -98,36 +98,38 @@ export default function Changes({ changes, labels }: {
         {changes.sourceOnly > 0 && <> {changes.sourceOnly} more value{changes.sourceOnly === 1 ? " keeps its" : "s keep their"} value
           and change{changes.sourceOnly === 1 ? "s" : ""} only where it is cited from, usually research confirming the workbook.</>}
       </p>
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Company</th>
-            <th scope="col">In {since}</th>
-            <th scope="col">In the next revision</th>
-          </tr>
-        </thead>
-        {groups.map((g) => (
-          <tbody key={g.key}>
+      <div className="tablewrap">
+        <table>
+          <thead>
             <tr>
-              <th scope="rowgroup" colSpan={3}>
-                {g.label} <span className="meta">· {g.rows.length}</span>
-              </th>
+              <th scope="col">Company</th>
+              <th scope="col">In {since}</th>
+              <th scope="col">In the next revision</th>
             </tr>
-            {g.rows.slice(0, PER_GROUP).map((r) => (
-              <tr key={r.key}>
-                <td className="wrap">{r.company}</td>
-                <td className="wrap">{r.before}</td>
-                <td className="wrap">{r.after}</td>
-              </tr>
-            ))}
-            {g.rows.length > PER_GROUP && (
+          </thead>
+          {groups.map((g) => (
+            <tbody key={g.key}>
               <tr>
-                <td colSpan={3} className="meta">and {g.rows.length - PER_GROUP} more</td>
+                <th scope="rowgroup" colSpan={3}>
+                  {g.label} <span className="meta">· {g.rows.length}</span>
+                </th>
               </tr>
-            )}
-          </tbody>
-        ))}
-      </table>
+              {g.rows.slice(0, PER_GROUP).map((r) => (
+                <tr key={r.key}>
+                  <td className="wrap">{r.company}</td>
+                  <td className="wrap">{r.before}</td>
+                  <td className="wrap">{r.after}</td>
+                </tr>
+              ))}
+              {g.rows.length > PER_GROUP && (
+                <tr>
+                  <td colSpan={3} className="meta">and {g.rows.length - PER_GROUP} more</td>
+                </tr>
+              )}
+            </tbody>
+          ))}
+        </table>
+      </div>
     </>
   );
 }

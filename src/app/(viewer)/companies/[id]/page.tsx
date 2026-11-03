@@ -220,16 +220,19 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
                  caption="Nothing here is presented without its source. A researched value names the filing it was read from and the passage that says it.">
           {/* On a phone each row is set as a block of its own (field, value,
               source), so the table says its roles out loud: WebKit drops a
-              table's semantics once its cells stop being table cells. */}
-          <table className="provenance" role="table">
-            <thead role="rowgroup">
-              <tr role="row"><th scope="col" role="columnheader">Field</th><th scope="col" role="columnheader">Value</th>
-                  <th scope="col" role="columnheader">Source</th><th scope="col" role="columnheader">Evidence</th></tr>
-            </thead>
-            <tbody role="rowgroup">
-              {p.values.map((v) => <ValueRow key={v.fieldKey} v={v} showReasons={canReview} />)}
-            </tbody>
-          </table>
+              table's semantics once its cells stop being table cells. Wider
+              up, the wrap holds a table that outgrows its column in place. */}
+          <div className="tablewrap">
+            <table className="provenance" role="table">
+              <thead role="rowgroup">
+                <tr role="row"><th scope="col" role="columnheader">Field</th><th scope="col" role="columnheader">Value</th>
+                    <th scope="col" role="columnheader">Source</th><th scope="col" role="columnheader">Evidence</th></tr>
+              </thead>
+              <tbody role="rowgroup">
+                {p.values.map((v) => <ValueRow key={v.fieldKey} v={v} showReasons={canReview} />)}
+              </tbody>
+            </table>
+          </div>
           {researched.length === 0 && (
             <p className="note">
               <b>Nothing here was researched by the model.</b> Every value came from the workbook

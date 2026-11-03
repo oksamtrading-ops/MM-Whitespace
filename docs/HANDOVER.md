@@ -1,6 +1,35 @@
 # Handover — Market Assessment Tool
 
-> **Status at 22 October 2026.** **Q4-2026 is published as revision 4**
+> **Status at 3 November 2026.** **Q4-2026 is published as revision 6**
+> (1 November, 19:18 UTC). It is the first Q4 revision that meets every
+> publish floor, so it went out without overriding the gate.
+>
+> - **Coverage.** Q4 now covers **348 companies at C$100M and above**, up
+>   from 266 at C$200M: on 30 October an upload of TSX's list learned to
+>   widen a published period (`f2c38bb`, migration `0037`). Tier coverage is
+>   96.6% (336 of 348), and 12 companies are unclassified. Audit and tax fee
+>   coverage is 35.9% (125 of 348), because the 82 added companies' fees were
+>   not researched.
+> - **The gate.** It now holds a quote that is in its document but not word
+>   for word, instead of counting it as invented (`3995cb3`). On 1 November,
+>   94 findings moved, and the unsupported rate is 0.9%.
+> - **Review.** The screens can override a flagged value, and can enter a
+>   value, with its public source, where research found nothing (`6c9de9b`,
+>   `a926ec8`, `4b00677`).
+> - **The dashboard** was redesigned around a globe (doc 19, PR #3).
+> - **Controls.** Every button, list, field and row of choices is one height,
+>   36px, and 28px in a table row (PRs #4 and #5). PR #5 made it hold in
+>   Safari as well.
+> - **Spend.** Recorded research spend is US$156.47 across fifteen runs in
+>   October and US$1.50 for one run in November.
+> - **Deployment.** Migrations are applied through `0037`.
+>   **`origin/main` is deployed at `d435407`.** Local `main` is
+>   ahead and not pushed: two fixes (`5eb182a`, `9c44fa8`) and this note's
+>   own commit. One session's fix is not committed yet. See the top of "What is waiting on Samuel".
+>
+> See "Done on 30 October – 3 November 2026".
+>
+> **22 October:** **Q4-2026 was published as revision 4**
 > (17:47 UTC, through a blocked gate, 5,496 values). It adds one value:
 > Teck's **ERP change**, "Implementing". The ERP change is a new pass-2 field
 > (`eef3fc9`, migration `0036`, rules `2026-10-22.1`). It records whether a
@@ -95,29 +124,105 @@ anything.
    the guide in `node_modules/next/dist/docs/` before writing Next.js code).
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
-5. Everything is on `main` except one branch. The local branches
-   `publish-diff`, `newer-research-dates`, `fix-sec-registrant`,
-   `fix/review-page-one-load`, `fix-pass2-failures`, `fix/pass2-fee-search`,
-   `fix/pass2-fee-search-2`, `fix/review-flagged-newer`,
-   `docs/handover-21-oct-evening`, `feat/erp-change-signal` and
-   `claude/nostalgic-austin-62bc1b` (the scope rule, with its worktree in
-   `.claude/worktrees/`) are merged and can be deleted.
-   **`claude/cool-sinoussi-fb57b1` (`be511a7`) is not merged**: it fixes the
-   three review-screen defects in item 2 and waits on Samuel's decision.
-   Since `eef3fc9` it conflicts with `main` in one file,
-   `src/app/(analyst)/review/by-company/CompanyGrid.tsx`: the branch moves the
-   override hint into its own block, and `main` added an ERP change line to
-   the old one. Take the branch's block and add the `erp_change` line to it.
-   Run the checks on the merge before pushing.
+5. **Branches, as at 3 November.** Local `main` is **ahead of `origin/main` and not
+   pushed**: two fixes (`5eb182a`, `9c44fa8`; see the top of "What is waiting
+   on Samuel") and the commit of this note. Two branches have work that is not on `main`:
+   - **`claude/nervous-chatterjee-a09cd6`**: the Settings rail's numerals and
+     phones scrolling sideways. Its session was still running its last
+     checks on 3 November and had **not committed**. Its 13 changed files
+     are in `.claude/worktrees/nervous-chatterjee-a09cd6`.
+   - **`claude/cool-sinoussi-fb57b1` (`be511a7`)**: item 2. It now conflicts
+     with `main` in two files.
+
+   **Don't edit a worktree under `.claude/worktrees/` while its session may
+   be running.** PRs are merged by rebase and side branches were
+   cherry-picked, so `git branch --no-merged main` lists branches whose
+   commits are already on `main` under new ids:
+
+   | Branch | On `main` as |
+   |---|---|
+   | `fix/one-control-height` | `9221b65` |
+   | `fix/list-height-safari` | `d435407` |
+   | `feat/dashboard-globe` | `8819c80`–`d1bf92c` |
+   | `claude/confident-shamir-6b42de` | `0856f67` |
+   | `claude/dazzling-bardeen-7817d8` | `5eb182a` |
+   | `claude/wizardly-bohr-8a283a` | `9c44fa8` |
+
+   `git cherry main <branch>` prints `-` for a commit that is already
+   there. Those branches, and every branch `git branch --merged main`
+   lists, can be deleted with their worktrees once Samuel agrees.
 
 ## What is waiting on Samuel
 
-In order. Item 1 is what Q4 revision 4 left open.
+**First, three things from 3 November.** They come before the numbered
+items, which keep their numbers because the rest of this note cites them.
 
-**1. What Q4 revision 4 left open.** Revisions 1 to 3 were published on
-21 October and revision 4 on 22 October, each through a blocked gate with
-its basis on the dashboard header. Revision 4's three blocks, the same as
-revision 3's:
+- **Ship local `main`, after the gates.** Two fixes are on local `main` and
+  not pushed:
+  - `5eb182a` brings back the CSS that removing Pursuit cut by mistake
+    (b9c6318, 13 October): the review board's queue tiles, the gate lines on
+    `/review`, `/publish` and `/upload/[id]`, the loading skeletons, and
+    the Access table's cells. Since 13 October the queue was a bulleted list
+    of links and the skeletons were invisible.
+  - `9c44fa8` fixes two touch-screen faults. A button's target in a table
+    row now stays inside the row; at 44px it reached into the next row, so
+    a tap at the foot of one account's Deactivate pressed the next
+    account's. The loading spinner now turns instead of sliding.
+
+  Each passed the full gates in its own session. On the combined `main`
+  only the class and contrast checks have run so far. Add the Settings fix
+  (next point), then run tsc, the unit tests, `next build` and the isolated
+  e2e on the whole. Push only on Samuel's yes, because a push to `main`
+  deploys. Every other fix went through a PR, merged by rebase.
+- **The Settings fix is not committed yet.** It is in the session "Fix the
+  Settings rail numerals and phone sideways scroll", on branch
+  `claude/nervous-chatterjee-a09cd6`. It fixes two faults:
+  - the Settings rail's step numbers drawn over "Access review" and
+    "Publish";
+  - pages that scroll sideways on a 375px phone: `/companies`,
+    `/companies/<id>`, `/access`, `/publish`, `/settings` and
+    `/styleguide`.
+
+  On 3 November it passed 222 page views on `d435407` and was running its
+  last sweeps, tests, build and e2e before committing. It reported one
+  overflow left for a follow-up: the `/companies` picker pop-ups, with
+  every `details` forced open. Open that session to see how far it got.
+- **Touch targets for lists and fields: Samuel's call.** On a touch screen
+  a button's target is 44px, or 36px in a table row since `9c44fa8`. Lists,
+  fields, chips and choices stay at 36px, above WCAG 2.2 AA's 24px. Doc 08
+  asks for 44×44 in the review workspace. Making every control 44px under
+  `pointer: coarse` is a one-line change. It was offered and not decided.
+
+**1. What Q4 revision 6 leaves open.** Revision 6 (1 November) meets every
+floor. What it still lacks:
+- **12 companies are unclassified**, with no stage evidence decided: Amapá,
+  Cadillac, Centauri, Copper Giant, Fitzroy, GR Silver, Irruptive,
+  Libertystream, Nevgold, Rev Exploration, Summit Royalties and Trident.
+- **Audit and tax fee coverage is 35.9% (125 of 348).** Research has an
+  audit-fee finding, possibly an abstention, for 322 companies. The 82
+  companies added at C$100M had no fee researched for revision 5.
+
+What revisions 5 and 6 settled from the list below:
+- auditors for Mackay and Mkango (MNP), PMET (PwC) and Predictive Discovery
+  (Grant Thornton);
+- stage for Magna, PMET, Predictive Discovery, Rusoro, and 21 more in
+  revision 6;
+- head offices for Magna (Sudbury), Osisko Gold Group (Montreal) and Rio2
+  (Vancouver), and Awale's;
+- regions for Bunker Hill (Idaho), Rio2 (British Columbia) and Wallbridge;
+- eight of the fourteen commodity conflicts (Apollo Silver, Energy Fuels,
+  Erdene, First Quantum, Franco-Nevada, Osisko Gold Group, Silver Mountain,
+  Talamore);
+- ten websites;
+- Discovery's properties now include Porcupine, so it is tier 1.
+
+The rest of this item is **as recorded for revision 4 on 22 October** and
+has not been checked since. Read `/review` and the gate on `/publish` before
+acting on any of it.
+
+Revisions 1 to 3 were published on 21 October and revision 4 on 22 October,
+each through a blocked gate with its basis on the dashboard header. Revision
+4's three blocks, the same as revision 3's:
 - **Tier distribution 92.1%** (245 of 266; floor 95%). 21 companies have no
   stage evidence decided, so they are unclassified: Amapá, Cadillac,
   Chesapeake, Copper Fox, Copper Giant, Discovery Silver, FireFly, Luca,
@@ -206,8 +311,25 @@ Also open, each recorded as a flag with its reason on `/review`:
 
 **2. Three review-screen defects found on 21 October**, fixed on the
 unmerged branch `claude/cool-sinoussi-fb57b1` (`be511a7`, "a value where
-nothing was proposed, stage in bulk, and an honest bulk message"), which
-waits on Samuel's decision to merge:
+nothing was proposed, stage in bulk, and an honest bulk message").
+
+**As at 3 November, two of the three are still on `main`:** stage bulk
+accept offers "Accept 0 values", and a bulk accept that succeeds still
+announces "Bulk accept cancelled". The third was solved another way on
+`main`: `a926ec8` and `4b00677` let the field grid's find box override a
+company research never reached, with its public source. The branch does it
+instead through the by-company grid's empty cells.
+
+The branch now conflicts with `main` in
+`src/app/(analyst)/review/[field]/actions.ts` and
+`src/app/(analyst)/review/by-company/CompanyGrid.tsx`, and its `canAct` is
+now `lib/review/actable.ts` on `main`. The smallest path is to bring its two
+small fixes onto `main`:
+- the dialog's `onClose` answering only a close the grid did not ask for;
+- `bulkOffer`, so the count includes stage's typed opt-in.
+
+Then decide whether the by-company empty-cell override is still wanted.
+That is Samuel's decision. The original three:
 - **Stage cannot be bulk-accepted.** The dialog asks for `STAGE` typed, but
   `confirmationText` counts without `stageOptIn`, so it offers "Accept 0
   values" and the button stays disabled. Stage was accepted one row at a time.
@@ -240,6 +362,26 @@ revision 1. On 22 October, with Samuel's approval each time:
 - Teck's ERP change was accepted (decision 2831);
 - revision 4 was published.
 
+Recorded in production between 30 October and 1 November:
+- migration `0037` was applied (31 October, 00:27 UTC);
+- runs `daf298f2`, `825a61b3` (31 October) and `83159070` (1 November)
+  were started;
+- 94 findings were moved from unsupported to held for review by
+  `scripts/recheck_unsupported.mjs` (1 November);
+- revisions 5 and 6 were published (1 November, 17:47 and 19:18 UTC).
+
+`review_decisions` held 3,109 rows on 3 November.
+
+On 3 November, at Samuel's word each time:
+- PRs #3, #4 and #5 were merged into `main` by rebase, and so deployed;
+- auto-merge was tried for PR #5 and refused, because the repository does
+  not allow it, so nothing was changed;
+- two side branches were cherry-picked onto local `main`, not pushed.
+
+To measure the controls in Safari, Claude also opened Safari windows on
+Samuel's Mac. They loaded only a page on `localhost` that framed the local
+showcase.
+
 **4. `npm run pg:smoke` from Samuel's own terminal**, never yet run against
 this code. First load the address without echoing it:
 
@@ -260,6 +402,8 @@ set a password on 1 October.
   the roster`) and one `bad password` on `hasaleem@r8dius.ca`. One more failure
   inside fifteen minutes on one address throttles it.
 - **20 October:** no attempts.
+- **20 October to 3 November:** no attempts. `hasaleem@r8dius.ca` last
+  signed in on 1 October.
 
 The fix is Samuel's choice:
 - invite `hasaleem@deloitte.ca` as Admin on `/access` and deactivate the
@@ -282,16 +426,16 @@ It must stay generic, because more than one AI tool may be used, and a test
 refuses any tool or vendor name in it. Since revision 9, "each one shows the
 source" is true on screen.
 
-**The roster, as at 20 October 2026** (read the live state from `/access`):
+**The roster, as at 3 November 2026** (read the live state from `/access`):
 
 | Address | Role | State |
 |---|---|---|
-| `oksamtrading@gmail.com` | Admin | settled, last in 20 Oct |
+| `oksamtrading@gmail.com` | Admin | settled, last in 3 Nov |
 | `hasaleem@r8dius.ca` | Admin | **cannot sign in** (item 5); last in 1 Oct |
-| `Kampofo@deloitte.ca` | Analyst | settled, **uses it unaided**: ran Lucara on 25 Sep, exported the workbook, undid Barrick's stage on 19 Oct; last in 19 Oct |
+| `Kampofo@deloitte.ca` | Analyst | settled, **uses it unaided**: ran Lucara on 25 Sep, exported the workbook, undid Barrick's stage on 19 Oct; last in 30 Oct |
 | `samowusuking@gmail.com` | Analyst | settled, last in 14 Sep |
 | `saowusu@deloitte.ca` | Viewer | settled, last in 14 Sep |
-| `rodcamara@deloitte.ca` | Viewer | invited 13 Oct, **not signed in yet** |
+| `rodcamara@deloitte.ca` | Viewer | invited 13 Oct, **signed in**; last in 30 Oct |
 
 `allowed_email_domains` is `gmail.com, deloitte.ca, r8dius.ca`. Samuel added
 `r8dius.ca` on `/settings` on 25 September, one minute before the invite.
@@ -308,13 +452,15 @@ source" is true on screen.
 | The plan B and C were built to | `~/.claude/plans/review-the-request-in-eager-noodle.md` (local only, approved by Samuel) |
 | Start here | `README.md` — what is built, how to run it, and why |
 | Operating it | `docs/RUNBOOK.md` — loading a period, sign-in, publishing, incidents |
-| Design | `docs/DESIGN.md` and `docs/design/00`–`18`. **Section 00 first**. Two documents reverse earlier ones and say so: doc 18 reverses doc 17's light-first decision, and doc 11's authentication section reverses its own magic-link-only rule |
+| Design | `docs/DESIGN.md` and `docs/design/00`–`19`. **Section 00 first**. Three documents reverse earlier ones and say so: doc 18 reverses doc 17's light-first decision, doc 19 (the dashboard) reverses doc 18 §1's no-tile rule and replaces doc 18 §10, and doc 11's authentication section reverses its own magic-link-only rule. The control-height rule is in doc 18 §5 (tables), §12 (buttons and forms), §14 (targets) and §15 (plan row 28) |
 | Decisions | `docs/decisions/` — all ten closed; decision 1 approved by legal on 4 September 2026. `BATCH-API.md` records why both passes batch; **`S6-PASSWORD-AUTH.md` records why sign-in is a password, and what that gave up** |
 | Settings | `.env.example` lists every variable; `.env.local` holds local secrets and is git-ignored |
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
-Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. The code last changed at `eef3fc9`.
+Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. Production runs
+`d435407` (`origin/main`). Local `main` adds two fixes (`5eb182a`, `9c44fa8`)
+and this note, none of them pushed.
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -360,6 +506,95 @@ override must cite a public page (Release C): an ERP known from an engagement
 is client information.
 
 ## What exists, and what state it is in
+
+### Done on 30 October – 3 November 2026 — Q4 at C$100M, revisions 5 and 6, the dashboard, one control height
+
+**Q4 widened to C$100M** (`f2c38bb`, 30 October; migration `0037`, applied
+31 October). The practice now wants every company from C$100M. A TSX list
+dated the day of the last published period can't make a new period of that
+date, so the upload now widens that period instead:
+- the companies between the two thresholds join with TSX's fields and
+  nothing researched;
+- nothing already in the period is touched;
+- the period takes the new threshold. It adds and never removes.
+
+Migration `0037` keeps the threshold on each revision, so revision 4 still
+reads C$200M. 82 companies joined, and Q4 has 348.
+
+**Research.** Runs `daf298f2` (US$16.71) and `825a61b3` (US$11.46) on
+31 October researched the added companies, and `83159070` (US$1.50) ran on
+1 November. All three record the model `claude-sonnet-5` and the scope
+"unreviewed or stale".
+
+**The SSRF guard** (`0856f67`, 31 October) blocked all of 192.0.0.0/16, but
+only 192.0.0.0/24 and 192.0.2.0/24 are reserved there. WordPress.com serves
+from 192.0.78.x, so every document of Chesapeake Gold and Mega Uranium was
+refused. Both took a stage from research in revision 6.
+
+**The gate** (`3995cb3`, 1 November). Most "unsupported" quotes were in
+their own document, written slightly differently: a dash dropped, an
+apostrophe escaped, passages stitched with "...", or a total row with no
+label. After an exact match fails, the gate now looks for the quote with
+punctuation set aside, for each stitched passage, and for the figure at its
+declared scale. A match is held for a person (`anchor_mismatch`); it is
+never bulk-acceptable or proposed. `scripts/recheck_unsupported.mjs`
+re-checks stored findings (`--dry-run` writes nothing). On 1 November it
+moved 94 of them, and the unsupported rate fell to 0.9% of 5,522.
+
+**Review** (1 November):
+- A flagged value can be overridden, and offers only Override (`6c9de9b`).
+  One rule now drives both grids' buttons and keys: `lib/review/actable.ts`.
+- A company research never reached can be overridden from the field grid's
+  find box (`a926ec8`). The public page that says so is required, and is
+  stored as "Public source: <url>". `docs/research/Q4-2026-STAGE-OVERRIDES.md`
+  holds the fifteen stage quotes entered that way, and their sources.
+- A field no run researched, such as property regions, still offers the
+  find box and its not-researched section (`4b00677`).
+
+**Revisions 5 and 6** (1 November). Revision 5 (17:47 UTC) widened Q4 and
+went through a blocked gate, with tier coverage at 90.5%. Revision 6
+(19:18 UTC) meets every floor: tier coverage is 96.6%. What each settled is
+in "What is waiting on Samuel", item 1. Their amendment reasons, in
+`period_publications`, list every change.
+
+**The dashboard** (PR #3; merged by rebase on 3 November as `8819c80`,
+`1d063fc` and `d1bf92c`) has five parts:
+- the answer: a headline, a share and four numbers;
+- a 3D globe that unfolds to a flat map (`src/app/_ui/Globe.tsx`, d3-geo);
+- a numbered memo;
+- **Brief me**: full-screen frames for presenting, moved with ← and →,
+  with B for black, T for a table and Esc to leave;
+- **Find** (⌘K or /).
+
+The design record is `docs/design/19-dashboard.md`. The URL rule is in
+`Atlas.tsx`: write the address only on a reader's change, never write a view
+taken from the address, and treat an address the current view would write
+as the page's own echo. A dev server hides router races that production
+hits; the memory note on the dashboard says how to test like production.
+
+**One control height** (PR #4 `9221b65`, PR #5 `d435407`, 3 November):
+- Every button, list, field and row of choices is `--control-h`, 36px. In a
+  table row it is `--control-h-row`, 28px.
+- A segmented group is 36px outside, and its choices are 30px.
+- `.btn.sm` is a smaller label at the same height, and `.btn.lg` is gone.
+- On a phone, Brief me now scrolls instead of running under its footer.
+- PR #5 gives every `<select>` a fixed `height`. Safari replaces a styled
+  list's `min-height` with its own, so after PR #4 every list in Safari was
+  still 23–25px (the first trap below).
+
+Measured on the synthetic showcase in Chrome and in Safari 26.6.2, every
+role at 1440 and 375 wide, with a static page for the states the showcase
+has no data for.
+- **Left alone on purpose:** the sidebar rail, sortable headers, text links
+  and rank rows, text disclosures, checkboxes, radios, textareas, the Find
+  palette's input and rows, menu items, tabs and switches, radio cards, the
+  skip link and the composition total.
+- **Deliberate exception:** on a phone the dashboard's auditor and "globe
+  shows" choices wrap onto a second line and grow.
+
+**On local `main`, not pushed** (3 November): `5eb182a` (the restored CSS)
+and `9c44fa8` (the touch targets). See the top of "What is waiting on
+Samuel".
 
 ### Done on 22 October 2026 — the ERP change field, run `c4c761ec`, revision 4
 
@@ -1479,6 +1714,21 @@ suite needs the project to itself. In the Claude desktop app the browser pane
 reads its launch config from a different folder, so start the server with Bash
 and open the pane by URL.
 
+**The showcase** is the database to use for screenshots and UI checks. It
+holds synthetic companies only, so no Deloitte client information appears in
+a screenshot. Build it with `node scripts/seed_showcase.mjs ./showcase.db`,
+then serve it on port 3311 with `MM_DATABASE=./showcase.db MM_AUTH=dev MM_DEV_AUTH_SECRET=local
+MM_ALLOWED_DOMAINS=example.invalid npx next dev -p 3311`. `.claude/launch.json`
+has it as `showcase`; never commit that file. A script signs in with `POST
+/api/dev/signin` and `{"email": "viewer@example.invalid"}` (or `analyst@` or
+`admin@`). The showcase has no review proposals, runs or uploads, so measure
+those states on a static page that links a copy of `globals.css`.
+
+The isolated end-to-end suite:
+`MM_E2E_WORKTREE=<a scratch folder>/mm-e2e-worktree bash scripts/e2e_isolated.sh`,
+174 checks. Afterwards run `git worktree remove --force` on that folder.
+Never remove the prunable worktree under `/private/var/folders`.
+
 ## Do not trust the brief's appendices
 
 Both workbooks were read cell by cell; `python3 scripts/verify_ground_truth.py
@@ -1520,6 +1770,38 @@ disagree, these govern.
   `api/parse.py`. `to_payload()` in `mmparser/cli.py` builds its output for both.
 
 ## Traps that each cost real time
+
+**Safari ignores `min-height` on a list.** Safari's form theme replaces a
+styled `<select>`'s `min-height` with its own value and zeroes its padding,
+so the list shrinks to fit its text. Chrome keeps the `min-height`. That is
+how PR #4 measured 36px everywhere in headless Chrome while Samuel saw 23px
+lists beside 36px buttons in Safari. A list takes `height`, never
+`min-height`. **Samuel uses Safari, so check visual changes in Safari too.**
+
+To measure without changing any Safari setting:
+1. Run a small local proxy in front of the showcase. It signs in as each
+   role and strips the frame-blocking headers, which are the CSP and
+   `X-Frame-Options`.
+2. Open a page on that proxy with `open -a Safari`. The page frames each
+   route, measures every control and posts the heights back to the proxy.
+
+Safari keeps a dev stylesheet it has already loaded for that origin, even
+when told not to cache it, and the dev server reuses a chunk's name across
+edits. So measure an edit on a port Safari has not loaded before.
+
+**A rebase merge leaves its branch looking unmerged.** `git branch
+--no-merged` compares commit ids, and a rebase or cherry-pick writes new
+ones. Use `git cherry main <branch>`, which prints `-` for a commit whose
+change is already on `main`.
+
+**Two checks fail now and then, and pass on a re-run.**
+- The unit run can stop on ENOENT for `src/app/globals.css.classcheck-backup`.
+  `classes.test.ts` writes that file while other tests walk `src`.
+- The isolated e2e can die in section 6, password sign-in, with
+  `fetch failed` or ECONNRESET when the machine is busy.
+
+**Auto-merge is off for the repository,** and the desktop app does not let
+Claude watch CI. A PR merges when Samuel says so, once its checks are green.
 
 **A decision holds the grid until the page has redrawn.** `useDecide` keeps
 `busy` true through `router.refresh()`, and a key pressed while busy is
@@ -1840,23 +2122,26 @@ database.
 
 ## What is left, in order
 
-As at 22 October 2026, in the order worth doing:
+As at 3 November 2026, in the order worth doing:
 
 | | | Whose |
 |---|---|---|
-| **a** | **Merge `claude/cool-sinoussi-fb57b1`** (the three review defects, item 2; one conflict since `eef3fc9`, see "First, before any work"), then **tier the 21 unclassified companies** from `reference/q4-unread-companies-research.json` and publish a later revision (item 1) | Samuel's decision, then Samuel or Kay on `/review` |
-| **b** | **Review what the 21 October afternoon runs found** beyond the fees, for 108 companies; check run `965a1edc`'s tax, audit-related and other fees against their tables; and **review run `c4c761ec`'s 237 proposals** for the 20 largest TSX companies (item 1) | Samuel or Kay on `/review` |
-| **c** | **The 19 gate conflicts** (14 commodity lists, three head offices, two regions) and the **two duplicate records**, Osisko Development and Fuerte (item 1) | Samuel or Kay; the merges are Samuel's call |
-| **d** | **China Gold's auditor**, and the other flagged rows on `/review` (item 1) | the practice, then Samuel or Kay |
-| **e** | **The ERP change for the other 246 companies.** Pass 2 re-researches every field when it runs. The start form quotes US$0.30 a company; the largest 20 cost US$0.18. Decide first whether "completed" should be measured from the fiscal year-end rather than the period date (Cameco). Then pilot option B of `reference/erp-research-options.md` (the company's own site and EDGAR full-text search, about US$5 for 20 TSX companies) | Samuel's decision (paid runs) |
-| **f** | **The 141 companies still without an audit fee**: most TSXV circulars are on SEDAR+ only, which Decision 1 rules out | a decision about sources, not a build |
-| **g** | **`pg:smoke`** (item 4) | Samuel's terminal |
-| **h** | **Unblock the second Admin** (item 5) | Samuel, on `/access` |
-| **i** | **Schedule retention.** The job runs; nothing calls it. Expired `auth_sessions` rows are accumulating as litter, not risk | a decision about deleting production data automatically |
-| **j** | **Spikes S2 and S4** — fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
-| **k** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
-| **l** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
-| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections), ~~revision 12~~ (20 Oct), ~~the document backfill~~ (20 Oct, by SQL), ~~roll forward to Q4~~ (20 Oct), ~~Run 3 pass 1 and its SEC registrant correction~~ (20 Oct), ~~pass 2 for Q4~~ (20 Oct), ~~its review and Q4 revision 1~~ (21 Oct), ~~pass 2's fee search, former names, and Q4 revisions 2 and 3~~ (21 Oct), ~~the ERP change field, run `c4c761ec` and Q4 revision 4~~ (22 Oct) | done |
+| **a** | **Ship local `main`:** commit the Settings fix in its session, put it onto `main` beside `5eb182a` and `9c44fa8`, run every gate on the whole, then push (see the top of "What is waiting on Samuel") | the Settings session, then Samuel's yes to push |
+| **b** | **The two review defects still on `main`** (item 2): take the dialog's `onClose` fix and `bulkOffer` from `be511a7`, and decide whether its by-company empty-cell override is still wanted now that `a926ec8` overrides from the find box | Samuel's decision |
+| **c** | **Tier the 12 unclassified companies** and **research fees for the 82 companies added at C$100M**, so fee coverage rises from 35.9% (item 1) | Samuel's decision (paid runs), then Samuel or Kay on `/review` |
+| **d** | **Review what research found and no revision used yet**: the 21 October afternoon runs beyond the fees, run `c4c761ec`'s proposals, and runs `daf298f2`, `825a61b3` and `83159070` beyond what revisions 5 and 6 took (item 1) | Samuel or Kay on `/review` |
+| **e** | **What the gate still flags and the two duplicate records**, Osisko Development and Fuerte. Read the live gate on `/publish` and `/companies/merge`; six of the fourteen commodity conflicts were not named as settled (item 1) | Samuel or Kay; the merges are Samuel's call |
+| **f** | **China Gold's auditor**, and the other flagged rows on `/review` (item 1) | the practice, then Samuel or Kay |
+| **g** | **The ERP change for the rest of Q4.** Research has an ERP change finding for 94 of the 348 companies. Decide first whether "completed" should be measured from the fiscal year-end rather than the period date (Cameco). Then pilot option B of `reference/erp-research-options.md` | Samuel's decision (paid runs) |
+| **h** | **Touch targets for lists and fields** (44px under `pointer: coarse`, or keep 36px), and the `/companies` picker pop-ups that overflow on a phone with every `details` open | Samuel's call; the overflow is a follow-up for the Settings session |
+| **i** | **The companies still without an audit fee**: most TSXV circulars are on SEDAR+ only, which Decision 1 rules out | a decision about sources, not a build |
+| **j** | **`pg:smoke`** (item 4) | Samuel's terminal |
+| **k** | **Unblock the second Admin** (item 5) | Samuel, on `/access` |
+| **l** | **Schedule retention.** The job runs, but nothing calls it. Expired `auth_sessions` rows are piling up as litter, not as a risk | a decision about deleting production data automatically |
+| **m** | **Spikes S2 and S4**: fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
+| **n** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
+| **o** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
+| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections), ~~revision 12~~ (20 Oct), ~~the document backfill~~ (20 Oct, by SQL), ~~roll forward to Q4~~ (20 Oct), ~~Run 3 pass 1 and its SEC registrant correction~~ (20 Oct), ~~pass 2 for Q4~~ (20 Oct), ~~its review and Q4 revision 1~~ (21 Oct), ~~pass 2's fee search, former names, and Q4 revisions 2 and 3~~ (21 Oct), ~~the ERP change field, run `c4c761ec` and Q4 revision 4~~ (22 Oct), ~~Q4 widened to C$100M~~ (30 Oct), ~~the SSRF guard's 192.0.0.0/16~~ (31 Oct), ~~the gate's held quotes, overrides where research found nothing, Q4 revisions 5 and 6~~ (1 Nov), ~~the globe dashboard~~ (3 Nov), ~~one control height, in Safari too~~ (3 Nov) | done |
 
 Rename the Vercel project, the URL and the repository only if Samuel decides
 to; they are outward-facing.
@@ -2028,8 +2313,10 @@ are as they are, still holds.
 ## Working conventions
 
 - Commit messages explain *why*, end with
-  `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`, and Samuel usually
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, and Samuel usually
   asks for "commit and push" explicitly. Pushing `main` deploys production.
+  Since 1 November changes go through a PR, and are merged by rebase at
+  Samuel's word once CI is green.
 - Migrations in `supabase/migrations/` are canonical Postgres; SQLite is
   translated by `src/lib/db/dialect.ts`. Postgres-only files (roles, grants,
   row-level security) are skipped locally. Apply new ones to Supabase with the
