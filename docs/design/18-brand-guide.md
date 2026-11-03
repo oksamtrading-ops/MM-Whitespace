@@ -286,7 +286,7 @@ Every component in `src/app/_ui` and every pattern in `globals.css`, with its st
 | Queue tiles `.queue` | linked / not / start-here | hover | surface-2, green-soft | each count is a link | Don't render a zero tile inline |
 | Gate list `.gatelist` | ok / no | — | green-text, alert | marks hidden, words visible | — |
 | Dialogs `dialog` | bulk, keys, palette | open | surface-3, shadow-3, backdrop | `showModal`, labelled, Esc cancels | Don't add a suppress-this option |
-| Forms `.commit`, `.desk`, `.narrowing` | fields, units, checks, direction cards | focus (green-mark border), error notice | input-bg, rule, green-mark | labels for every control | Don't put a label inside the field |
+| Forms `.commit`, `.desk`, `.narrowing` | fields, units, checks, direction cards | focus (green-mark border), error notice | input-bg, rule, green-mark | labels for every control | Don't put a label inside the field, and don't give a list (`select`) a `min-height`: Safari replaces it with its own 15px, so a list takes `height: var(--control-h)` |
 | Drop zone `.drop` | over | hover, focus-within | rule-raised, green-mark | a label around the input | — |
 | Skeletons `.sk` | dashboard, board, grid | pulse | surface-2 | `aria-busy` | Don't skeleton the map's shape as a card |
 | Refusal `.refusal`, empty `.empty` | with action | — | ink-2 | an h1 and one action | Don't apologise |
