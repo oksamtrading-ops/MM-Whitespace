@@ -134,10 +134,15 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
                 <li key={step.ord} className={step.matched ? "fired" : ""}>
                   <span className="mark"><Icon name={step.matched ? "circle-check" : "circle-dashed"} size={14} /></span>
                   {/* An unmapped rule id shows as itself once, not twice: the
-                      map is a courtesy and the id is the fact. */}
+                      map is a courtesy and the id is the fact. The id carries
+                      its own space: it is the gap after the sentence and where
+                      a narrow screen may end the line, and at a line's end it
+                      falls away instead of indenting the id. Without it the
+                      sentence's last word and the id were one word, too wide
+                      for a 320px screen. */}
                   <span className="what">
                     {RULE[step.ruleId] ?? ""}
-                    <code>{step.ruleId}</code>
+                    <code>{` ${step.ruleId}`}</code>
                   </span>
                   <span className="inputs">
                     {Object.entries(step.inputs).map(([k, v]) => (
