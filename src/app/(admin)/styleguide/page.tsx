@@ -360,7 +360,8 @@ export default async function Styleguide() {
           <p className="note" style={{ marginTop: 0 }}>
             The companies table&rsquo;s filters. Real checkboxes in a <code>&lt;details&gt;</code>, so it
             works from the keyboard and in a plain GET form; options carry how many rows hold each, and
-            a long list gets a box to narrow it.
+            a long list gets a box to narrow it. It opens toward whichever side has room, so an open
+            list never widens the page.
           </p>
           <div className="filterbar">
             <MultiSelect name="tier" label="Tier" selected={["2", "3"]} groups={[{ label: "Tier", options: [

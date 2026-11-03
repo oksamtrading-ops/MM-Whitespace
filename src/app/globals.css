@@ -1088,12 +1088,15 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .picker-v { color: var(--ink); font-weight: 700; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; }
 .picker-set .picker-sum { border-color: var(--ink-2); background: var(--surface-2); }
 .picker[open] .picker-sum svg { transform: rotate(180deg); }
+/* Hung from its button's left edge; MultiSelect moves it sideways as it opens,
+   toward the side with room, so it stays in the window. Never wider than the
+   window less MultiSelect's EDGE a side, so on a 320px phone it still fits. */
 .picker-pop {
-  position: absolute; z-index: var(--z-tooltip); top: calc(100% + 6px); left: 0; min-width: 240px; max-width: 340px;
+  position: absolute; z-index: var(--z-tooltip); top: calc(100% + 6px); left: 0;
+  min-width: 240px; max-width: min(340px, calc(100vw - 2 * var(--space-2)));
   padding: var(--space-3); background: var(--surface-3); border: 1px solid var(--rule-raised);
   border-radius: var(--radius); box-shadow: var(--shadow-3);
 }
-.picker-end { left: auto; right: 0; }
 .picker-head { margin: 0 0 var(--space-2); font-size: var(--fs-label); letter-spacing: var(--track-label);
   text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
 .picker-find {

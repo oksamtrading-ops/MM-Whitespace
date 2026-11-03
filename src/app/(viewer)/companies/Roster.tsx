@@ -90,10 +90,9 @@ export default function Roster({ rows, deloitteAudits, initial }: {
       </div>
 
       <div className="filterbar" role="group" aria-label="Filters">
-        {PICKERS.map((key, i) => (
+        {PICKERS.map((key) => (
           <MultiSelect key={key} name={key} label={FILTER_LABEL[key]} groups={facets[key]}
-                       selected={filter[key]} onChange={(next) => set({ [key]: next })}
-                       align={i >= PICKERS.length - 2 ? "end" : "start"} />
+                       selected={filter[key]} onChange={(next) => set({ [key]: next })} />
         ))}
         {narrowed && (
           <button type="button" className="btn sm quiet" onClick={() => setFilter({ ...EMPTY_FILTER, sort: filter.sort, dir: filter.dir })}>
