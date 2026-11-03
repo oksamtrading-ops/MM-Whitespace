@@ -1105,8 +1105,12 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 }
 .btn .icon { flex: 0 0 auto; }
 .btn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--btn-hover); }
-.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:active:not(:disabled):not([aria-disabled="true"]) { transform: translateY(1px); }
 .btn:disabled, .btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; transform: none; }
+/* An unavailable button that keeps focus (aria-disabled, where disabled would
+   drop it) keeps its ring at full strength: what it holds is dimmed instead. */
+.btn[aria-disabled="true"]:focus-visible { opacity: 1; }
+.btn[aria-disabled="true"]:focus-visible > * { opacity: .45; }
 @media (pointer: coarse) {
   .btn::after { content: ""; position: absolute; left: 0; right: 0; top: 50%;
                 height: 44px; transform: translateY(-50%); }
@@ -1117,8 +1121,8 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .btn.secondary { background: transparent; border-color: var(--rule-raised); }
 .btn.secondary:hover:not(:disabled) { background: var(--surface-2); border-color: var(--ink-3); }
 .btn.quiet { background: transparent; color: var(--ink-2); }
-.btn.quiet:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
-.btn.quiet:disabled { color: var(--ink-3); }
+.btn.quiet:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-2); color: var(--ink); }
+.btn.quiet:disabled, .btn.quiet[aria-disabled="true"] { color: var(--ink-3); }
 /* Destructive: an outline, never a fill. A red slab in a table row reads as
    an alarm on a row that is merely a row. */
 .btn.danger { background: transparent; border-color: var(--alert-edge); color: var(--alert); }
@@ -2355,6 +2359,7 @@ button.switch { background: none; border: 0; padding: 0; color: var(--ink); font
   .grow.sel { outline: 2px solid Highlight; }
   .footing .total { border-color: CanvasText; }
   .signin .orb { display: none; }
+  .btn[aria-disabled="true"] { color: GrayText; border-color: GrayText; }
 }
 
 /* The AI notice's quiet form, worn on the working screens (AiNotice.tsx).

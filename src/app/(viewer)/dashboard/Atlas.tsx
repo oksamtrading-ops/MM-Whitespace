@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { geoDistance } from "d3-geo";
+import { useSearchParams } from "next/navigation";
 import type { MarketRow } from "../../../lib/publish/crosstabs.ts";
 import { cityPoint } from "../../../lib/publish/cities.ts";
 import {
@@ -18,7 +19,7 @@ import Find from "./Find.tsx";
 import Brief from "./Brief.tsx";
 import {
   baseOf, chipsOf, dayLabel, legendWords, nameOf, paramsOfView, proofOf, rosterParams, scopeWords, STEP_LABELS, stepOf,
-  subjectWords, TIER_RULE, viewFromParams, type Frame, type MapMode, type View,
+  subjectWords, TIER_RULE, viewOfQuery, type Frame, type MapMode, type View,
 } from "./words.ts";
 
 /**
@@ -36,13 +37,6 @@ const TIERS = ["1", "2", "3", "4", "5", "6", "unclassified"];
 /** Wider than a phone, the card sits over the globe's lower left, so a flight turns to clear it, keeping `keep` in view. */
 const clearOfCard = (cam: Camera, keep: Array<[number, number]> = []): Camera =>
   typeof matchMedia === "function" && matchMedia("(min-width: 761px)").matches ? besideCard(cam, keep) : cam;
-
-/** The view the address bar names, read in the browser. */
-function viewOfLocation(atlas: AtlasData): View {
-  const params: Record<string, string[]> = {};
-  for (const [k, v] of new URLSearchParams(window.location.search)) (params[k] ??= []).push(v);
-  return viewFromParams(params, atlas);
-}
 
 export default function Atlas({ atlas, periodTitle, initial, markets, coverage, frozen, publisher }: {
   atlas: AtlasData;
@@ -62,37 +56,57 @@ export default function Atlas({ atlas, periodTitle, initial, markets, coverage, 
   const { threshold, currency, asOf } = atlas.period;
   const money = (n: number) => fmtCap(n, currency);
 
-  // The URL follows the view; the first render already came from it. A null
-  // state lets the router copy its own and take the new address as current,
-  // so Back and a link to the dashboard both know where the page was.
-  const loaded = useRef(false);
+  // The URL follows the reader: a view they choose is written to the address
+  // bar. A null state lets the router copy its own and take the new address
+  // as current, so Back and a link to the dashboard both know where the page
+  // was. Nothing else is written: not the view the page first rendered, which
+  // the address may have moved past, and not a view taken from the address,
+  // which already says it.
+  const atlasNow = useRef(atlas);
+  atlasNow.current = atlas;
+  const seen = useRef(view);
+  const taken = useRef<View | null>(null);
   useEffect(() => {
-    if (!loaded.current) { loaded.current = true; return; }
-    const q = paramsOfView(view, atlas).toString();
+    if (view === seen.current) return;
+    seen.current = view;
+    if (view === taken.current) return;
+    const q = paramsOfView(view, atlasNow.current).toString();
+    if (q === new URLSearchParams(window.location.search).toString()) return;
     window.history.replaceState(null, "", q ? `?${q}` : window.location.pathname);
-  }, [view, atlas]);
+  }, [view]);
+  const follow = (there: View) => {
+    taken.current = there;
+    setView(there);
+  };
 
   // The page can come back from the router's cache with the view it first
   // rendered while the address bar names a later one: the address bar wins.
-  // And a new view from the server (a link to the dashboard) replaces this one.
-  const shown0 = useRef(JSON.stringify(initial));
   const viewNow = useRef(view);
   viewNow.current = view;
   useLayoutEffect(() => {
-    const there = viewOfLocation(atlas);
-    if (JSON.stringify(there) === shown0.current) return;
-    setView(there);
+    const there = viewOfQuery(window.location.search, atlas);
+    if (JSON.stringify(there) === JSON.stringify(initial)) return;
+    follow(there);
     setCamera(CAMERAS[there.frame]);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A link to the dashboard, Back and Forward move the router to another
+  // address while this page stays mounted, and the router can hand it the
+  // view it rendered before, unchanged, even after the reader has filtered
+  // the page since: the address is the signal, not the view. An address the
+  // view would write itself is the page's own, reported back.
+  const query = useSearchParams().toString();
+  const queryNow = useRef(query);
   useEffect(() => {
-    const next = JSON.stringify(initial);
-    if (next === shown0.current) return;
-    shown0.current = next;
-    if (next === JSON.stringify(viewNow.current)) return;
-    setView(initial);
+    if (query === queryNow.current) return;
+    queryNow.current = query;
+    if (query === paramsOfView(viewNow.current, atlasNow.current).toString()) return;
+    const there = viewOfQuery(query, atlasNow.current);
+    if (JSON.stringify(there) === JSON.stringify(viewNow.current)) return;
+    follow(there);
     setFocus(null);
-    setCamera({ ...CAMERAS[initial.frame], nonce: Math.random() });
-  }, [initial]);
+    setCamera({ ...CAMERAS[there.frame], nonce: Math.random() });
+  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A choice made from a list turns the globe to it, even when the reader has
   // turned it away from the same place since; one made on the globe leaves it

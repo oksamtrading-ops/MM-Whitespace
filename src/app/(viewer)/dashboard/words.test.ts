@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DELOITTE, NO_LENS, UNNAMED, type Atlas, type AtlasCompany, type Lens } from "../../../lib/publish/lens.ts";
 import {
   andList, briefFrames, chipsOf, DEFAULT_VIEW, leaders, legendWords, mostWords, ordinal, paramsOfView, proofOf, rankOf,
-  rosterParams, scopeWords, stepOf, STEP_LABELS, STEPS, subjectWords, viewFromParams, type View,
+  rosterParams, scopeWords, stepOf, STEP_LABELS, STEPS, subjectWords, viewFromParams, viewOfQuery, type View,
 } from "./words.ts";
 import type { Office } from "./offices.ts";
 
@@ -113,6 +113,16 @@ test("a place travels under every token the Companies page files it under, and a
   assert.deepEqual(paramsOfView(view, atlas).getAll("prop"), ["USA:NV", "US:NV"]);
   assert.equal(viewFromParams({ prop: "US:NV" }, atlas).lens.place, "US:NV");
   assert.equal(viewFromParams({ prop: ["MARS:X", "USA:NV"] }, atlas).lens.place, "US:NV", "the first token recognised wins");
+});
+
+test("the address bar reads as the server reads it, and a key named like one of JavaScript's own is just unknown", () => {
+  const atlas = market();
+  const view: View = { lens: { ...NO_LENS, firm: "deloitte", tier: "1", place: "US:NV" }, mode: "hq", frame: "world" };
+  assert.deepEqual(viewOfQuery(`?${paramsOfView(view, atlas)}`, atlas), view);
+  assert.deepEqual(viewOfQuery("?constructor=1", atlas), DEFAULT_VIEW);
+  for (const q of ["?tier=1&toString=x", "?__proto__=x&tier=1", "?tier=1&valueOf=1&hasOwnProperty=y"]) {
+    assert.equal(viewOfQuery(q, atlas).lens.tier, "1", q);
+  }
 });
 
 test("anything in the URL the period does not recognise is dropped, not guessed", () => {

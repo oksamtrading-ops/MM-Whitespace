@@ -143,6 +143,17 @@ export function viewFromParams(params: Params, atlas: Source): View {
   };
 }
 
+/**
+ * The view a query string names, read as the server reads it. The keys go in
+ * an object with no prototype, so "?toString=" is a parameter the dashboard
+ * does not know, like any other, and not a crash.
+ */
+export function viewOfQuery(query: string, atlas: Source): View {
+  const params: Record<string, string[]> = Object.create(null);
+  for (const [k, v] of new URLSearchParams(query)) (params[k] ??= []).push(v);
+  return viewFromParams(params, atlas);
+}
+
 /** The dashboard's URL for a view, defaults omitted, in a stable order. */
 export function paramsOfView(view: View, atlas: Source): URLSearchParams {
   const { lens } = view;
