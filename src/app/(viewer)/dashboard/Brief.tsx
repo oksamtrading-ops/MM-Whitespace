@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { applyLens, NO_LENS, propertyCounts, type Atlas } from "../../../lib/publish/lens.ts";
 import Globe, { CAMERAS } from "../../_ui/Globe.tsx";
 import Icon from "../../_ui/Icon.tsx";
@@ -14,8 +14,9 @@ import { briefFrames, dayLabel, stepOf } from "./words.ts";
  * basis printed on every frame so a photograph of the screen still says what
  * it is.
  *
- * Keys: → or Page Down for the next frame, ← or Page Up for the last, B for a
- * black screen, T for the frame's numbers as a table, Esc to leave.
+ * Keys: → or Page Down for the next frame, ← or Page Up for the last, Home
+ * and End for the first and the final one, B for a black screen, T for the
+ * frame's numbers as a table, Esc to leave.
  */
 export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; periodTitle: string; onClose: () => void }) {
   const everyOffice = useMemo(() => officesOf(atlas.companies), [atlas]);
@@ -28,6 +29,14 @@ export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; p
   // The dialog itself takes focus, so the arrow keys move the brief and a
   // button does not swallow the first press of Space.
   useEffect(() => { const d = dialog.current; d?.showModal(); d?.focus(); }, []);
+  // B hides everything on the screen, the control the reader last used with
+  // it, and focus would fall to the page, outside the dialog: it goes to the
+  // dialog instead.
+  useLayoutEffect(() => {
+    const d = dialog.current, a = document.activeElement;
+    if (!d?.open || a === d) return;
+    if (!(a instanceof HTMLElement) || !d.contains(a) || a.closest(".brief-in.black")) d.focus();
+  }, [i, black, twin]);
 
   const f = frames[i];
   const cs = useMemo(() => applyLens(atlas.companies, { ...NO_LENS, firm: f.firm }), [atlas, f.firm]);
@@ -35,20 +44,38 @@ export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; p
   const discs = f.mode === "hq" ? officesOf(cs) : [];
   const basis = `${periodTitle} · revision ${atlas.publication.revision} · as of ${dayLabel(atlas.period.asOf)} · internal use`;
 
-  const go = (d: number) => { setBlack(false); setI((x) => Math.max(0, Math.min(frames.length - 1, x + d))); };
-  const onKeyDown = (e: React.KeyboardEvent) => {
+  // Every move lifts a black screen, and none goes past either end.
+  const clamp = (n: number) => Math.max(0, Math.min(frames.length - 1, n));
+  const go = (d: number) => { setBlack(false); setI((x) => clamp(x + d)); };
+  const to = (n: number) => { setBlack(false); setI(clamp(n)); };
+
+  // The keys are heard at the document, wherever focus is while the brief is
+  // open. Tab does nothing on a black screen, which has nothing to reach, and
+  // nor does Option-Tab; Ctrl-Tab and Cmd-Tab, like every other chord, belong
+  // to the browser. Space and Enter on a button press it; the end buttons
+  // stay pressable, marked unavailable, so a key pressed on one never moves
+  // the other way.
+  const onKey = useRef<(e: KeyboardEvent) => void>(() => {});
+  onKey.current = (e) => {
     const k = e.key;
-    if ((k === " " || k === "Enter") && (e.target as HTMLElement).closest("button")) return;
+    if (k === "Tab" && !e.metaKey && !e.ctrlKey) { if (black) e.preventDefault(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if ((k === " " || k === "Enter") && e.target instanceof Element && e.target.closest("button")) return;
     if (k === "ArrowRight" || k === "PageDown" || k === " " || k === "Enter") { e.preventDefault(); go(1); }
     else if (k === "ArrowLeft" || k === "PageUp" || k === "Backspace") { e.preventDefault(); go(-1); }
-    else if (k === "Home") { e.preventDefault(); setI(0); }
-    else if (k === "End") { e.preventDefault(); setI(frames.length - 1); }
+    else if (k === "Home") { e.preventDefault(); to(0); }
+    else if (k === "End") { e.preventDefault(); to(frames.length - 1); }
     else if (k === "b" || k === "B" || k === ".") { e.preventDefault(); setBlack((v) => !v); }
     else if (k === "t" || k === "T") { e.preventDefault(); setTwin((v) => !v); }
   };
+  useEffect(() => {
+    const listen = (e: KeyboardEvent) => onKey.current(e);
+    document.addEventListener("keydown", listen);
+    return () => document.removeEventListener("keydown", listen);
+  }, []);
 
   return (
-    <dialog ref={dialog} className="brief" aria-label={`Brief: ${periodTitle}`} tabIndex={-1} onClose={onClose} onKeyDown={onKeyDown}>
+    <dialog ref={dialog} className="brief" aria-label={`Brief: ${periodTitle}`} tabIndex={-1} onClose={onClose}>
       <div className={`brief-in${black ? " black" : ""}${twin ? " twin" : ""}`}>
         {!twin && (
           <div className="brief-globe">
@@ -77,8 +104,8 @@ export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; p
             {frames.map((x, j) => <span key={x.id} className={j === i ? "on" : undefined} />)}
           </span>
           <span className="keys" aria-hidden="true"><kbd>←</kbd><kbd>→</kbd> move · <kbd>B</kbd> black · <kbd>T</kbd> table · <kbd>Esc</kbd> leave</span>
-          <button type="button" className="btn quiet sm" onClick={() => go(-1)} disabled={i === 0} aria-label="Previous frame"><Icon name="arrow-left" size={14} /></button>
-          <button type="button" className="btn quiet sm" onClick={() => go(1)} disabled={i === frames.length - 1} aria-label="Next frame"><Icon name="arrow-right" size={14} /></button>
+          <button type="button" className="btn quiet sm" onClick={() => go(-1)} aria-disabled={i === 0} aria-label="Previous frame"><Icon name="arrow-left" size={14} /></button>
+          <button type="button" className="btn quiet sm" onClick={() => go(1)} aria-disabled={i === frames.length - 1} aria-label="Next frame"><Icon name="arrow-right" size={14} /></button>
           <button type="button" className="btn quiet sm" onClick={() => dialog.current?.close()} aria-label="Leave the brief"><Icon name="x" size={14} /></button>
         </footer>
       </div>
