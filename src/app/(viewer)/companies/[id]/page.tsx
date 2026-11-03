@@ -177,15 +177,17 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
 
         <Section id="values" title="Every value, and where it came from" index={3} icon="scroll-text"
                  caption="Nothing here is presented without its source. A researched value names the filing it was read from and the passage that says it.">
-          <table className="provenance">
-            <thead>
-              <tr><th scope="col">Field</th><th scope="col">Value</th>
-                  <th scope="col">Source</th><th scope="col">Evidence</th></tr>
-            </thead>
-            <tbody>
-              {p.values.map((v) => <ValueRow key={v.fieldKey} v={v} showReasons={canReview} />)}
-            </tbody>
-          </table>
+          <div className="tablewrap">
+            <table className="provenance">
+              <thead>
+                <tr><th scope="col">Field</th><th scope="col">Value</th>
+                    <th scope="col">Source</th><th scope="col">Evidence</th></tr>
+              </thead>
+              <tbody>
+                {p.values.map((v) => <ValueRow key={v.fieldKey} v={v} showReasons={canReview} />)}
+              </tbody>
+            </table>
+          </div>
           {researched.length === 0 && (
             <p className="note">
               <b>Nothing here was researched by the model.</b> Every value came from the workbook

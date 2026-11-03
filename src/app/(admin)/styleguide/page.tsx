@@ -371,7 +371,7 @@ export default async function Styleguide() {
               { label: "Other countries", options: [{ value: "Australia", label: "Australia", count: 10 }] }]} />
           </div>
           <h3>Menu, tooltip, toast</h3>
-          <div className="row" style={{ alignItems: "flex-start", minHeight: 200 }}>
+          <div className="row floats">
             <div className="menu-wrap">
               <button type="button" className="btn" aria-haspopup="menu" aria-expanded="true">Export ▾</button>
               <ul className="menu" role="menu" aria-label="Export">
@@ -381,11 +381,11 @@ export default async function Styleguide() {
                 <li><button type="button" role="menuitem">Print this page <kbd>⌘P</kbd></button></li>
               </ul>
             </div>
-            <span className="has-tip" style={{ marginLeft: 200 }}>
+            <span className="has-tip">
               <button type="button" className="btn" aria-describedby="tip-1">Hover me</button>
               <span className="tooltip" role="tooltip" id="tip-1" style={{ opacity: 1 }}><b>27</b> companies hold a property in British Columbia</span>
             </span>
-            <div className="toast" role="status" style={{ marginLeft: "auto" }}>Published. Revision 9 is live. <button type="button" className="btn">Open the dashboard</button></div>
+            <div className="toast" role="status">Published. Revision 9 is live. <button type="button" className="btn">Open the dashboard</button></div>
           </div>
           <h3>Progress for publish</h3>
           <div className="progress" aria-label="Publishing">
@@ -443,15 +443,21 @@ export default async function Styleguide() {
             <div className="gauge warn"><span className="lab">Spent</span><span className="track" role="img" aria-label="84 percent of the cap"><span className="fill" style={{ width: "84%" }} /><span className="floor" style={{ left: "80%" }} aria-hidden="true"><span>80%</span></span></span><span className="figs"><span className="fig">US$21.00</span><span className="of fig-sm">of US$25.00</span></span></div>
           </div>
           <h3 style={{ marginTop: 32 }}>Migration: polarity with icon and word, never light and dark green</h3>
-          <table className="matrix" style={{ maxWidth: 560 }}>
-            <thead><tr><th>From → to</th><th className="n">Companies</th><th>Direction</th></tr></thead>
-            <tbody>
-              <tr><td>Tier 6 → Tier 5</td><td className="n">4</td><td className="up"><Icon name="trending-up" size={13} /> improved</td></tr>
-              <tr><td>Tier 2 → Tier 3</td><td className="n">1</td><td className="down"><Icon name="trending-down" size={13} /> declined</td></tr>
-              <tr><td>Unclassified → Tier 1</td><td className="n">12</td><td className="research"><Icon name="circle-check" size={13} /> research completed</td></tr>
-              <tr><td>Tier 4 → Tier 4</td><td className="n">17</td><td className="diag"><Icon name="minus" size={13} /> unchanged</td></tr>
-            </tbody>
-          </table>
+          <div className="tablewrap">
+            <table className="matrix" style={{ maxWidth: 560 }}>
+              <thead><tr><th>From → to</th><th className="n">Companies</th><th>Direction</th></tr></thead>
+              <tbody>
+                <tr><td>Tier 6 → Tier 5</td><td className="n">4</td><td className="up"><Icon name="trending-up" size={13} /> improved</td></tr>
+                <tr><td>Tier 2 → Tier 3</td><td className="n">1</td><td className="down"><Icon name="trending-down" size={13} /> declined</td></tr>
+                <tr><td>Unclassified → Tier 1</td><td className="n">12</td><td className="research"><Icon name="circle-check" size={13} /> research completed</td></tr>
+                <tr><td>Tier 4 → Tier 4</td><td className="n">17</td><td className="diag"><Icon name="minus" size={13} /> unchanged</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="note">
+            A table that can outgrow its column sits in a <code>.tablewrap</code>. On a phone it
+            scrolls inside that box, and the page around it does not scroll sideways.
+          </p>
           <h3 style={{ marginTop: 32 }}>Donut — where a donut is honest</h3>
           <p className="note" style={{ marginTop: 0 }}>
             Two or three parts, a large difference between them, and a hole big enough to carry

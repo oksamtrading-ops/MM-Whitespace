@@ -168,28 +168,30 @@ export default async function Publish() {
         {revisions.length > 0 && (
           <Section id="revisions" title="Revisions already published" index={5}
                    caption="None of these change. A correction is the next one down.">
-            <table>
-              <thead>
-                <tr><th scope="col" className="n">Rev</th><th scope="col">Published</th>
-                    <th scope="col">By</th><th scope="col">Note</th></tr>
-              </thead>
-              <tbody>
-                {revisions.map((r) => (
-                  <tr key={r.revision}>
-                    <td className="n">{r.revision}</td>
-                    <td>{fmtDate(r.published_at)}</td>
-                    <td>{r.by_email ?? <span className="meta">a script</span>}</td>
-                    <td className="wrap">
-                      {r.override_reason
-                        ? <><span className="pill warn"><Icon name="triangle-alert" size={12} />override</span> {r.override_reason}</>
-                        : r.amendment_reason
-                          ? <><span className="pill quiet"><Icon name="history" size={12} />amendment</span> {r.amendment_reason}</>
-                          : <span className="meta">first publication</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="tablewrap">
+              <table>
+                <thead>
+                  <tr><th scope="col" className="n">Rev</th><th scope="col">Published</th>
+                      <th scope="col">By</th><th scope="col">Note</th></tr>
+                </thead>
+                <tbody>
+                  {revisions.map((r) => (
+                    <tr key={r.revision}>
+                      <td className="n">{r.revision}</td>
+                      <td>{fmtDate(r.published_at)}</td>
+                      <td>{r.by_email ?? <span className="meta">a script</span>}</td>
+                      <td className="wrap">
+                        {r.override_reason
+                          ? <><span className="pill warn"><Icon name="triangle-alert" size={12} />override</span> {r.override_reason}</>
+                          : r.amendment_reason
+                            ? <><span className="pill quiet"><Icon name="history" size={12} />amendment</span> {r.amendment_reason}</>
+                            : <span className="meta">first publication</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Section>
         )}
 

@@ -584,6 +584,10 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
 .withrail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-items: start; }
 .rail { min-width: 0; }
 .rail .facts { margin-bottom: var(--space-5); }
+/* Folded into a spec line, each fact keeps its own width, and a value wider than the
+   column (a stage with its caveat, a long run of commodities) wraps inside it rather
+   than pushing the page sideways. */
+.rail .facts dd { white-space: normal; }
 .rail .notice { margin: 0 0 var(--space-6); }
 .contents { display: none; }
 @media (min-width: 1100px) {
@@ -591,7 +595,6 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
   .withrail > .reading { grid-column: 1; grid-row: 1; }
   .rail { grid-column: 2; grid-row: 1; position: sticky; top: calc(var(--header-h) + 36px); padding-top: 6px; }
   .rail .facts { flex-direction: column; gap: var(--space-4); margin-bottom: var(--space-6); padding-bottom: var(--space-6); border-bottom: 1px solid var(--rule); }
-  .rail .facts dd { white-space: normal; }
   .rail .facts dd .sub { display: block; margin: 2px 0 0; }
   .rail .notice { margin: -8px 0 var(--space-6); padding-bottom: var(--space-6); border-bottom: 1px solid var(--rule); border-left: 0; padding-left: 0; }
   .rail .notice b { color: var(--warn); }
@@ -725,7 +728,7 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
    The whitespace matrix. Shading is the firm's share of the row, the count
    sits in the cell in ink chosen for that step, and the research gap is
    hatched and outside the ramp so the darkest cell is always an incumbent. */
-.heatwrap { overflow-x: auto; }
+.heatwrap { position: relative; overflow-x: auto; }
 .heatmap { border-collapse: separate; border-spacing: 0; min-width: 640px; }
 .heatmap caption { caption-side: bottom; text-align: left; font-size: var(--fs-caption); color: var(--ink-3); padding: var(--space-3) 0 0; }
 .heatmap thead th { background: none; border: 0; height: auto; padding: 0 6px 10px; font-size: 11.5px; color: var(--ink-2); text-align: center; vertical-align: bottom; }
@@ -1001,8 +1004,15 @@ th .sort:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; 
 .matrix td.research { color: var(--neutral); }
 table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body-sm); color: var(--ink-3); padding: var(--space-3) 0 0; }
 
-/* The all-companies table: full width, compact, sticky header and first column. */
-.roster { overflow: auto; max-height: calc(100vh - var(--header-h) - 190px); border: 1px solid var(--rule-raised); border-radius: var(--radius); background: var(--surface-1); }
+/* A table too wide for its column scrolls in place and the page does not: the
+   data-table exception (doc 18 §14), the way the dashboard's memo does it.
+   Positioned, so the screen-reader words in its cells scroll with the table
+   instead of widening the page. */
+.tablewrap { position: relative; overflow-x: auto; }
+
+/* The all-companies table: full width, compact, sticky header and first column.
+   Positioned for the same reason as .tablewrap: the stage columns' words. */
+.roster { position: relative; overflow: auto; max-height: calc(100vh - var(--header-h) - 190px); border: 1px solid var(--rule-raised); border-radius: var(--radius); background: var(--surface-1); }
 .roster table { min-width: 940px; }
 .roster th, .roster td { height: var(--row-h-dense); white-space: nowrap; }
 /* Commodities run long (one company lists 14), and the whole list is the point,
@@ -1573,8 +1583,12 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
   content: counter(step); position: absolute; left: 0; top: 1px;
   font-family: var(--font-figure); font-size: var(--fs-caption); font-weight: 600; color: var(--ink-3);
 }
-.steps b { display: block; font-size: 14px; }
-.steps span { display: block; font-size: var(--fs-body-sm); color: var(--ink-2); margin-top: 2px; }
+/* The other screens a rail points to (Settings' "Also yours"): set like steps,
+   without the numerals. They are places, in no order; a numeral would rank them. */
+.also { list-style: none; margin: 0; padding: 0; }
+.also li { padding: 0 0 18px; }
+.steps b, .also b { display: block; font-size: 14px; }
+.steps span, .also span { display: block; font-size: var(--fs-body-sm); color: var(--ink-2); margin-top: 2px; }
 
 .findings { list-style: none; margin: 0; padding: 0; }
 .findings > li { padding: var(--space-3) 0; border-bottom: 1px solid var(--rule); }
@@ -2393,15 +2407,34 @@ button.switch { background: none; border: 0; padding: 0; color: var(--ink); font
 .sg .pane { padding: var(--space-5); border: 1px solid var(--rule); border-radius: var(--radius-4); background: var(--ground); color: var(--ink); }
 .sg .pane h3 { margin-bottom: var(--space-4); }
 .sg .row { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center; margin-bottom: var(--space-3); }
+/* The surfaces that float, shown open: the menu drops into the room the row keeps under it. */
+.sg .floats { align-items: flex-start; min-height: 200px; }
+.sg .floats > .has-tip { margin-left: 200px; }
+.sg .floats > .toast { margin-left: auto; }
+/* On a phone they stack in the column, each in the room it takes: the menu under its button,
+   the tooltip over its own, its words wrapped. */
+@media (max-width: 640px) {
+  .sg .floats { flex-direction: column; min-height: 0; }
+  .sg .floats .menu { position: static; margin-top: var(--space-1); }
+  .sg .floats > .has-tip { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 6px; margin-left: 0; }
+  .sg .floats .tooltip { position: static; transform: none; white-space: normal; }
+  .sg .floats > .toast { margin-left: 0; flex-wrap: wrap; padding-block: var(--space-2); }
+}
 .sg .states { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-3); align-items: start; }
 .sg .state { display: flex; flex-direction: column; gap: 6px; }
 .sg .state .k { margin: 0; }
 .sg .scale li { display: grid; grid-template-columns: 120px 1fr auto; gap: var(--space-4); align-items: baseline; padding: var(--space-2) 0; border-bottom: 1px solid var(--rule); }
 .sg .scale { list-style: none; margin: 0; padding: 0; }
 .sg .scale code { font-size: var(--fs-mono); }
+/* On a phone the token and its class share a line, and the sample takes the one under it. */
+@media (max-width: 640px) {
+  .sg .scale li { grid-template-columns: minmax(0, 1fr) auto; }
+  .sg .scale li > span { grid-row: 2; grid-column: 1 / -1; }
+}
 .sg .spaces { display: flex; align-items: flex-end; gap: var(--space-3); }
 .sg .spaces div { background: var(--green-mark); border-radius: 2px; }
 .sg .tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
+@media (max-width: 640px) { .sg .tiers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sg .tier { padding: var(--space-4); border-radius: var(--radius-4); border: 1px solid var(--rule); min-height: 96px; font-size: var(--fs-body-sm); }
 .sg .tier.t0 { background: var(--ground); }
 .sg .tier.t1 { background: var(--surface-1); }

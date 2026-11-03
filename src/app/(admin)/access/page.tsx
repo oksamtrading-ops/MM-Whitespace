@@ -85,56 +85,58 @@ export default async function AccessReview() {
       </Section>
 
       <Section id="accounts" title="Accounts" index={4}>
-        <table className="accounts">
-          <caption>Every change is written to the audit log with the actor and the target.</caption>
-          <thead>
-            <tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last sign-in</th>
-                <th scope="col">Status</th>
-                <th scope="col" className="act"><span className="sr-only">Action</span></th></tr>
-          </thead>
-          <tbody>
-            {users.map((u) => {
-              const days = daysAgo(u.last_sign_in_at);
-              const isStale = u.is_active === 1 && (days === null || days > STALE_DAYS);
-              const self = u.id === ctx.user.id;
-              return (
-                <tr key={u.id}>
-                  <th scope="row">{u.email}{self && <span className="pill quiet you">you</span>}</th>
-                  <td><RoleSelect userId={u.id} role={u.role} self={self} /></td>
-                  <td>
-                    {u.last_sign_in_at
-                      ? <>{fmtDate(u.last_sign_in_at)}{" "}
-                          {/* One expression, so React does not split the parens off into their
-                              own text nodes with comment markers between them. */}
-                          <span className="meta">{`(${agoLabel(days as number)})`}</span></>
-                      : <span className="meta">never</span>}
-                    {isStale && <> <span className="pill warn"><Icon name="clock-alert" size={12} />review</span></>}
-                  </td>
-                  <td>
-                    {u.is_active
-                      ? <span className="pill ok"><Icon name="circle-check" size={12} />active</span>
-                      : <span className="pill no"><Icon name="user-x" size={12} />deactivated</span>}
-                  </td>
-                  <td className="act">
-                    <form action={setActive} className="inline">
-                      <input type="hidden" name="userId" value={u.id} />
-                      <input type="hidden" name="active" value={u.is_active ? "0" : "1"} />
-                      <ActiveButton label={u.is_active ? "Deactivate" : "Reactivate"}
-                                    disabled={self && u.is_active === 1} />
-                    </form>
-                    {/* Not offered for yourself: it would revoke your own
-                        session mid-request. /password is where an Admin
-                        changes their own. Not offered for a deactivated
-                        account either -- giving somebody a credential for an
-                        account that refuses them is a way to look like access
-                        was restored when it was not. */}
-                    {!self && u.is_active === 1 && <TempPasswordButton userId={u.id} />}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="tablewrap">
+          <table className="accounts">
+            <caption>Every change is written to the audit log with the actor and the target.</caption>
+            <thead>
+              <tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last sign-in</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" className="act"><span className="sr-only">Action</span></th></tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const days = daysAgo(u.last_sign_in_at);
+                const isStale = u.is_active === 1 && (days === null || days > STALE_DAYS);
+                const self = u.id === ctx.user.id;
+                return (
+                  <tr key={u.id}>
+                    <th scope="row">{u.email}{self && <span className="pill quiet you">you</span>}</th>
+                    <td><RoleSelect userId={u.id} role={u.role} self={self} /></td>
+                    <td>
+                      {u.last_sign_in_at
+                        ? <>{fmtDate(u.last_sign_in_at)}{" "}
+                            {/* One expression, so React does not split the parens off into their
+                                own text nodes with comment markers between them. */}
+                            <span className="meta">{`(${agoLabel(days as number)})`}</span></>
+                        : <span className="meta">never</span>}
+                      {isStale && <> <span className="pill warn"><Icon name="clock-alert" size={12} />review</span></>}
+                    </td>
+                    <td>
+                      {u.is_active
+                        ? <span className="pill ok"><Icon name="circle-check" size={12} />active</span>
+                        : <span className="pill no"><Icon name="user-x" size={12} />deactivated</span>}
+                    </td>
+                    <td className="act">
+                      <form action={setActive} className="inline">
+                        <input type="hidden" name="userId" value={u.id} />
+                        <input type="hidden" name="active" value={u.is_active ? "0" : "1"} />
+                        <ActiveButton label={u.is_active ? "Deactivate" : "Reactivate"}
+                                      disabled={self && u.is_active === 1} />
+                      </form>
+                      {/* Not offered for yourself: it would revoke your own
+                          session mid-request. /password is where an Admin
+                          changes their own. Not offered for a deactivated
+                          account either -- giving somebody a credential for an
+                          account that refuses them is a way to look like access
+                          was restored when it was not. */}
+                      {!self && u.is_active === 1 && <TempPasswordButton userId={u.id} />}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </Section>
     </div>
     </Page>

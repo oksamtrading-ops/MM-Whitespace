@@ -64,29 +64,31 @@ export default async function Merge(
       {pair && (
         <Section id="pair" title={`${(await pair).loser.name} and ${(await pair).winner.name}`} index={1}
                  caption="A merge is a redirect, not a deletion: the row merged away keeps its id, so every frozen snapshot that pointed at it still resolves.">
-          <table>
-            <thead><tr><th scope="col">What moves</th><th scope="col" className="n">Rows</th></tr></thead>
-            <tbody>
-              {(await pair).moves.length === 0
-                ? <tr><td colSpan={2} className="meta">Nothing is recorded against it yet.</td></tr>
-                :(await pair).moves.map((m) => (
-                    <tr key={m.table}>
-                      <td><code>{m.table}</code></td>
-                      <td className="n">{m.rows}</td>
-                    </tr>
-                  ))}
-              {(await pair).duplicates > 0 && (
+          <div className="tablewrap">
+            <table>
+              <thead><tr><th scope="col">What moves</th><th scope="col" className="n">Rows</th></tr></thead>
+              <tbody>
+                {(await pair).moves.length === 0
+                  ? <tr><td colSpan={2} className="meta">Nothing is recorded against it yet.</td></tr>
+                  :(await pair).moves.map((m) => (
+                      <tr key={m.table}>
+                        <td><code>{m.table}</code></td>
+                        <td className="n">{m.rows}</td>
+                      </tr>
+                    ))}
+                {(await pair).duplicates > 0 && (
+                  <tr>
+                    <td className="meta">already recorded on the other, so dropped</td>
+                    <td className="n">{(await pair).duplicates}</td>
+                  </tr>
+                )}
                 <tr>
-                  <td className="meta">already recorded on the other, so dropped</td>
-                  <td className="n">{(await pair).duplicates}</td>
+                  <td className="meta">published rows, left exactly as published</td>
+                  <td className="n">{(await pair).frozenRevisions}</td>
                 </tr>
-              )}
-              <tr>
-                <td className="meta">published rows, left exactly as published</td>
-                <td className="n">{(await pair).frozenRevisions}</td>
-              </tr>
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
           <div style={{ marginTop: 24 }}>
             <MergeForm a={{ id:(await pair).winner.id, name:(await pair).winner.name }}
                        b={{ id:(await pair).loser.id, name:(await pair).loser.name }}
@@ -100,30 +102,32 @@ export default async function Merge(
                  ? "Nothing looks duplicated. Every company in the population has one row."
                  : "Strongest evidence first. An identifier is evidence; a similar name is a hunch, and is labelled as one."}>
         {candidates.length > 0 && (
-          <table>
-            <thead>
-              <tr><th>One company?</th><th>Why</th><th>Evidence</th><th></th></tr>
-            </thead>
-            <tbody>
-              {candidates.map((c) => (
-                <tr key={`${c.aId}:${c.bId}`}>
-                  <td>{c.aName}<br /><span className="meta">{c.bName}</span></td>
-                  <td>{reasonLabel(c.reason)}<br />
-                    <span className="meta">{c.detail}</span></td>
-                  <td>
-                    <span className={`pill ${c.strength === 1 ? "ok" : c.strength === 2 ? "quiet" : "warn"}`}>
-                      {STRENGTH_WORD[c.strength]}
-                    </span>
-                  </td>
-                  <td>
-                    <Link className="btn quiet"
-                          href={`/companies/merge?a=${c.aId}&b=${c.bId}` as Route}
-                          prefetch={false}>Look</Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr><th>One company?</th><th>Why</th><th>Evidence</th><th></th></tr>
+              </thead>
+              <tbody>
+                {candidates.map((c) => (
+                  <tr key={`${c.aId}:${c.bId}`}>
+                    <td>{c.aName}<br /><span className="meta">{c.bName}</span></td>
+                    <td>{reasonLabel(c.reason)}<br />
+                      <span className="meta">{c.detail}</span></td>
+                    <td>
+                      <span className={`pill ${c.strength === 1 ? "ok" : c.strength === 2 ? "quiet" : "warn"}`}>
+                        {STRENGTH_WORD[c.strength]}
+                      </span>
+                    </td>
+                    <td>
+                      <Link className="btn quiet"
+                            href={`/companies/merge?a=${c.aId}&b=${c.bId}` as Route}
+                            prefetch={false}>Look</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Section>
     </div>
