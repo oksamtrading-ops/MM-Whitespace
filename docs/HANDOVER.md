@@ -20,12 +20,20 @@
 > - **Controls.** Every button, list, field and row of choices is one height,
 >   36px, and 28px in a table row (PRs #4 and #5). PR #5 made it hold in
 >   Safari as well.
+> - **Phones.** No page scrolls sideways at 375 or 768px, the roster keeps a
+>   column beside the names, and a filter's list opens toward the side with
+>   room (`addd39f`, `972e120`, `037d8d8`); every page fits a 320px phone
+>   too (`42a23be`). The CSS that removing Pursuit cut
+>   is back, and a touch target stays in its table row (`5eb182a`,
+>   `9c44fa8`).
 > - **Spend.** Recorded research spend is US$156.47 across fifteen runs in
 >   October and US$1.50 for one run in November.
 > - **Deployment.** Migrations are applied through `0037`.
->   **`origin/main` is deployed at `d435407`.** Local `main` is
->   ahead and not pushed: two fixes (`5eb182a`, `9c44fa8`) and this note's
->   own commit. One session's fix is not committed yet. See the top of "What is waiting on Samuel".
+>   **`origin/main` is deployed at `42a23be`**: `037d8d8` carried the five
+>   fixes above and this note, and the 320px reflow went out after it. A
+>   later commit that changes only this note may not be pushed yet; `git
+>   status` says. PR #6 (the company profile) is open and now conflicts with
+>   `main`. See the top of "What is waiting on Samuel".
 >
 > See "Done on 30 October – 3 November 2026".
 >
@@ -124,13 +132,13 @@ anything.
    the guide in `node_modules/next/dist/docs/` before writing Next.js code).
 4. Check the working tree is clean: `git status`. The only expected change is
    `next-env.d.ts`, which Next regenerates on every build; never commit it.
-5. **Branches, as at 3 November.** Local `main` is **ahead of `origin/main` and not
-   pushed**: two fixes (`5eb182a`, `9c44fa8`; see the top of "What is waiting
-   on Samuel") and the commit of this note. Two branches have work that is not on `main`:
-   - **`claude/nervous-chatterjee-a09cd6`**: the Settings rail's numerals and
-     phones scrolling sideways. Its session was still running its last
-     checks on 3 November and had **not committed**. Its 13 changed files
-     are in `.claude/worktrees/nervous-chatterjee-a09cd6`.
+5. **Branches, as at 3 November.** `main` is pushed at `42a23be` and
+   deployed; only a later edit of this note may be ahead. Two pieces of
+   work are not on `main`:
+   - **`fix/profile-layout` (`976cabf`), PR #6**: the company profile's
+     layout. It was built on `d435407` and now conflicts with `main` in
+     `src/app/(viewer)/companies/[id]/page.tsx` and `src/app/globals.css`
+     (see the top of "What is waiting on Samuel").
    - **`claude/cool-sinoussi-fb57b1` (`be511a7`)**: item 2. It now conflicts
      with `main` in two files.
 
@@ -147,6 +155,10 @@ anything.
    | `claude/confident-shamir-6b42de` | `0856f67` |
    | `claude/dazzling-bardeen-7817d8` | `5eb182a` |
    | `claude/wizardly-bohr-8a283a` | `9c44fa8` |
+   | `claude/nervous-chatterjee-a09cd6` | `addd39f` |
+   | `claude/goofy-wozniak-4b087b` | `addd39f`, `972e120` |
+   | `claude/recursing-khorana-51fb6c` | `037d8d8` |
+   | `claude/great-colden-e365d1` | `42a23be` (the same commit) |
 
    `git cherry main <branch>` prints `-` for a commit that is already
    there. Those branches, and every branch `git branch --merged main`
@@ -154,39 +166,21 @@ anything.
 
 ## What is waiting on Samuel
 
-**First, three things from 3 November.** They come before the numbered
+**First, two things from 3 November.** They come before the numbered
 items, which keep their numbers because the rest of this note cites them.
 
-- **Ship local `main`, after the gates.** Two fixes are on local `main` and
-  not pushed:
-  - `5eb182a` brings back the CSS that removing Pursuit cut by mistake
-    (b9c6318, 13 October): the review board's queue tiles, the gate lines on
-    `/review`, `/publish` and `/upload/[id]`, the loading skeletons, and
-    the Access table's cells. Since 13 October the queue was a bulleted list
-    of links and the skeletons were invisible.
-  - `9c44fa8` fixes two touch-screen faults. A button's target in a table
-    row now stays inside the row; at 44px it reached into the next row, so
-    a tap at the foot of one account's Deactivate pressed the next
-    account's. The loading spinner now turns instead of sliding.
-
-  Each passed the full gates in its own session. On the combined `main`
-  only the class and contrast checks have run so far. Add the Settings fix
-  (next point), then run tsc, the unit tests, `next build` and the isolated
-  e2e on the whole. Push only on Samuel's yes, because a push to `main`
-  deploys. Every other fix went through a PR, merged by rebase.
-- **The Settings fix is not committed yet.** It is in the session "Fix the
-  Settings rail numerals and phone sideways scroll", on branch
-  `claude/nervous-chatterjee-a09cd6`. It fixes two faults:
-  - the Settings rail's step numbers drawn over "Access review" and
-    "Publish";
-  - pages that scroll sideways on a 375px phone: `/companies`,
-    `/companies/<id>`, `/access`, `/publish`, `/settings` and
-    `/styleguide`.
-
-  On 3 November it passed 222 page views on `d435407` and was running its
-  last sweeps, tests, build and e2e before committing. It reported one
-  overflow left for a follow-up: the `/companies` picker pop-ups, with
-  every `details` forced open. Open that session to see how far it got.
+- **PR #6, the company profile, now conflicts with `main`.**
+  https://github.com/oksamtrading-ops/MM-Whitespace/pull/6 (`fix/profile-layout`,
+  `976cabf`) relays out `/companies/<id>`. It was built on `d435407`. Since
+  then `addd39f` wrapped the profile's provenance table in a `.tablewrap`
+  so it scrolls inside its box on a phone, and `42a23be` changed the
+  trace's rule key (it carries its own space, without padding) so a
+  profile fits 320px. PR #6 rewrote the same page and the trace's CSS, so
+  `src/app/(viewer)/companies/[id]/page.tsx` and `src/app/globals.css`
+  conflict; doc 18 merges cleanly. Rebase it on `main`, keep the
+  `.tablewrap`, and take PR #6's trace; then check that every profile still
+  fits 320px without scrolling sideways, run every gate, and merge by
+  rebase on Samuel's word.
 - **Touch targets for lists and fields: Samuel's call.** On a touch screen
   a button's target is 44px, or 36px in a table row since `9c44fa8`. Lists,
   fields, chips and choices stay at 36px, above WCAG 2.2 AA's 24px. Doc 08
@@ -376,7 +370,12 @@ On 3 November, at Samuel's word each time:
 - PRs #3, #4 and #5 were merged into `main` by rebase, and so deployed;
 - auto-merge was tried for PR #5 and refused, because the repository does
   not allow it, so nothing was changed;
-- two side branches were cherry-picked onto local `main`, not pushed.
+- five side-session commits were cherry-picked onto `main` (`5eb182a`,
+  `9c44fa8`, `addd39f`, `972e120`, `037d8d8`). Every gate passed on the
+  whole, and `main` was pushed at `037d8d8` and deployed (deployment
+  `7532788429`); the live stylesheet carries each change;
+- the 320px session pushed its own commit, `42a23be`, straight onto
+  `037d8d8` (deployment `7533137485`; all eight checks passed).
 
 To measure the controls in Safari, Claude also opened Safari windows on
 Samuel's Mac. They loaded only a page on `localhost` that framed the local
@@ -459,8 +458,7 @@ source" is true on screen.
 
 Stack: Next.js 16.3.4, React 19.2.8, TypeScript 7.0.2, `pg` 8.23.0, Node 24.14.1.
 Python 3.9.6 locally and 3.12 on Vercel, `openpyxl` 3.1.5. Production runs
-`d435407` (`origin/main`). Local `main` adds two fixes (`5eb182a`, `9c44fa8`)
-and this note, none of them pushed.
+`42a23be` (`origin/main`).
 
 Design-phase briefing (private artifact):
 https://claude.ai/code/artifact/3b403f16-632e-4fff-9ef3-3e33ca172270
@@ -592,9 +590,39 @@ has no data for.
 - **Deliberate exception:** on a phone the dashboard's auditor and "globe
   shows" choices wrap onto a second line and grow.
 
-**On local `main`, not pushed** (3 November): `5eb182a` (the restored CSS)
-and `9c44fa8` (the touch targets). See the top of "What is waiting on
-Samuel".
+**Five fixes from side sessions**, cherry-picked onto `main`, every gate run
+on the whole, and pushed together at `037d8d8` (3 November):
+- `5eb182a` brings back the CSS that removing Pursuit cut by mistake
+  (`b9c6318`, 13 October): the review board's queue tiles, the gate lines on
+  `/review`, `/publish` and `/upload/[id]`, the loading skeletons, and the
+  Access table's cells. Since 13 October the queue had been a bulleted list
+  of links and the skeletons invisible.
+- `9c44fa8`: on a touch screen a button's target in a table row stays in
+  the row. At 44px it reached into the next row, so a tap at the foot of one
+  account's Deactivate pressed the next account's. The loading spinner turns
+  instead of sliding.
+- `addd39f`: no page scrolls sideways at 375 or 768px, for any role. A
+  table that can outgrow its column sits in a `.tablewrap` and scrolls
+  there. A scroller holding `.sr-only` words is positioned, or the words
+  escape and widen the page. Settings' "Also yours" rail (`.also`) no
+  longer draws step numerals over its two links.
+- `972e120`: at 640px and under, the roster's Company column takes at most
+  40% of the box, and every other column at most the 60% beside it.
+- `037d8d8`: a `/companies` filter's list opens toward the side with room,
+  so it stays in the window; `align` and `.picker-end` are gone.
+
+After them, its own session pushed `42a23be`: every page fits a 320px phone
+(WCAG 2.1's reflow width). A rule's key in the trace carries its own space
+instead of padding, a table's sentence and the heat map's key sit under
+their box instead of in a caption, a dialog's buttons wrap, the tooltip
+wraps at 280px, and the invite form's list clips its words, which Safari
+otherwise counts toward the page's width.
+
+Each passed the full gates in its own session. The phone, roster, filter
+and 320px fixes were measured page by page in headless Chrome on the
+synthetic showcase, and the roster, filter and 320px fixes in Safari 26.6.2
+as well. Claude's memory notes on the roster, the filter lists and the
+320px reflow hold their traps.
 
 ### Done on 22 October 2026 — the ERP change field, run `c4c761ec`, revision 4
 
@@ -2126,14 +2154,14 @@ As at 3 November 2026, in the order worth doing:
 
 | | | Whose |
 |---|---|---|
-| **a** | **Ship local `main`:** commit the Settings fix in its session, put it onto `main` beside `5eb182a` and `9c44fa8`, run every gate on the whole, then push (see the top of "What is waiting on Samuel") | the Settings session, then Samuel's yes to push |
+| **a** | **PR #6:** rebase it on `main` past its conflicts in the profile page and `globals.css`, check every profile still fits 320px, and run every gate (see the top of "What is waiting on Samuel") | Claude, then Samuel's word to merge |
 | **b** | **The two review defects still on `main`** (item 2): take the dialog's `onClose` fix and `bulkOffer` from `be511a7`, and decide whether its by-company empty-cell override is still wanted now that `a926ec8` overrides from the find box | Samuel's decision |
 | **c** | **Tier the 12 unclassified companies** and **research fees for the 82 companies added at C$100M**, so fee coverage rises from 35.9% (item 1) | Samuel's decision (paid runs), then Samuel or Kay on `/review` |
 | **d** | **Review what research found and no revision used yet**: the 21 October afternoon runs beyond the fees, run `c4c761ec`'s proposals, and runs `daf298f2`, `825a61b3` and `83159070` beyond what revisions 5 and 6 took (item 1) | Samuel or Kay on `/review` |
 | **e** | **What the gate still flags and the two duplicate records**, Osisko Development and Fuerte. Read the live gate on `/publish` and `/companies/merge`; six of the fourteen commodity conflicts were not named as settled (item 1) | Samuel or Kay; the merges are Samuel's call |
 | **f** | **China Gold's auditor**, and the other flagged rows on `/review` (item 1) | the practice, then Samuel or Kay |
 | **g** | **The ERP change for the rest of Q4.** Research has an ERP change finding for 94 of the 348 companies. Decide first whether "completed" should be measured from the fiscal year-end rather than the period date (Cameco). Then pilot option B of `reference/erp-research-options.md` | Samuel's decision (paid runs) |
-| **h** | **Touch targets for lists and fields** (44px under `pointer: coarse`, or keep 36px), and the `/companies` picker pop-ups that overflow on a phone with every `details` open | Samuel's call; the overflow is a follow-up for the Settings session |
+| **h** | **Touch targets for lists and fields** (44px under `pointer: coarse`, or keep 36px) | Samuel's call |
 | **i** | **The companies still without an audit fee**: most TSXV circulars are on SEDAR+ only, which Decision 1 rules out | a decision about sources, not a build |
 | **j** | **`pg:smoke`** (item 4) | Samuel's terminal |
 | **k** | **Unblock the second Admin** (item 5) | Samuel, on `/access` |
@@ -2141,7 +2169,7 @@ As at 3 November 2026, in the order worth doing:
 | **m** | **Spikes S2 and S4**: fee-disclosure coverage, and opening the export in Excel | investigations, not builds |
 | **n** | **Rotate the Resend key**, which was pasted into a chat once | Samuel |
 | **o** | **Deloitte SSO**, the last hardening item. One seam | waits on a decision, not on code |
-| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections), ~~revision 12~~ (20 Oct), ~~the document backfill~~ (20 Oct, by SQL), ~~roll forward to Q4~~ (20 Oct), ~~Run 3 pass 1 and its SEC registrant correction~~ (20 Oct), ~~pass 2 for Q4~~ (20 Oct), ~~its review and Q4 revision 1~~ (21 Oct), ~~pass 2's fee search, former names, and Q4 revisions 2 and 3~~ (21 Oct), ~~the ERP change field, run `c4c761ec` and Q4 revision 4~~ (22 Oct), ~~Q4 widened to C$100M~~ (30 Oct), ~~the SSRF guard's 192.0.0.0/16~~ (31 Oct), ~~the gate's held quotes, overrides where research found nothing, Q4 revisions 5 and 6~~ (1 Nov), ~~the globe dashboard~~ (3 Nov), ~~one control height, in Safari too~~ (3 Nov) | done |
+| — | ~~Release B~~ (12 Oct), ~~Viewers see the Deloitte market~~ (12 Oct), ~~re-run the ten trial companies~~ (13 Oct), ~~Barrick's fee currency~~ (18 Oct, US dollars), ~~the review brief's 15 items and revision 10~~ (18 Oct), ~~revision 11~~ (20 Oct, without its two corrections), ~~revision 12~~ (20 Oct), ~~the document backfill~~ (20 Oct, by SQL), ~~roll forward to Q4~~ (20 Oct), ~~Run 3 pass 1 and its SEC registrant correction~~ (20 Oct), ~~pass 2 for Q4~~ (20 Oct), ~~its review and Q4 revision 1~~ (21 Oct), ~~pass 2's fee search, former names, and Q4 revisions 2 and 3~~ (21 Oct), ~~the ERP change field, run `c4c761ec` and Q4 revision 4~~ (22 Oct), ~~Q4 widened to C$100M~~ (30 Oct), ~~the SSRF guard's 192.0.0.0/16~~ (31 Oct), ~~the gate's held quotes, overrides where research found nothing, Q4 revisions 5 and 6~~ (1 Nov), ~~the globe dashboard~~ (3 Nov), ~~one control height, in Safari too~~ (3 Nov), ~~the restored CSS, touch targets in table rows, phones without sideways scroll, the roster on a phone and the filter lists~~ (3 Nov, `037d8d8`), ~~every page at 320px~~ (3 Nov, `42a23be`) | done |
 
 Rename the Vercel project, the URL and the repository only if Samuel decides
 to; they are outward-facing.
