@@ -293,7 +293,8 @@ Every component in `src/app/_ui` and every pattern in `globals.css`, with its st
 | Sign-in `.signin` | password, dev roles | pending | lockup, orb | two fields and one button | — |
 | Change password `.signin` | forced and voluntary | pending | lockup, orb | three fields and one button | — |
 | State bar `.statebar` | eight states | — | brand-fill, green-line, warn, alert, demote | labelled | — |
-| Trace `.trace` | fired / not | — | green-mark, ink-3 | fired state in sr-only text | — |
+| Trace `.trace` | fired / not; one row per rule: mark, rule, inputs | — | green-mark and green-soft on the fired row, ink-3 | fired state in sr-only text; inputs a `dl` | Don't let a rule's inputs share its column: they take a fixed column of their own, and go under the rule below 640px |
+| Evidence at a glance `.glance` | under the trace, two columns read downward | link hover | strip, figure-sm | a labelled list; each field links to its row of every value | Don't cap the list: the weakest value is the one worth seeing |
 | Verdict `.verdict` | tier / unclassified | — | figure-lg | a sentence | — |
 | **Tooltip** `.tip > .bubble` | on the collapsed rail and icon-only controls | visible on hover and focus-within | surface-3, shadow-2 | `role="tooltip"`; never the only carrier of a value | Don't put a control inside |
 | **Toast** `.toast` | default / alert / warn | — | surface-3, green-mark | `role="status"`, one at a time, bottom left | Don't stack more than one |
