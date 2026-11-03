@@ -132,7 +132,9 @@
   --row-h-dense: 36px;
   /* Every button, list, field and row of choices is one height, so a row of
      controls lines up; in a table row it is the smaller one, which fits the
-     row, compact rows too. */
+     row, compact rows too. A list takes it as `height`, never `min-height`:
+     Safari's own theme replaces a styled list's min-height with 15px, and
+     the list then shrinks to fit its text. */
   --control-h: 36px;
   --control-h-row: 28px;
   --bp-sm: 640px; --bp-md: 860px; --bp-lg: 1100px; --bp-xl: 1240px; /* documentation; media queries repeat them */
@@ -943,7 +945,7 @@ td.wrap, th.wrap { vertical-align: top; padding-top: 9px; padding-bottom: 9px; w
   text-transform: uppercase; color: var(--ink-3);
 }
 .invite input[type="email"], .invite select, .rolepick select {
-  font: inherit; min-height: var(--control-h); padding: 0 var(--space-2);
+  font: inherit; height: var(--control-h); padding: 0 var(--space-2);
   border: 1px solid var(--input-border); border-radius: var(--radius);
   background: var(--input-bg); color: var(--ink);
 }
@@ -956,7 +958,7 @@ td.wrap, th.wrap { vertical-align: top; padding-top: 9px; padding-bottom: 9px; w
   display: block; font-size: 17px; letter-spacing: 0.04em; user-select: all;
   margin-bottom: var(--space-2); color: var(--ink);
 }
-.rolepick select { min-height: var(--control-h-row); font-size: var(--fs-body-sm); }
+.rolepick select { height: var(--control-h-row); font-size: var(--fs-body-sm); }
 .rolepick select:disabled { opacity: 0.7; cursor: not-allowed; }
 
 td.act, th.act { text-align: right; padding-right: var(--space-2); white-space: nowrap; }
@@ -1598,7 +1600,7 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
 .commit input:focus, .commit textarea:focus, .commit select:focus { border-color: var(--green-mark); }
 .commit .hint { display: block; font-size: var(--fs-body-sm); color: var(--ink-3); margin-top: var(--space-2); }
 .commit select {
-  font: inherit; font-size: var(--fs-body); width: 100%; min-height: var(--control-h); padding: 0 var(--space-3);
+  font: inherit; font-size: var(--fs-body); width: 100%; height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius);
   background: var(--input-bg); color: var(--ink);
 }
@@ -1666,7 +1668,7 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .map-switch { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); }
 .map-switch label { font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); }
 .map-switch select {
-  font: inherit; font-size: var(--fs-body-sm); min-height: var(--control-h); padding: 0 var(--space-3);
+  font: inherit; font-size: var(--fs-body-sm); height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
 }
 .map-switch select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -1736,7 +1738,7 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
   background: var(--ground); border-bottom: 1px solid var(--rule);
 }
 .lensbar .map-switch { margin: 0; }
-.lensbar select, .lensbar .map-switch select { min-height: var(--control-h); max-width: 12rem; padding: 0 var(--space-2); border-radius: var(--radius-2); font-size: var(--fs-body-sm); }
+.lensbar select, .lensbar .map-switch select { height: var(--control-h); max-width: 12rem; padding: 0 var(--space-2); border-radius: var(--radius-2); font-size: var(--fs-body-sm); }
 .lensbar .sel { display: inline-flex; align-items: center; gap: var(--space-2); }
 .lensbar .sel > span { font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); }
 .lensbar .sel select { font: inherit; font-size: var(--fs-body-sm); border: 1px solid var(--input-border); background: var(--input-bg); color: var(--ink); }
