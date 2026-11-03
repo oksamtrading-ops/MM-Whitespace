@@ -23,6 +23,7 @@ export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; p
   const frames = useMemo(() => briefFrames(atlas, periodTitle, everyOffice), [atlas, periodTitle, everyOffice]);
   const discMax = Math.max(1, ...everyOffice.map((o) => o.n));
   const dialog = useRef<HTMLDialogElement | null>(null);
+  const inner = useRef<HTMLDivElement | null>(null);
   const [i, setI] = useState(0);
   const [black, setBlack] = useState(false);
   const [twin, setTwin] = useState(false);
@@ -37,6 +38,9 @@ export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; p
     if (!d?.open || a === d) return;
     if (!(a instanceof HTMLElement) || !d.contains(a) || a.closest(".brief-in.black")) d.focus();
   }, [i, black, twin]);
+  // On a phone a frame can be taller than the screen, and the brief scrolls:
+  // each frame opens at its top, not where the last one was left.
+  useLayoutEffect(() => { inner.current?.scrollTo(0, 0); }, [i]);
 
   const f = frames[i];
   const cs = useMemo(() => applyLens(atlas.companies, { ...NO_LENS, firm: f.firm }), [atlas, f.firm]);
@@ -76,7 +80,7 @@ export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; p
 
   return (
     <dialog ref={dialog} className="brief" aria-label={`Brief: ${periodTitle}`} tabIndex={-1} onClose={onClose}>
-      <div className={`brief-in${black ? " black" : ""}${twin ? " twin" : ""}`}>
+      <div ref={inner} className={`brief-in${black ? " black" : ""}${twin ? " twin" : ""}`}>
         {!twin && (
           <div className="brief-globe">
             <Globe steps={steps} tone={f.firm === "whitespace" ? "grey" : "green"} selected={null} discs={discs} discMax={discMax}
@@ -104,9 +108,9 @@ export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; p
             {frames.map((x, j) => <span key={x.id} className={j === i ? "on" : undefined} />)}
           </span>
           <span className="keys" aria-hidden="true"><kbd>←</kbd><kbd>→</kbd> move · <kbd>B</kbd> black · <kbd>T</kbd> table · <kbd>Esc</kbd> leave</span>
-          <button type="button" className="btn quiet sm" onClick={() => go(-1)} aria-disabled={i === 0} aria-label="Previous frame"><Icon name="arrow-left" size={14} /></button>
-          <button type="button" className="btn quiet sm" onClick={() => go(1)} aria-disabled={i === frames.length - 1} aria-label="Next frame"><Icon name="arrow-right" size={14} /></button>
-          <button type="button" className="btn quiet sm" onClick={() => dialog.current?.close()} aria-label="Leave the brief"><Icon name="x" size={14} /></button>
+          <button type="button" className="btn quiet sm icon-only" onClick={() => go(-1)} aria-disabled={i === 0} aria-label="Previous frame"><Icon name="arrow-left" size={14} /></button>
+          <button type="button" className="btn quiet sm icon-only" onClick={() => go(1)} aria-disabled={i === frames.length - 1} aria-label="Next frame"><Icon name="arrow-right" size={14} /></button>
+          <button type="button" className="btn quiet sm icon-only" onClick={() => dialog.current?.close()} aria-label="Leave the brief"><Icon name="x" size={14} /></button>
         </footer>
       </div>
     </dialog>

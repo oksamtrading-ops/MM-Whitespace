@@ -151,7 +151,7 @@ The reading measure is 880px with the 232px right rail at 1100px and above; that
 
 **The all-companies table** (`/companies`, the `.roster`) is full width, 259 rows, no pagination. Columns in this order: Company (sticky, row header), Ticker, Exchange, Tier, Stage, Footprint, Deloitte market, Auditor, Market cap. Every header sorts on click and announces `aria-sort`; the find box takes `/`; "Whitespace only" is a pressed button; `?province=BC` narrows to companies with a property there, which is where the map's hover link lands. Stage is derived from the published tier, never from live stage rows, so a Viewer cannot see a stage that is not yet published. Market cap is the compact Canadian figure in Archivo, right-aligned.
 
-**Tables have one anatomy and three densities.** Rows are 36px and middle-aligned by default, 30px compact, 44px roomy; a cell holding prose, a form or a disclosure takes `.wrap` and grows. The header is a quiet band — 12px medium in secondary ink on surface-2 — because a column name should not out-weigh the data under it; the old 11px uppercase at .08em tracking over a solid ink rule did. Numbers are Archivo, tabular, right-aligned, always. The action column is right-aligned, tight, and holds a 28px control that fits inside its own row. Every header cell carries a `scope`.
+**Tables have one anatomy and three densities.** Rows are 36px and middle-aligned by default, 30px compact, 44px roomy; a cell holding prose, a form or a disclosure takes `.wrap` and grows. The header is a quiet band — 12px medium in secondary ink on surface-2 — because a column name should not out-weigh the data under it; the old 11px uppercase at .08em tracking over a solid ink rule did. Numbers are Archivo, tabular, right-aligned, always. The action column is right-aligned, tight, and holds a 28px control that fits inside its own row; a button anywhere in a row, and the access table's role list, are 28px too. Every header cell carries a `scope`.
 
 **Acceptance.** At 1440px the roster shows all its columns without a horizontal scrollbar; at 1024px the first column and the header stay put while the rest scrolls. No control in a table row is taller than the row.
 
@@ -279,7 +279,7 @@ Every component in `src/app/_ui` and every pattern in `globals.css`, with its st
 | Evidence strip `.ev` | four bands | — | green-mark, warn, alert | strip hidden; numeral and word visible | Don't show a strip without its numeral |
 | Evidence panel `.evidence` | with diff / editor / flag | cross-fade | surface-1, rule | a labelled region referenced by `aria-describedby` | Don't make it a tooltip |
 | Diff `.diff` | — | — | rule, surface-1 | two named cells | Don't pre-select |
-| Buttons `.btn` | primary / default / secondary / quiet / danger; 44px `lg`, 36px default, 28px `sm`, `icon-only` square | hover, active (1px press), pressed, disabled, loading | brand-fill and on-brand for primary; btn-bg, rule-raised, alert-edge | `aria-pressed` on a toggle, `aria-busy` and a kept label when loading, an `aria-label` when icon-only | Do use danger for the one control that takes something away. Don't style an action as a text link, and don't change width while loading |
+| Buttons `.btn` | primary / default / secondary / quiet / danger; one height, `--control-h` 36px, and `--control-h-row` 28px in a table row; `sm` a smaller label at that height; `icon-only` square | hover, active (1px press), pressed, disabled, loading | brand-fill and on-brand for primary; btn-bg, rule-raised, alert-edge | `aria-pressed` on a toggle, `aria-busy` and a kept label when loading, an `aria-label` when icon-only | Do use danger for the one control that takes something away. Don't style an action as a text link, and don't change width while loading |
 | Filters `.filters` | chips with counts | current | ink, on-ink | links with `aria-current` | — |
 | Find `.find` | in tools, in the palette | — | input-bg, rule | labelled, `/` focuses it | — |
 | Status line `.statusline` | — | announcement | ink-2 | `aria-live="polite"` | — |
@@ -320,7 +320,7 @@ Plain verbs, sentence case, no filler. An action keeps its name through the flow
 
 ## 14. Accessibility and print
 
-WCAG 2.1 AA is the floor. Text 4.5:1 and non-text 3:1 in both themes, by script. **Targets: 44px where the obligation applies.** WCAG 2.1's 44px rule is AAA, not AA, and a 44px control in a 36px table row is the defect it produced here; so a button is 36px tall on a fine pointer and 28px in a table row, and a pseudo-element expands every button's target to 44px under `@media (pointer: coarse)`, which is where a thumb actually needs it. One tab stop with a roving index in the grid; a polite live region for every decision; the evidence panel a labelled region, never a tooltip. Focus indicators are 2px in `--focus` with 2px offset, which is the darkened green on light and the brand on dark. At 200% zoom the grid scrolls horizontally under the data-table exception while the toolbar and filters reflow; the roster does the same. Forced-colours mode: bars, gauges, the state bar and the map keep `forced-color-adjust: none` and take `CanvasText` and `GrayText`, the selected row takes a `Highlight` outline, the orb disappears. Reduced motion: section 7.
+WCAG 2.1 AA is the floor. Text 4.5:1 and non-text 3:1 in both themes, by script. **Targets: 44px where the obligation applies.** WCAG 2.1's 44px rule is AAA, not AA, and a 44px control in a 36px table row is the defect it produced here; so a button, like every list, field and row of choices beside it, is 36px tall and 28px in a table row, and a pseudo-element expands every button's target to 44px under `@media (pointer: coarse)`, which is where a thumb actually needs it. Only a `.btn` carries one; a list, a field, a chip or a choice keeps its own height there, above the 24px minimum of WCAG 2.2 AA. One tab stop with a roving index in the grid; a polite live region for every decision; the evidence panel a labelled region, never a tooltip. Focus indicators are 2px in `--focus` with 2px offset, which is the darkened green on light and the brand on dark. At 200% zoom the grid scrolls horizontally under the data-table exception while the toolbar and filters reflow; the roster does the same. Forced-colours mode: bars, gauges, the state bar and the map keep `forced-color-adjust: none` and take `CanvasText` and `GrayText`, the selected row takes a `Highlight` outline, the orb disappears. Reduced motion: section 7.
 
 Print always renders light: the `@media print` block restates the light tokens on the root, removes the rail, the header's actions, the map's readout and the toasts, flattens the tilt, opens the bars twin, keeps every footing, and ends with the three licence notices. The export workbook is the paper form of the brand: the same wordmark on its cover *[confirm the lockup]*, the same footings on every population sheet, Open Sans throughout, figures right-aligned and tabular, and no colour on any cell but the brand green on the cover's stop.
 
@@ -343,7 +343,7 @@ Ordered so the demonstration path is finished first. Effort is in engineer-days 
 | 9 | Brand assets and the object briefs | 0.5 | ✓ |
 | 10 | Before/after screenshots in both themes | 0.5 | ✓ |
 | 11 | Vendor the icon set and swap every Unicode glyph (section 8) | 0.5 | ✓ |
-| 12 | The button system: five variants, three sizes, the green primary | 0.5 | ✓ |
+| 12 | The button system: five variants, one height, the green primary | 0.5 | ✓ |
 | 13 | Status callouts, replacing `.notice` in ~30 places | 0.5 | ✓ |
 | 14 | The table system: one anatomy, three densities, `scope`, the aligned action column | 1 | ✓ |
 | 15 | Panels and the stat row, for every loose figure | 0.5 | ✓ |
@@ -359,6 +359,7 @@ Ordered so the demonstration path is finished first. Effort is in engineer-days 
 | 25 | Drill-down links from every bar into the filtered roster, and one "since last period" empty state | 1 | — |
 | 26 | The composition bar, the whitespace matrix and the tier ladder | 1.5 | ✓ |
 | 27 | The auditor donut pair and the market dot plot | 1 | ✓ |
+| 28 | One control height: every button, list, field and row of choices at `--control-h`, 36px, and 28px in a table row | 0.5 | ✓ |
 
 **Acceptance.** Steps 1–18 are in the tree; `npm run check:contrast`, `npm test` and `npm run e2e:isolated` pass on it.
 

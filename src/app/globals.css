@@ -130,6 +130,11 @@
   --rail-w: 232px;
   --row-h: 44px;
   --row-h-dense: 36px;
+  /* Every button, list, field and row of choices is one height, so a row of
+     controls lines up; in a table row it is the smaller one, which fits the
+     row, compact rows too. */
+  --control-h: 36px;
+  --control-h-row: 28px;
   --bp-sm: 640px; --bp-md: 860px; --bp-lg: 1100px; --bp-xl: 1240px; /* documentation; media queries repeat them */
 
   /* Layers. */
@@ -537,7 +542,7 @@ mark { background: var(--green-soft); color: var(--ink); padding: 0 .1em; border
 /* A phone keeps the title: an action that has an icon shows only the icon
    there, and still says its words to a screen reader. */
 @media (max-width: 640px) {
-  .pagehead .rt .btn:has(> .lbl) { width: 36px; height: 36px; padding: 0; }
+  .pagehead .rt .btn:has(> .lbl) { width: var(--control-h); padding: 0; }
   .pagehead .rt .btn > .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 
@@ -938,7 +943,7 @@ td.wrap, th.wrap { vertical-align: top; padding-top: 9px; padding-bottom: 9px; w
   text-transform: uppercase; color: var(--ink-3);
 }
 .invite input[type="email"], .invite select, .rolepick select {
-  font: inherit; min-height: 36px; padding: 0 var(--space-2);
+  font: inherit; min-height: var(--control-h); padding: 0 var(--space-2);
   border: 1px solid var(--input-border); border-radius: var(--radius);
   background: var(--input-bg); color: var(--ink);
 }
@@ -951,11 +956,15 @@ td.wrap, th.wrap { vertical-align: top; padding-top: 9px; padding-bottom: 9px; w
   display: block; font-size: 17px; letter-spacing: 0.04em; user-select: all;
   margin-bottom: var(--space-2); color: var(--ink);
 }
-.rolepick select { min-height: 30px; font-size: var(--fs-body-sm); }
+.rolepick select { min-height: var(--control-h-row); font-size: var(--fs-body-sm); }
 .rolepick select:disabled { opacity: 0.7; cursor: not-allowed; }
 
 td.act, th.act { text-align: right; padding-right: var(--space-2); white-space: nowrap; }
 td.act .btn { vertical-align: middle; }
+/* A button in a table row is the smaller height, like the list beside it, so
+   it fits inside a compact row. */
+td .btn { height: var(--control-h-row); }
+td .btn.icon-only { width: var(--control-h-row); }
 /* The two controls on a row sit side by side; the issued password unwraps
    beneath them, in the same cell, and never in a table of its own. */
 td.act .inline, td.act .temp-password { display: inline-block; margin-left: var(--space-2); }
@@ -1037,7 +1046,7 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .picker { position: relative; }
 .picker-sum {
   list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
-  height: 36px; padding: 0 11px 0 13px; border: 1px solid var(--rule-raised); border-radius: var(--radius-3);
+  height: var(--control-h); padding: 0 11px 0 13px; border: 1px solid var(--rule-raised); border-radius: var(--radius-3);
   font: 600 var(--fs-body-sm)/1 var(--font-text); color: var(--ink); background: transparent; white-space: nowrap;
 }
 .picker-sum::-webkit-details-marker { display: none; }
@@ -1056,7 +1065,7 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .picker-head { margin: 0 0 var(--space-2); font-size: var(--fs-label); letter-spacing: var(--track-label);
   text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
 .picker-find {
-  font: inherit; font-size: var(--fs-body-sm); width: 100%; min-height: 34px; padding: 0 10px; margin: 0 0 var(--space-2);
+  font: inherit; font-size: var(--fs-body-sm); width: 100%; min-height: var(--control-h); padding: 0 10px; margin: 0 0 var(--space-2);
   border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
 }
 .picker-list { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
@@ -1085,17 +1094,18 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .pill.quiet { background: var(--surface-2); color: var(--ink-2); }
 
 /* buttons ---------------------------------------------------------------
-   Five variants and three sizes. The PRIMARY is the brand green with black
+   Five variants and one height. The PRIMARY is the brand green with black
    on it -- 9.23:1 in both themes. Doc 09's "fills only" rule governs a chart
    mark whose value has to be readable another way; a control carries its own
    label inside itself, so the green is legal here and this is the one place
    the brand colour marks the most important thing on the screen.
 
-   Visual height is 36px on a fine pointer and 28px in a table row. The TOUCH
-   target is still 44px: a pseudo-element expands it on coarse pointers, where
-   the 44px obligation actually applies. */
+   Visual height is --control-h, 36px, like every list and field beside it,
+   and 28px in a table row; .sm is a smaller label at the same height. The
+   TOUCH target is still 44px: a pseudo-element expands it on coarse pointers,
+   where the 44px obligation actually applies. */
 .btn {
-  font: 600 var(--fs-body-sm)/1 var(--font-text); height: 36px; padding: 0 13px;
+  font: 600 var(--fs-body-sm)/1 var(--font-text); height: var(--control-h); padding: 0 13px;
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   cursor: pointer; position: relative; white-space: nowrap; text-decoration: none;
   background: var(--btn-bg); color: var(--ink); border: 1px solid var(--rule);
@@ -1130,12 +1140,11 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 /* A toggle that is on. The border and the icon say so together. */
 .btn[aria-pressed="true"].secondary, .btn.on { border-color: var(--green-mark); color: var(--green-text); }
 .btn[aria-pressed="true"].secondary:hover, .btn.on:hover { background: var(--green-soft); }
-.btn.sm { height: 28px; padding: 0 9px; font-size: var(--fs-caption); border-radius: var(--radius-2); gap: 5px; }
-.btn.lg { height: var(--row-h); padding: 0 18px; font-size: 14px; border-radius: var(--radius); }
+.btn.sm { padding: 0 9px; font-size: var(--fs-caption); border-radius: var(--radius-2); gap: 5px; }
 .btn.block { width: 100%; }
-.btn.icon-only { width: 32px; padding: 0; }
-.btn.icon-only.sm { width: 28px; }
-.btn.icon-only.lg { width: var(--row-h); }
+/* Square, and it stays square in a crowded flex row: with no padding its
+   content alone would let the row squeeze it to the icon's width. */
+.btn.icon-only { width: var(--control-h); padding: 0; flex-shrink: 0; }
 .btn kbd { margin-left: 2px; }
 .btn.primary kbd { background: transparent; border-color: currentColor; color: inherit; opacity: .55; }
 .btn.pending { color: var(--ink-3); }
@@ -1275,7 +1284,7 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .credentials input[type="email"],
 .credentials input[type="password"],
 .credentials input[type="text"] {
-  font: inherit; font-size: 17px; width: 100%; min-height: 48px; padding: 0 var(--space-3);
+  font: inherit; font-size: 17px; width: 100%; min-height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius);
   background: var(--input-bg); color: var(--ink);
 }
@@ -1319,7 +1328,7 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 
 .filters { display: flex; gap: var(--space-1); flex-wrap: wrap; margin: 0 0 14px; }
 .filters a {
-  display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--row-h); padding: 0 14px;
+  display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-h); padding: 0 14px;
   font-size: var(--fs-body-sm); font-weight: 500; color: var(--ink-2); text-decoration: none;
   border-radius: var(--radius); transition: background var(--dur-2) var(--ease), color var(--dur-2) var(--ease);
 }
@@ -1331,7 +1340,7 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .tools { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
 .tools .find { position: relative; }
 .tools .find input, .find input {
-  font: inherit; font-size: var(--fs-body-sm); min-height: var(--row-h); width: 220px; padding: 0 var(--space-3) 0 14px;
+  font: inherit; font-size: var(--fs-body-sm); min-height: var(--control-h); width: 220px; padding: 0 var(--space-3) 0 14px;
   border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
 }
 .tools .find input::placeholder { color: var(--ink-3); }
@@ -1341,7 +1350,7 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
   font-size: var(--fs-body-sm); color: var(--ink-2); display: inline-flex; align-items: center; gap: 10px;
   min-height: var(--row-h);
 }
-.statusline .btn { min-height: 32px; padding: 0 10px; }
+.statusline .btn { padding: 0 10px; }
 
 .workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 28px; align-items: start; }
 /* Below this the grid can no longer show all four columns beside the pane, and
@@ -1423,11 +1432,11 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .evidence .anchor { font-size: var(--fs-body-sm); color: var(--ink-3); margin: 0 0 14px; display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .evidence .tiernote { font-size: var(--fs-body-sm); color: var(--green-text); border-top: 1px solid var(--rule); padding-top: var(--space-3); margin: 14px 0 0; }
 .evidence .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 18px; }
-.evidence .acts .btn { min-height: 40px; padding: 0 var(--space-3); }
+.evidence .acts .btn { padding: 0 var(--space-3); }
 .editor { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--rule); }
 .editor label { display: block; font-size: var(--fs-body-sm); font-weight: 500; margin-bottom: var(--space-2); }
 .editor input {
-  font: inherit; font-size: 14px; width: 100%; min-height: var(--row-h); padding: 0 var(--space-3);
+  font: inherit; font-size: 14px; width: 100%; min-height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
 }
 .editor input:focus { border-color: var(--green-mark); }
@@ -1453,7 +1462,7 @@ dialog h2 { font-size: var(--fs-title); margin: 0 0 10px; }
 dialog p { font-size: 14px; color: var(--ink-2); margin: 0 0 14px; }
 dialog .acts { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
 dialog input[type="text"] {
-  font: inherit; font-size: 14px; width: 100%; min-height: var(--row-h); padding: 0 var(--space-3);
+  font: inherit; font-size: 14px; width: 100%; min-height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
 }
 dialog table { font-size: var(--fs-body-sm); }
@@ -1540,7 +1549,7 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
 .drop .lab { display: block; font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); margin-bottom: var(--space-3); }
 .drop input[type="file"] { font: inherit; font-size: var(--fs-body-sm); display: block; max-width: 100%; color: var(--ink); }
 .drop input[type="file"]::file-selector-button {
-  font: 500 var(--fs-body-sm)/1 var(--font-text); min-height: 40px; padding: 0 14px; margin-right: var(--space-3);
+  font: 500 var(--fs-body-sm)/1 var(--font-text); min-height: var(--control-h); padding: 0 14px; margin-right: var(--space-3);
   background: var(--btn-bg); color: var(--ink); border: 1px solid transparent;
   border-radius: var(--radius); cursor: pointer;
 }
@@ -1578,7 +1587,7 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
 .commit .field { display: block; margin: 0 0 var(--space-5); }
 .commit label { display: block; font-size: var(--fs-body-sm); font-weight: 500; margin-bottom: var(--space-2); }
 .commit input[type="text"], .commit input:not([type]), .commit input[type="date"], .commit input[type="number"] {
-  font: inherit; font-size: var(--fs-body); width: 100%; min-height: var(--row-h); padding: 0 var(--space-3);
+  font: inherit; font-size: var(--fs-body); width: 100%; min-height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
 }
 .commit textarea {
@@ -1589,13 +1598,13 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
 .commit input:focus, .commit textarea:focus, .commit select:focus { border-color: var(--green-mark); }
 .commit .hint { display: block; font-size: var(--fs-body-sm); color: var(--ink-3); margin-top: var(--space-2); }
 .commit select {
-  font: inherit; font-size: var(--fs-body); width: 100%; min-height: var(--row-h); padding: 0 var(--space-3);
+  font: inherit; font-size: var(--fs-body); width: 100%; min-height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius);
   background: var(--input-bg); color: var(--ink);
 }
 .commit .withunit { display: flex; align-items: center; gap: 0; }
 .commit .withunit .unit {
-  min-height: var(--row-h); display: inline-flex; align-items: center; padding: 0 10px;
+  min-height: var(--control-h); display: inline-flex; align-items: center; padding: 0 10px;
   border: 1px solid var(--input-border); background: var(--surface-2); color: var(--ink-2); font-size: var(--fs-body);
 }
 .commit .withunit .unit:first-child { border-right: 0; border-radius: var(--radius) 0 0 var(--radius); }
@@ -1657,7 +1666,7 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .map-switch { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); }
 .map-switch label { font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); }
 .map-switch select {
-  font: inherit; font-size: var(--fs-body-sm); min-height: 36px; padding: 0 var(--space-3);
+  font: inherit; font-size: var(--fs-body-sm); min-height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
 }
 .map-switch select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -1727,7 +1736,7 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
   background: var(--ground); border-bottom: 1px solid var(--rule);
 }
 .lensbar .map-switch { margin: 0; }
-.lensbar select, .lensbar .map-switch select { min-height: 32px; max-width: 12rem; padding: 0 var(--space-2); border-radius: var(--radius-2); font-size: var(--fs-body-sm); }
+.lensbar select, .lensbar .map-switch select { min-height: var(--control-h); max-width: 12rem; padding: 0 var(--space-2); border-radius: var(--radius-2); font-size: var(--fs-body-sm); }
 .lensbar .sel { display: inline-flex; align-items: center; gap: var(--space-2); }
 .lensbar .sel > span { font-size: var(--fs-label); font-weight: 600; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--ink-3); }
 .lensbar .sel select { font: inherit; font-size: var(--fs-body-sm); border: 1px solid var(--input-border); background: var(--input-bg); color: var(--ink); }
@@ -1735,20 +1744,21 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .lensbar .btn kbd { margin-left: 2px; padding: 1px 4px; font-size: 10px; }
 .lensbar .chips { flex-basis: 100%; list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 0; }
 .lensbar .chip {
-  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 11px;
+  display: inline-flex; align-items: center; gap: 6px; height: var(--control-h); padding: 0 8px 0 11px;
   font: 600 var(--fs-caption)/1 var(--font-text); color: var(--ink); white-space: nowrap; cursor: pointer;
   background: var(--surface-2); border: 1px solid var(--rule-raised); border-radius: var(--radius-pill);
 }
 .lensbar .chip:hover { border-color: var(--ink-3); }
 .lensbar .chip .icon { color: var(--ink-3); }
 
-/* A row of mutually exclusive choices: the pressed one is ink, the rest quiet. */
+/* A row of mutually exclusive choices: the pressed one is ink, the rest quiet.
+   Its 2px padding and 1px border take it to the height of the lists beside it. */
 .atlas .segs {
   display: inline-flex; gap: 2px; max-width: 100%; overflow-x: auto; padding: 2px;
   background: var(--surface-1); border: 1px solid var(--rule-raised); border-radius: var(--radius-3);
 }
 .atlas .segs button {
-  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 6px; height: calc(var(--control-h) - 6px); padding: 0 10px; flex: 0 0 auto;
   font: 600 var(--fs-caption)/1 var(--font-text); color: var(--ink-2); white-space: nowrap; cursor: pointer;
   background: none; border: 0; border-radius: var(--radius-2);
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
@@ -2085,8 +2095,11 @@ dialog.brief .brief-foot .dots .on { width: 18px; background: var(--ink); }
 dialog.brief .brief-foot .keys { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 dialog.brief .brief-foot .keys kbd { padding: 2px 4px; }
 @media (max-width: 900px) {
-  dialog.brief .brief-in { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; overflow: auto; }
-  dialog.brief .brief-globe { padding: var(--space-4) var(--space-4) 0; }
+  /* A frame can be taller than a phone's screen. Its text keeps its own height
+     and the brief scrolls, rather than running under the footer; the globe
+     keeps its own height too, rather than shrinking under the text. */
+  dialog.brief .brief-in { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(min-content, 1fr) auto; overflow: auto; }
+  dialog.brief .brief-globe { min-height: auto; padding: var(--space-4) var(--space-4) 0; }
   dialog.brief .brief-globe .globe { width: 100%; --lab: 26px; }
   dialog.brief .brief-text { align-self: start; padding: var(--space-4); }
   dialog.brief .brief-foot { padding: var(--space-3) var(--space-4); }
@@ -2117,12 +2130,12 @@ dialog.brief .brief-foot .keys kbd { padding: 2px 4px; }
   .lensbar .map-switch select { flex: 1; min-width: 0; max-width: none; }
   .lensbar .sel { flex: 1 1 10rem; }
   .lensbar .sel select { width: 100%; max-width: none; }
-  .lensbar .lb-acts .btn { flex: 1; height: 36px; }
+  .lensbar .lb-acts .btn { flex: 1; }
   .lensbar .btn kbd { display: none; }
   /* Each row of choices spans the column in equal parts, and a long one wraps
      onto a second line rather than running off the edge. */
   .atlas .segs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); width: 100%; overflow: visible; }
-  .atlas .segs button { justify-content: center; height: auto; min-height: 32px; padding: 6px 8px; white-space: normal; text-align: center; line-height: 1.2; }
+  .atlas .segs button { justify-content: center; height: auto; min-height: calc(var(--control-h) - 6px); padding: 6px 8px; white-space: normal; text-align: center; line-height: 1.2; }
   .atlas .segs button .icon { display: none; }
   /* The date the values are as of takes its own line, so no line starts with a dot. */
   .mast-k .asof { flex-basis: 100%; }
@@ -2130,7 +2143,7 @@ dialog.brief .brief-foot .keys kbd { padding: 2px 4px; }
   .mast-hero { font-size: 24px; }
   .mast-hero .fig-xl { font-size: 46px; }
   /* The link to Companies says its count, so on the narrowest phone it wraps rather than runs off. */
-  .mast-act .btn { max-width: 100%; height: auto; min-height: 28px; padding-block: 5px; white-space: normal; text-align: left; line-height: 1.25; }
+  .mast-act .btn { max-width: 100%; height: auto; min-height: var(--control-h); padding-block: 5px; white-space: normal; text-align: left; line-height: 1.25; }
   /* A compact gauge's three columns leave its bar no width on a phone: the name
      and figures share a line and the bar runs under them, with room between for
      the floor's number. */
@@ -2213,12 +2226,13 @@ dialog.brief .brief-foot .keys kbd { padding: 2px 4px; }
 }
 .toast.alert { border-left-color: var(--alert); }
 .toast.warn { border-left-color: var(--warn); }
-.toast .btn { min-height: 32px; padding: 0 10px; }
+.toast .btn { padding: 0 10px; }
 
-/* Segmented control: one choice among a few, always a word. */
+/* Segmented control: one choice among a few, always a word. The group, not
+   each choice, is the height of a button. */
 .segmented { display: inline-flex; border: 1px solid var(--rule); border-radius: var(--radius); padding: 2px; gap: 2px; background: var(--surface-1); }
 .segmented button, .segmented a {
-  font: 500 var(--fs-body-sm)/1 var(--font-text); min-height: 36px; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-2);
+  font: 500 var(--fs-body-sm)/1 var(--font-text); min-height: calc(var(--control-h) - 6px); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-2);
   background: transparent; color: var(--ink-2); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
