@@ -171,7 +171,10 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
                   <li key={step.ord} className={step.matched ? "fired" : ""}>
                     <span className="mark"><Icon name={step.matched ? "circle-check" : "circle-dashed"} size={14} /></span>
                     {/* An unmapped rule id shows as itself once, not twice: the
-                        map is a courtesy and the id is the fact. */}
+                        map is a courtesy and the id is the fact. The id takes a
+                        line of its own and may break anywhere, so the sentence's
+                        last word and the id are never one word too wide for a
+                        320px screen. */}
                     <span className="what">
                       {RULE[step.ruleId] && <span className="rule">{RULE[step.ruleId]}</span>}
                       <code>{step.ruleId}</code>

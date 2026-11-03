@@ -86,8 +86,10 @@ export default async function AccessReview() {
 
       <Section id="accounts" title="Accounts" index={4}>
         <div className="tablewrap">
-          <table className="accounts">
-            <caption>Every change is written to the audit log with the actor and the target.</caption>
+          {/* Named by the section's heading rather than a caption hidden for screen
+              readers: a hidden caption sets this collapsed table's rows half a pixel
+              lower in Chrome. className stays first: the journeys find the table by it. */}
+          <table className="accounts" aria-labelledby="accounts-h">
             <thead>
               <tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last sign-in</th>
                   <th scope="col">Status</th>
@@ -137,6 +139,9 @@ export default async function AccessReview() {
             </tbody>
           </table>
         </div>
+        {/* Under the box, not in it: a caption is as wide as its table, so on a
+            phone this ran past the box's edge until the table was scrolled. */}
+        <p className="meta">Every change is written to the audit log with the actor and the target.</p>
       </Section>
     </div>
     </Page>

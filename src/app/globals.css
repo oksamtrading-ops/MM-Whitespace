@@ -671,7 +671,8 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
 /* --------------------------------------------------------- donut -----
    Legal where a donut is honest: two or three parts, a large difference, and
    a hole big enough to carry the headline. Never for the tier distribution. */
-.donuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-6); }
+/* A column of 260px, or the whole column where that is narrower (a 320px screen). */
+.donuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: var(--space-6); }
 .donut svg { display: block; width: 100%; height: auto; max-width: 240px; margin: 0 auto; }
 .donut .sl.ours { fill: var(--brand-fill); }
 .donut .sl.other { fill: var(--demote); }
@@ -730,7 +731,8 @@ h3 { font-size: var(--fs-body); font-weight: 600; margin: 0 0 var(--space-2); }
    hatched and outside the ramp so the darkest cell is always an incumbent. */
 .heatwrap { position: relative; overflow-x: auto; }
 .heatmap { border-collapse: separate; border-spacing: 0; min-width: 640px; }
-.heatmap caption { caption-side: bottom; text-align: left; font-size: var(--fs-caption); color: var(--ink-3); padding: var(--space-3) 0 0; }
+/* The map's reading key, under its box rather than its caption (see .tablewrap + .meta). */
+.heatnote { font-size: var(--fs-caption); color: var(--ink-3); margin: var(--space-3) 0 0; }
 .heatmap thead th { background: none; border: 0; height: auto; padding: 0 6px 10px; font-size: 11.5px; color: var(--ink-2); text-align: center; vertical-align: bottom; }
 .heatmap thead th:first-child { text-align: left; color: var(--ink-3); }
 .heatmap thead th .ours { color: var(--green-text); font-weight: 700; }
@@ -952,6 +954,10 @@ td.wrap, th.wrap { vertical-align: top; padding-top: 9px; padding-bottom: 9px; w
   border: 1px solid var(--input-border); border-radius: var(--radius);
   background: var(--input-bg); color: var(--ink);
 }
+/* Safari counts a select's chosen words toward the page's width even where the select
+   cuts them off: at 320px "Viewer — reads the published period" ran 32px past this one
+   and /access scrolled sideways. Clipped here, they stay in its box, as elsewhere. */
+.invite select { overflow: hidden; }
 .invite input[type="email"]:focus-visible, .invite select:focus-visible,
 .rolepick select:focus-visible {
   outline: 2px solid var(--ink); outline-offset: 2px; border-color: var(--ink);
@@ -1009,6 +1015,9 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
    Positioned, so the screen-reader words in its cells scroll with the table
    instead of widening the page. */
 .tablewrap { position: relative; overflow-x: auto; }
+/* A table's words go under its box, set as its caption was: a caption is as wide as
+   the table, so in the box on a phone it ran past the edge until the table scrolled. */
+.tablewrap + .meta { margin: var(--space-3) 0 0; }
 
 /* The all-companies table: full width, compact, sticky header and first column.
    Positioned for the same reason as .tablewrap: the stage columns' words. */
@@ -1505,7 +1514,9 @@ dialog {
 dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(6px); }
 dialog h2 { font-size: var(--fs-title); margin: 0 0 10px; }
 dialog p { font-size: 14px; color: var(--ink-2); margin: 0 0 14px; }
-dialog .acts { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
+/* The buttons take two lines where one is too narrow (a phone), rather than run
+   out of the dialog's left side. */
+dialog .acts { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-5); }
 dialog input[type="text"] {
   font: inherit; font-size: 14px; width: 100%; min-height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
@@ -2405,12 +2416,13 @@ dialog.brief .brief-foot .keys kbd { padding: 2px 4px; }
 
 /* ------------------------------------------------------- new components */
 
-/* Tooltip: surface-3, never over data, never the only carrier of a value. */
+/* Tooltip: surface-3, never over data, never the only carrier of a value. As wide as
+   its words up to 280px, then they wrap; nowrap let a long one run out of its own box. */
 .tooltip {
   position: absolute; z-index: var(--z-tooltip); pointer-events: none;
   background: var(--surface-3); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--radius);
   padding: 6px 10px; font-size: var(--fs-caption); line-height: 1.4; box-shadow: var(--shadow-2); background-image: var(--lift);
-  max-width: 280px; white-space: nowrap;
+  width: max-content; max-width: 280px;
 }
 .tooltip b { font-family: var(--font-figure); font-weight: 600; }
 .has-tip { position: relative; }
@@ -2529,7 +2541,7 @@ button.switch { background: none; border: 0; padding: 0; color: var(--ink); font
   .sg .floats { flex-direction: column; min-height: 0; }
   .sg .floats .menu { position: static; margin-top: var(--space-1); }
   .sg .floats > .has-tip { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 6px; margin-left: 0; }
-  .sg .floats .tooltip { position: static; transform: none; white-space: normal; }
+  .sg .floats .tooltip { position: static; transform: none; width: auto; }
   .sg .floats > .toast { margin-left: 0; flex-wrap: wrap; padding-block: var(--space-2); }
 }
 .sg .states { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-3); align-items: start; }

@@ -37,10 +37,7 @@ export default function Heatmap({ matrix, currency }: { matrix: Matrix; currency
     <>
       <div className="heatwrap">
         <table className="heatmap">
-          <caption>
-            Company count · shading is the firm&rsquo;s share of the row ·
-            hatched means the auditor has not been researched
-          </caption>
+          <caption className="sr-only">Companies by market cap band and auditor</caption>
           <thead>
             <tr>
               <th scope="col">Market cap band</th>
@@ -99,6 +96,12 @@ export default function Heatmap({ matrix, currency }: { matrix: Matrix; currency
           </tfoot>
         </table>
       </div>
+      {/* Under the box, not in it: a caption is as wide as its table, so on a
+          phone this ran past the box's edge until the table was scrolled. */}
+      <p className="heatnote">
+        Company count · shading is the firm&rsquo;s share of the row ·
+        hatched means the auditor has not been researched
+      </p>
       <p className="heatlegend">
         <span className="k">Share of the band</span>
         {[1, 2, 3, 4, 5].map((q) => (

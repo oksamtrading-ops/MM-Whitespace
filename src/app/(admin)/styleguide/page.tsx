@@ -394,7 +394,9 @@ export default async function Styleguide() {
             <p className="stage"><b>Writing the resolved snapshot</b><span className="fig-sm">3 of 5</span></p>
           </div>
           <h3>Dialog</h3>
-          <dialog open style={{ position: "static", margin: 0 }} aria-labelledby="sg-dialog-h">
+          {/* The whole column wide, up to the dialog's 480px: a modal's width is the
+              screen's less 32px, and this sample sits in a column, not on the screen. */}
+          <dialog open style={{ position: "static", margin: 0, width: "100%" }} aria-labelledby="sg-dialog-h">
             <h2 id="sg-dialog-h">Accept in bulk</h2>
             <p>Accept 1,847 values of Auditor at evidence 0.80 or above? This can be undone.</p>
             <div className="acts"><button type="button" className="btn">Cancel</button><button type="button" className="btn primary">Accept 1,847 values</button></div>
