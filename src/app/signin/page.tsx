@@ -44,7 +44,7 @@ export default async function SignIn() {
       {user ? (
         <>
           <p className="lede">
-            Signed in as {user.email}, {user.role === "admin" ? "an" : "a"} {user.role}.
+            Signed in as {user.name}, {user.role === "admin" ? "an" : "a"} {user.role}.
           </p>
           {/* A gated user is sent here by every refusal in the product, so
               this is where the loop has to close. Offering "Continue" would

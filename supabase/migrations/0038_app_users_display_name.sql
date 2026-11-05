@@ -1,0 +1,12 @@
+-- The name the tool shows for a person, in place of their address.
+--
+-- The address stays: it is how a person signs in and how an Admin invites
+-- them, and the domain trigger (0024) still reads it. Wherever the tool names
+-- somebody -- the sidebar, who published a revision, who started a run, who
+-- changed a setting, the access review -- it shows this name when there is
+-- one, and the address only when there is not.
+--
+-- Idempotent on purpose: this file creates no table, so the ledger's adoption
+-- rule cannot recognise it as applied and may replay it. One add column per
+-- alter table, as 0027 explains.
+alter table app_users add column if not exists display_name text;

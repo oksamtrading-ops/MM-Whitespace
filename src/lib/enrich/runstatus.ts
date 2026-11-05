@@ -7,6 +7,7 @@
  * with errors` are derived, because the database records what the run was told
  * to be and neither of these is something anything tells it.
  */
+import { personSql } from "../auth/person.ts";
 import type { Sql } from "../db/sql.ts";
 import { budgetState, type BudgetState } from "./ledger.ts";
 
@@ -82,7 +83,7 @@ export async function readRunStatus(
   db: Sql, runId: string, now: number = Date.now(),
 ): Promise<RunStatus | null> {
   const run = await db.get(`select r.id, r.status, r.mode, r.model, r.prompt_version, r.created_at,
-            r.completed_at, r.halt_reason, u.email as created_by
+            r.completed_at, r.halt_reason, ${personSql("u")} as created_by
        from enrichment_runs r left join app_users u on u.id = r.created_by
       where r.id = ?`, runId) as {
     id: string; status: string; mode: string; model: string; prompt_version: string;

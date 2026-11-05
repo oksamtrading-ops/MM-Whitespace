@@ -480,7 +480,7 @@ mark { background: var(--green-soft); color: var(--ink); padding: 0 .1em; border
 .sidebar .foot { margin-top: auto; padding: 9px 0 4px; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 6px; }
 .sidebar.collapsed .foot { align-items: center; width: 100%; }
 .sidebar .who { font-size: 11.5px; color: var(--ink-3); display: flex; align-items: center; gap: 7px; padding: 0 var(--space-2); min-width: 0; }
-.sidebar .who .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar .who .whoname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* .whorole and NOT .role. The sign-in screen's development account buttons
    already own `.role`, and they define it as a three-column grid with 22px of
    padding and a bottom border -- so the rail's identity line silently became
@@ -2662,7 +2662,7 @@ button.switch { background: none; border: 0; padding: 0; color: var(--ink); font
   .sidebar { width: 52px; padding: 10px 5px; align-items: center; }
   .sidebar .brand { padding: 6px 0 14px; justify-content: center; }
   .sidebar .brand .name, .sidebar .item .label, .sidebar .railbtn span,
-  .sidebar .who .email, .sidebar .who .whorole, .sidebar .period .name { display: none; }
+  .sidebar .who .whoname, .sidebar .who .whorole, .sidebar .period .name { display: none; }
   .sidebar .grp { width: 26px; height: 1px; padding: 0; margin: 7px 0; background: var(--rule); overflow: hidden; text-indent: -999em; }
   .sidebar a.item { width: 36px; height: 36px; padding: 0; justify-content: center; }
   .sidebar .railbtn { width: 32px; justify-content: center; padding: 0; }

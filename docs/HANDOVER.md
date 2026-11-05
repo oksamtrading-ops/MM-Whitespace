@@ -31,7 +31,7 @@
 >   verdict, the facts and the argument.
 > - **Spend.** Recorded research spend is US$156.47 across fifteen runs in
 >   October and US$1.50 for one run in November.
-> - **Deployment.** Migrations are applied through `0037`.
+> - **Deployment.** Migrations are applied through `0038` (5 November: `app_users.display_name`).
 >   **Everything on `main` is deployed; the code last changed at
 >   `1e6a6da`** (PR #6, squashed). Before it, `037d8d8` carried the five
 >   fixes above and this note, and the 320px reflow went out after it. A

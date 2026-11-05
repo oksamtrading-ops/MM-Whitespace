@@ -16,6 +16,7 @@ import {
   sessionClaimSource,
 } from "./session.ts";
 import { createSession, revokeSession, SESSION_COOKIE, userForSession } from "./sessions.ts";
+import { personSql } from "./person.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SECRET = "test-secret";
@@ -46,6 +47,25 @@ test("authorisation resolves ONE claim against the application's own user table"
   const user = await resolveUser(await db, "analyst@example.invalid");
   assert.equal(user?.role, "analyst");
   assert.equal((await resolveUser(await db, "ANALYST@EXAMPLE.INVALID"))?.role, "analyst");
+});
+
+test("a person is named by their display name, and by their address only when they have none", async () => {
+  const db = await seeded();
+  await db.run("update app_users set display_name = ? where email = ?", "Ada Example", "admin@example.invalid");
+  await db.run("update app_users set display_name = ? where email = ?", "   ", "viewer@example.invalid");
+  const admin = await resolveUser(db, "admin@example.invalid");
+  assert.equal(admin?.name, "Ada Example");
+  assert.equal(admin?.email, "admin@example.invalid", "the address is still the account");
+  assert.equal((await resolveUser(db, "viewer@example.invalid"))?.name, "viewer@example.invalid",
+               "a blank name is no name");
+  assert.equal((await resolveUser(db, "analyst@example.invalid"))?.name, "analyst@example.invalid");
+
+  const session = await createSession(db, admin!.id, { ip: null, ua: null });
+  assert.equal((await userForSession(db, session.token))?.name, "Ada Example", "the session path names them too");
+
+  const named = await db.all(`select ${personSql("u")} as name from app_users u order by u.email`) as Array<{ name: string }>;
+  assert.deepEqual(named.map((r) => r.name),
+                   ["Ada Example", "analyst@example.invalid", "gone@example.invalid", "viewer@example.invalid"]);
 });
 
 test("invite-only: an email the provider would accept is still not a user", async () => {
@@ -134,7 +154,7 @@ test("an analyst is not an admin", async () => {
 
 test("hasRole is exact membership, never a rank comparison", async () => {
   const admin = {
-    id: "1", email: "a", role: "admin" as const, isActive: true, mustChangePassword: false,
+    id: "1", email: "a", name: "a", role: "admin" as const, isActive: true, mustChangePassword: false,
   };
   assert.equal(hasRole(admin, ["admin"]), true);
   assert.equal(hasRole(admin, ["analyst"]), false, "admin is not silently an analyst");

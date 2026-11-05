@@ -42,7 +42,7 @@ export default async function Home() {
       </p>
       {user && (
         <p className="who">
-          Signed in as {user.email}, {user.role === "admin" ? "an" : "a"} {user.role}.
+          Signed in as {user.name}, {user.role === "admin" ? "an" : "a"} {user.role}.
         </p>
       )}
     </div></div>

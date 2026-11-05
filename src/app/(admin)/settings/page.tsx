@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
+import { personSql } from "../../../lib/auth/person.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { readSettings } from "../../../lib/settings/index.ts";
 import Facts from "../../_ui/Facts.tsx";
@@ -38,9 +39,9 @@ export default async function Settings() {
   const ceiling = await ctx.db.get("select value from publish_thresholds where key = 'max_hallucination_rate'") as
     { value: number } | undefined;
 
-  const changes = await ctx.db.all(`select a.detail, a.created_at, u.email
+  const changes = await ctx.db.all(`select a.detail, a.created_at, ${personSql("u")} as by_name
        from audit_log a left join app_users u on u.id = a.actor_id
-      where a.event = 'setting_changed' order by a.created_at desc limit 8`) as Array<{ detail: string; created_at: string; email: string | null }>;
+      where a.event = 'setting_changed' order by a.created_at desc limit 8`) as Array<{ detail: string; created_at: string; by_name: string | null }>;
 
   return (
     <Page title="Settings">
@@ -127,7 +128,7 @@ export default async function Settings() {
                         <td className="meta"><code>{d.key}</code></td>
                         <td className="meta">{d.from ?? "—"}</td>
                         <td>{d.to}</td>
-                        <td className="meta">{c.email ?? "—"}</td>
+                        <td className="meta">{c.by_name ?? "—"}</td>
                         <td className="meta">{fmtDate(c.created_at)}</td>
                       </tr>
                     );

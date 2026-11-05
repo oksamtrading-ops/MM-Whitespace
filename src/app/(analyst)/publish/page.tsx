@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata, Route } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
+import { personSql } from "../../../lib/auth/person.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { evaluateGate } from "../../../lib/publish/gate.ts";
 import { revisionChanges } from "../../../lib/publish/changes.ts";
@@ -53,11 +54,11 @@ export default async function Publish() {
 
   const gate = await evaluateGate(ctx.db, period.id);
   const revisions = await ctx.db.all(`select p.revision, p.published_at, p.override_reason, p.amendment_reason,
-            p.unresolved_count, u.email as by_email
+            p.unresolved_count, ${personSql("u")} as by_name
        from period_publications p left join app_users u on u.id = p.published_by
       where p.period_id = ? order by p.revision desc`, period.id) as Array<{
     revision: number; published_at: string; override_reason: string | null;
-    amendment_reason: string | null; unresolved_count: number; by_email: string | null;
+    amendment_reason: string | null; unresolved_count: number; by_name: string | null;
   }>;
 
   // What an amendment would actually change. Its reason is printed on the
@@ -179,7 +180,7 @@ export default async function Publish() {
                     <tr key={r.revision}>
                       <td className="n">{r.revision}</td>
                       <td>{fmtDate(r.published_at)}</td>
-                      <td>{r.by_email ?? <span className="meta">a script</span>}</td>
+                      <td>{r.by_name ?? <span className="meta">a script</span>}</td>
                       <td className="wrap">
                         {r.override_reason
                           ? <><span className="pill warn"><Icon name="triangle-alert" size={12} />override</span> {r.override_reason}</>

@@ -6,6 +6,7 @@
  * nobody names one. A setting that changes nothing is worse than no setting,
  * because it teaches people the screen is decorative.
  */
+import { personSql } from "../auth/person.ts";
 import type { Sql } from "../db/sql.ts";
 
 export type SettingKey =
@@ -120,7 +121,7 @@ export function validate(key: SettingKey, raw: string): string {
 
 export async function readSettings(db: Sql): Promise<Setting[]> {
   const rows = await db.all(
-    `select s.key, s.value, s.updated_at, u.email as updated_by
+    `select s.key, s.value, s.updated_at, ${personSql("u")} as updated_by
        from app_settings s left join app_users u on u.id = s.updated_by`,
   ) as Array<{ key: string; value: string; updated_at: string | null; updated_by: string | null }>;
   const byKey = new Map(rows.map((r) => [r.key, r]));

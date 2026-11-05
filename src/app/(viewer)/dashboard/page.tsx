@@ -2,6 +2,7 @@ import { newestPeriod, newestPublishedPeriod } from "../../../lib/db/periods.ts"
 import type { Metadata, Route } from "next";
 import { cookies } from "next/headers";
 import { requireRole } from "../../../lib/auth/context.ts";
+import { personSql } from "../../../lib/auth/person.ts";
 import { Forbidden } from "../../../lib/auth/session.ts";
 import { AI_NOTICE, EXCHANGE_NOTICE, INTERNAL_USE, VENDOR_NOTICE } from "../../../lib/publish/notices.ts";
 import { readPublished } from "../../../lib/publish/snapshot.ts";
@@ -68,7 +69,7 @@ export default async function Dashboard({ searchParams }: {
     marketPenetration(db, snap.publication.id, "Foreign HQ — no Deloitte market"),
     db.all("select chart, label, floor_pct from coverage_floors") as Promise<Array<{ chart: string; label: string; floor_pct: number | null }>>,
     snap.publication.published_by
-      ? db.get("select email from app_users where id = ?", snap.publication.published_by) as Promise<{ email: string } | undefined>
+      ? db.get(`select ${personSql("u")} as name from app_users u where u.id = ?`, snap.publication.published_by) as Promise<{ name: string } | undefined>
       : Promise.resolve(undefined),
     searchParams,
     cookies(),
@@ -113,7 +114,7 @@ export default async function Dashboard({ searchParams }: {
       <h1 className="sr-only">{periodTitle} dashboard</h1>
       <Atlas atlas={atlas} periodTitle={periodTitle} initial={viewFromParams(params, atlas)}
              markets={markets.rows.length ? markets : null} coverage={coverage} frozen={frozen}
-             publisher={publisher?.email ?? null} />
+             publisher={publisher?.name ?? null} />
       <AiNotice compact />
       <footer className="notices">
         <p>{INTERNAL_USE}</p>

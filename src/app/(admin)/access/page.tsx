@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
+import { personName } from "../../../lib/auth/person.ts";
 import { Forbidden } from "../../../lib/auth/session.ts";
 import Callout from "../../_ui/Callout.tsx";
 import Icon from "../../_ui/Icon.tsx";
@@ -33,9 +34,9 @@ export default async function AccessReview() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
-  const users = await ctx.db.all(`select id, email, role, is_active, last_sign_in_at, created_at
+  const users = await ctx.db.all(`select id, email, display_name, role, is_active, last_sign_in_at, created_at
        from app_users order by is_active desc, email`) as Array<{
-    id: string; email: string; role: string; is_active: number;
+    id: string; email: string; display_name: string | null; role: string; is_active: number;
     last_sign_in_at: string | null; created_at: string;
   }>;
 
@@ -91,7 +92,7 @@ export default async function AccessReview() {
               lower in Chrome. className stays first: the journeys find the table by it. */}
           <table className="accounts" aria-labelledby="accounts-h">
             <thead>
-              <tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last sign-in</th>
+              <tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Last sign-in</th>
                   <th scope="col">Status</th>
                   <th scope="col" className="act"><span className="sr-only">Action</span></th></tr>
             </thead>
@@ -102,7 +103,7 @@ export default async function AccessReview() {
                 const self = u.id === ctx.user.id;
                 return (
                   <tr key={u.id}>
-                    <th scope="row">{u.email}{self && <span className="pill quiet you">you</span>}</th>
+                    <th scope="row">{personName(u)}{self && <span className="pill quiet you">you</span>}</th>
                     <td><RoleSelect userId={u.id} role={u.role} self={self} /></td>
                     <td>
                       {u.last_sign_in_at

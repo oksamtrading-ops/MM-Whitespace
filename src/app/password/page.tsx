@@ -38,7 +38,7 @@ export default async function PasswordPage() {
         <p className="firm">Deloitte</p>
       </div>
       <Orb />
-      <p className="who">{user.email}</p>
+      <p className="who">{user.name}</p>
       <PasswordForm forced={user.mustChangePassword} />
     </div></div>
   );

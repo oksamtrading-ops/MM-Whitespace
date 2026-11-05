@@ -19,6 +19,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Sql } from "../db/sql.ts";
+import { personName } from "./person.ts";
 import { SESSION_COOKIE, userForSession } from "./sessions.ts";
 
 export type Role = "admin" | "analyst" | "viewer";
@@ -28,6 +29,12 @@ export const ROLE_RANK: Record<Role, number> = { viewer: 1, analyst: 2, admin: 3
 export type AppUser = {
   id: string;
   email: string;
+  /**
+   * What the tool calls this person: their display name, else their address.
+   * Required for the same reason as mustChangePassword below: every site that
+   * builds an AppUser must say it.
+   */
+  name: string;
   role: Role;
   isActive: boolean;
   /**
@@ -218,14 +225,14 @@ export function readCookie(cookieHeader: string | null, name: string): string | 
 export async function resolveUser(db: Sql, email: string | null): Promise<AppUser | null> {
   if (!email) return null;
   const row = await db.get(
-    `select id, email, role, is_active, must_change_password
+    `select id, email, display_name, role, is_active, must_change_password
        from app_users where lower(email) = lower(?)`, email) as
-    { id: string; email: string; role: Role; is_active: number;
+    { id: string; email: string; display_name: string | null; role: Role; is_active: number;
       must_change_password: number } | undefined;
   if (!row) return null;
   if (!row.is_active) return null;
   return {
-    id: row.id, email: row.email, role: row.role, isActive: true,
+    id: row.id, email: row.email, name: personName(row), role: row.role, isActive: true,
     mustChangePassword: Boolean(row.must_change_password),
   };
 }

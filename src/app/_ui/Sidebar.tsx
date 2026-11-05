@@ -41,7 +41,7 @@ export default function Sidebar({ items, collapsed: initial, theme, period, user
   collapsed: boolean;
   theme: Theme;
   period: { name: string; draft: boolean } | null;
-  user: { email: string; role: string } | null;
+  user: { name: string; role: string } | null;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initial);
@@ -130,10 +130,10 @@ export default function Sidebar({ items, collapsed: initial, theme, period, user
         {user
           ? (
             <>
-              <p className="who" title={`${user.email} · ${user.role}`}>
+              <p className="who" title={`${user.name} · ${user.role}`}>
                 <Icon name="circle-user" size={15} />
-                {!collapsed && <><span className="email">{user.email}</span><span className="whorole">{user.role}</span></>}
-                {collapsed && <span className="sr-only">{user.email}, {user.role}</span>}
+                {!collapsed && <><span className="whoname">{user.name}</span><span className="whorole">{user.role}</span></>}
+                {collapsed && <span className="sr-only">{user.name}, {user.role}</span>}
               </p>
               {/* Signing out belongs where a person can find it, which is
                   wherever they are. It used to live on /signin alone -- a page

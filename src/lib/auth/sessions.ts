@@ -23,6 +23,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Sql } from "../db/sql.ts";
 import { formatStamp } from "../db/stamp.ts";
+import { personName } from "./person.ts";
 import type { AppUser, Role } from "./session.ts";
 
 export const SESSION_COOKIE = "mm_session";
@@ -89,13 +90,13 @@ export async function userForSession(db: Sql, token: string | null): Promise<App
   if (!token) return null;
   const now = formatStamp();
   const row = await db.get(
-    `select s.id, s.last_seen_at, u.id as user_id, u.email, u.role, u.is_active,
+    `select s.id, s.last_seen_at, u.id as user_id, u.email, u.display_name, u.role, u.is_active,
             u.must_change_password
        from auth_sessions s join app_users u on u.id = s.user_id
       where s.token_hash = ? and s.revoked_at is null and s.expires_at > ?`,
     hashToken(token), now) as {
       id: string; last_seen_at: string; user_id: string;
-      email: string; role: Role; is_active: number | boolean;
+      email: string; display_name: string | null; role: Role; is_active: number | boolean;
       must_change_password: number | boolean;
     } | undefined;
   if (!row) return null;
@@ -111,7 +112,7 @@ export async function userForSession(db: Sql, token: string | null): Promise<App
   // AppUser the session path builds, and a gate that only knew about
   // resolveUser's would be no gate at all for anyone already signed in.
   return {
-    id: row.user_id, email: row.email, role: row.role, isActive: true,
+    id: row.user_id, email: row.email, name: personName(row), role: row.role, isActive: true,
     mustChangePassword: Boolean(row.must_change_password),
   };
 }

@@ -98,7 +98,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <div className="app">
           <Sidebar items={items} collapsed={railCollapsed} theme={theme}
                    period={showPeriod ? { name: periodName(period.label).name, draft: period.revision === null } : null}
-                   user={user ? { email: user.email, role: user.role } : null} />
+                   user={user ? { name: user.name, role: user.role } : null} />
           <main id="main" tabIndex={-1}>{children}</main>
         </div>
       </body>
