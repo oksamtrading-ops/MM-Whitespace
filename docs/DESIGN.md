@@ -40,6 +40,8 @@ Deloitte Canada's Mining & Metals practice maintains a workbook of every TSX and
 | [16](design/16-least-confident-decisions.md) | Least-confident decisions | The five I would most like challenged |
 | [17](design/17-visual-system.md) | Visual system | Palette on white, the two faces, the footing, gauges, motion, print |
 | [18](design/18-brand-guide.md) | Brand and interface guide | Dark-first with light available, the map as hero, the footing as signature, tokens in three layers, every component and chart, the application plan |
+| [19](design/19-dashboard.md) | The dashboard | The sentence, the globe, the memo and Brief me; filters as URL state |
+| [20](design/20-triggers-and-the-approach-calendar.md) | Triggers and the approach calendar | Nine dated, cited events per company, the quarterly "What opened" list, the window when an auditor can change; draft for Kay |
 
 ---
 
