@@ -116,6 +116,11 @@ export type CassetteBody = {
   documents?: Array<StoredDocument & { url: string; sourceTier: 1 | 2 | 3 | 4 | 5; docType?: string }>;
   usage?: Record<string, number>;
   cost_usd?: number;
+  /**
+   * Pass 2 read no filing, only the company's home page. The job is marked so,
+   * and does not count as having researched the company (start.ts).
+   */
+  homePageOnly?: boolean;
 };
 
 const FIELD_CADENCE_DAYS: Record<string, number> = {
@@ -257,15 +262,36 @@ export async function defaultLiveDeps(db: Sql): Promise<LiveDeps> {
  * What pass 1 found for this company in THIS period, so pass 2 reads it
  * instead of searching again. Only this period's: last quarter's filings are
  * last quarter's, and with none here pass 2 searches for itself.
+ *
+ * The candidates are the latest pass 1's. The home pages are every one any
+ * pass 1 saved, newest first: a pass 1 run once the website is trusted does
+ * not verify it again, so it saves no page, and taking only the latest would
+ * lose it. Pass 2 reads the first that is on the trusted website and has text.
  */
-async function priorCandidates(db: Sql, companyId: string, periodId: string): Promise<CandidateDoc[] | null> {
-  const row = await db.get(`select r.raw from enrichment_job_results r
+async function priorPass1(db: Sql, companyId: string, periodId: string): Promise<{
+  candidates: CandidateDoc[] | null; savedHomePages: string[];
+}> {
+  const rows = await db.all(`select r.raw from enrichment_job_results r
       join enrichment_jobs j on j.id = r.job_id
       join enrichment_runs run on run.id = j.run_id
      where j.company_id = ? and j.field_group = 'identity' and run.period_id = ?
-     order by r.created_at desc limit 1`, companyId, periodId) as { raw: string } | undefined;
-  if (!row) return null;
-  try { return (JSON.parse(row.raw) as LiveBody).candidates ?? null; } catch { return null; }
+     order by r.created_at desc`, companyId, periodId) as Array<{ raw: unknown }>;
+  const bodies = rows.map((r) => safeJson(r.raw) as LiveBody);
+  const savedHomePages = [...new Set(bodies.flatMap((b) => (b.findings ?? [])
+    .filter((f) => f.field_key === "website" && typeof f.document_hash === "string" && f.document_hash)
+    .map((f) => f.document_hash as string)))];
+  return { candidates: bodies[0]?.candidates ?? null, savedHomePages };
+}
+
+/**
+ * Has pass 2 already read this company's home page, and nothing else, in this
+ * period? Then reading it again would ask the same question of the same page:
+ * the answer is in review, and the company is still offered for its filings.
+ */
+async function homePageReadHere(db: Sql, companyId: string, periodId: string): Promise<boolean> {
+  return !!await db.get(`select 1 from enrichment_jobs j join enrichment_runs run on run.id = j.run_id
+     where j.company_id = ? and run.period_id = ? and j.field_group = 'general'
+       and j.state = 'completed' and j.read_only_home_page`, companyId, periodId);
 }
 
 /**
@@ -336,10 +362,12 @@ async function researchLiveJob(
 /** The pass, the company and what pass 1 already found. One definition. */
 async function liveJobFor(db: Sql, row: PublicCompanyRow, fieldGroup: string, periodId: string): Promise<LiveJob> {
   const pass: Pass = fieldGroup === "identity" ? "identity" : "general";
-  return {
-    pass, row, website: row.knownWebsite,
-    priorCandidates: pass === "general" ? await priorCandidates(db, row.companyId, periodId) : null,
-  };
+  if (pass !== "general") {
+    return { pass, row, website: row.knownWebsite, priorCandidates: null, savedHomePages: [], homePageRead: false };
+  }
+  const prior = await priorPass1(db, row.companyId, periodId);
+  return { pass, row, website: row.knownWebsite, priorCandidates: prior.candidates,
+           savedHomePages: prior.savedHomePages, homePageRead: await homePageReadHere(db, row.companyId, periodId) };
 }
 
 /** The period a run researches. Every job's lookups are read from it. */
@@ -573,6 +601,9 @@ async function saveJob(
   return await db.tx(async (db) => {
     await transition(db, job.id, "persisting");
     const findings = await persist(db, runId, job.id, job.company_id, body, attempt, opts);
+    // Set on every save, so a later attempt that read a filing clears it.
+    await db.run(`update enrichment_jobs set read_only_home_page = ${body.homePageOnly ? "true" : "false"}
+       where id = ?`, job.id);
     await transition(db, job.id, "completed");
     return findings;
   });
@@ -761,13 +792,22 @@ export async function allowlistFromPeriod(db: Sql, periodId: string): Promise<Se
  * the fiscal year it reports on, read once here rather than from the whole
  * text on every review page (reportson.ts).
  */
+/**
+ * Keep a document's text under its hash. The same hash is the same bytes read
+ * the same way, so a row already there is left as it is -- unless retention
+ * (scripts/retention.mjs) has cleared its text: then these bytes, read again,
+ * put it back, with the date they were read. Left empty, anything quoted from
+ * the page would be checked against nothing and counted as made up.
+ */
 export async function storeDocument(db: Sql, doc: FetchedDocument): Promise<string> {
   await db.run(`insert into documents (content_hash, url, final_url, retrieved_at, extractor,
                             extractor_version, normalization_version, text_content,
                             char_count, page_count, chars_per_page, source_tier,
                             doc_type, has_text_layer, reports_on, reports_on_version)
      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     on conflict (content_hash) do nothing`, doc.contentHash, doc.url, doc.finalUrl, doc.retrievedAt, doc.extractor,
+     on conflict (content_hash) do update
+        set text_content = excluded.text_content, retrieved_at = excluded.retrieved_at
+      where documents.text_content is null`, doc.contentHash, doc.url, doc.finalUrl, doc.retrievedAt, doc.extractor,
         doc.extractorVersion, doc.normalizationVersion, doc.text, doc.charCount,
         doc.pageCount, doc.charsPerPage, doc.sourceTier, doc.docType,
         doc.hasTextLayer ? 1 : 0, reportsOn(doc.text, doc.retrievedAt), REPORTS_ON_VERSION);

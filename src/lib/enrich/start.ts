@@ -102,11 +102,18 @@ export async function passCoverage(db: Sql, periodId: string, pass: Pass): Promi
   // companies reached revision 6 with no stage research and were never
   // offered again (5 November). A job still in flight has no findings yet and
   // counts, so a company is not queued twice.
+  //
+  // Nor does a job that read only the company's home page, pass 2's fallback
+  // when no filing could be read (live.ts, readHomePage). It may find the
+  // stage, but no fee, auditor or financial is on a home page, so the company
+  // is offered again until a filing is read -- or until review accepts what
+  // the home page gave, which counts below like any accepted value.
   for (const j of await db.all(`select j.company_id, r.prompt_version from enrichment_jobs j
       join enrichment_runs r on r.id = j.run_id
      where r.period_id = ? and j.field_group = ? and j.state not in ('halted', 'dead_letter')
        and (j.state <> 'completed'
-            or exists (select 1 from enrichment_findings f where f.job_id = j.id))`,
+            or (not j.read_only_home_page
+                and exists (select 1 from enrichment_findings f where f.job_id = j.id)))`,
     periodId, pass) as Array<{ company_id: string; prompt_version: string }>) {
     for (const g of groups) if (askedFor(g, j.prompt_version)) mark(j.company_id, g.key, "here");
   }

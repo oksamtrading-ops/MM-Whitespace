@@ -19,6 +19,7 @@ import { EgressViolation, PROMPT_VERSION } from "./prompt.ts";
 import { DISCOVERY_MAX_SEARCHES, ROUTE_CONFIG } from "./client.ts";
 import { extractPdf } from "./pdf.ts";
 import { createRun, JobFailed, loadDocuments, processJob, publicRow, storeDocument } from "./worker.ts";
+import { passCoverage } from "./start.ts";
 import { seedFixtureDatabase, PERIOD_AS_OF } from "../../../tests/cassettes/build_cassettes.mjs";
 import { makePdf } from "../../../tests/fixtures/make_pdf.mjs";
 
@@ -303,6 +304,166 @@ test("A run reads its own quarter: the website, regions and pass 1's links of an
   const other = vendor();
   await runOne(db, q2, northco.id, "general", deps(db, other.v, world().fetchDeps));
   assert.ok(searches(other.requests) >= 1, "last quarter's links are last quarter's");
+});
+
+/* ------------------------------------------- pass 2's last resort: the home page */
+
+// A home page whose one sentence about the company comes well after its first
+// 3,000 characters, where a filing's windows would never reach.
+const FILLER = "Our team visits the property often and reports on the weather there. ".repeat(70);
+const HOME_WITH_STAGE = { type: "text/html", body: `<html><body><h1>Northco Mining Corp.</h1><p>${FILLER}</p>` +
+  `<p>Northco Mining Corp. is a gold exploration company advancing projects in Ontario.</p></body></html>` };
+const WITH_STAGE = { ...PAGES, "https://northco.invalid/": HOME_WITH_STAGE };
+const NO_FILINGS = ["https://northco.invalid/docs/circular-2026.pdf", "https://northco.invalid/docs/southco-aif.pdf"];
+
+const STAGE_FROM_HOME = { findings: [
+  { field_key: "stage_evidence_state", document_index: 0, abstained: false, abstention_reason: null, self_confidence: 0.7,
+    evidence_excerpt: "Northco Mining Corp. is a gold exploration company advancing projects in Ontario.",
+    text_value: null, year_value: null,
+    stage: { exploration: true, development: null, production: null, royalty_streaming: null },
+    auditor_change: null, fee: null },
+  { field_key: "audit_fee", document_index: null, abstained: true, abstention_reason: "a home page prints no fees",
+    self_confidence: 0.1, evidence_excerpt: null, text_value: null, year_value: null, stage: null,
+    auditor_change: null, fee: null },
+] } as unknown as typeof EXTRACTION;
+
+const extractions = (requests: Array<Record<string, unknown>>) =>
+  requests.filter((r) => (r.output_config as Record<string, unknown> | undefined)?.format);
+async function notesOf(db: Sql, runId: string): Promise<string[]> {
+  return JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+      where j.run_id = ?`, runId) as { raw: string }).raw).notes;
+}
+
+test("PASS 2, no filing readable: the company's home page is read whole for its stage, and the company is still offered", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v, requests } = vendor({ extraction: STAGE_FROM_HOME });
+  const { fetchDeps } = world({ omit: NO_FILINGS, pages: WITH_STAGE });
+  const { runId, outcome, by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.equal(outcome.jobState, "completed");
+
+  const [extraction] = extractions(requests);
+  const sent = JSON.stringify(extraction.messages);
+  assert.match(sent, /source=\\"the company's home page\\"/);
+  assert.match(sent, /is a gold exploration company/, "sent whole: the sentence is past character 3,000");
+  assert.ok((await notesOf(db, runId)).includes("no filing read; read the home page: https://northco.invalid/"));
+
+  assert.equal(by.stage_evidence_state.state, "proposed");
+  const home = await db.get("select content_hash from documents where final_url = 'https://northco.invalid/'") as
+    { content_hash: string };
+  assert.equal(by.stage_evidence_state.anchor_document_hash, home.content_hash, "cited to the home page");
+
+  // Read, but no filing was: the job is marked, and the company is offered again.
+  const job = await db.get("select read_only_home_page from enrichment_jobs where run_id = ?", runId) as
+    { read_only_home_page: unknown };
+  assert.equal(Number(job.read_only_home_page), 1);
+  const coverage = await passCoverage(db, periodId, "general");
+  assert.equal(coverage.companies.find((c) => c.companyId === northco.id)!.groups.size, 0);
+
+  // A pass that reads a filing is not marked, and counts.
+  const filings = await runOne(db, periodId, northco.id, "general", deps(db, vendor().v, world().fetchDeps));
+  const later = await db.get("select read_only_home_page from enrichment_jobs where run_id = ?", filings.runId) as
+    { read_only_home_page: unknown };
+  assert.equal(Number(later.read_only_home_page), 0);
+  assert.equal((await passCoverage(db, periodId, "general")).companies
+    .find((c) => c.companyId === northco.id)!.groups.get("filings"), "here");
+});
+
+/**
+ * Pass 1 verifies the website and saves its home page; the website is
+ * accepted; pass 1 runs again, verifies nothing and saves nothing. The second
+ * result is the newer by an hour, so reading only the latest finds no page.
+ */
+async function withSavedHomePage() {
+  const { db, periodId, northco } = await seeded();
+  await runOne(db, periodId, northco.id, "identity", deps(db, vendor().v, world({ pages: WITH_STAGE }).fetchDeps));
+  await db.run("update enrichment_job_results set created_at = datetime('now', '-1 hour')");
+  await db.run(`insert into company_period_field_values (period_id, company_id, field_key, value, source, evidence_state)
+      values (?, ?, 'website', ?, 'ai_accepted', 'asserted')`, periodId, northco.id, JSON.stringify("https://northco.invalid"));
+  await runOne(db, periodId, northco.id, "identity", deps(db, vendor().v, world({ pages: WITH_STAGE }).fetchDeps));
+  const saved = (await db.get("select content_hash from documents where final_url = 'https://northco.invalid/'") as
+    { content_hash: string }).content_hash;
+  return { db, periodId, northco, saved };
+}
+
+async function pass2(db: Sql, periodId: string, companyId: string, fetchDeps: LiveDeps["fetch"]) {
+  const { v, requests } = vendor({ extraction: STAGE_FROM_HOME });
+  const out = await runOne(db, periodId, companyId, "general", deps(db, v, fetchDeps));
+  return { ...out, asked: extractions(requests), notes: await notesOf(db, out.runId) };
+}
+
+const LIVE_HOME = { type: "text/html", body: "<html><body><h1>Northco Mining Corp.</h1>" +
+  "<p>Northco Mining Corp. is a gold exploration company advancing projects in Ontario and Peru.</p></body></html>" };
+const NOBODY_HOME = { type: "text/html", body: "<html><body><h1>Under construction</h1></body></html>" };
+
+test("PASS 2's home page: fetched now in preference to the copy pass 1 saved", async () => {
+  const { db, periodId, northco, saved } = await withSavedHomePage();
+  const r = await pass2(db, periodId, northco.id,
+                        world({ omit: NO_FILINGS, pages: { ...PAGES, "https://northco.invalid/": LIVE_HOME } }).fetchDeps);
+  assert.ok(r.notes.includes("no filing read; read the home page: https://northco.invalid/"));
+  assert.ok(!r.notes.some((n) => n.includes("pass 1 saved")));
+  assert.match(JSON.stringify(r.asked[0].messages), /in Ontario and Peru/);
+  assert.notEqual(r.by.stage_evidence_state.anchor_document_hash, saved);
+});
+
+test("PASS 2's home page: unreachable, the copy pass 1 saved is read -- and once read, not asked about again", async () => {
+  const { db, periodId, northco, saved } = await withSavedHomePage();
+  const down = world({ omit: [...NO_FILINGS, "https://northco.invalid/"], pages: WITH_STAGE }).fetchDeps;
+  const r = await pass2(db, periodId, northco.id, down);
+  assert.equal(r.asked.length, 1);
+  assert.equal(r.by.stage_evidence_state.state, "proposed");
+  assert.equal(r.by.stage_evidence_state.anchor_document_hash, saved, "the saved copy, found past the newer pass 1");
+  assert.ok(r.notes.some((n) => n.startsWith("no filing read; read the home page pass 1 saved on ")));
+
+  // Still offered for its filings, but the home page is in review: no second call, no second proposal.
+  const again = await pass2(db, periodId, northco.id, down);
+  assert.equal(again.asked.length, 0);
+  assert.equal(again.findings.length, 0);
+  assert.ok(again.notes.includes("no filing read; the home page was already read in this period and is in review"));
+});
+
+test("PASS 2's home page: a fetched page that names nobody is refused, and the saved copy read instead", async () => {
+  const { db, periodId, northco, saved } = await withSavedHomePage();
+  const r = await pass2(db, periodId, northco.id,
+                        world({ omit: NO_FILINGS, pages: { ...PAGES, "https://northco.invalid/": NOBODY_HOME } }).fetchDeps);
+  assert.ok(r.notes.includes("the home page does not name the company: https://northco.invalid/"));
+  assert.equal(r.by.stage_evidence_state.anchor_document_hash, saved);
+});
+
+test("PASS 2's home page: a saved copy emptied by retention is not read, and the same page fetched again fills it", async () => {
+  const { db, periodId, northco, saved } = await withSavedHomePage();
+  await db.run("update documents set text_content = null where content_hash = ?", saved);
+  const down = world({ omit: [...NO_FILINGS, "https://northco.invalid/"], pages: WITH_STAGE }).fetchDeps;
+  const empty = await pass2(db, periodId, northco.id, down);
+  assert.equal(empty.asked.length, 0, "nothing to read, nothing asked");
+  assert.ok(empty.notes.includes("the home page pass 1 saved has no text: https://northco.invalid/"));
+
+  // The same bytes, fetched now: the cleared row gets its text back, so the quote is checked against it.
+  const up = await pass2(db, periodId, northco.id, world({ omit: NO_FILINGS, pages: WITH_STAGE }).fetchDeps);
+  assert.equal(up.by.stage_evidence_state.anchor_document_hash, saved, "same bytes, same hash");
+  assert.equal(up.by.stage_evidence_state.state, "proposed");
+  const row = await db.get("select text_content from documents where content_hash = ?", saved) as { text_content: string | null };
+  assert.match(String(row.text_content), /is a gold exploration company/);
+});
+
+test("PASS 2's home page: one on a subdomain of the website is the company's; one on another host is not", async () => {
+  const { db, periodId, northco, saved } = await withSavedHomePage();
+  // The home page redirects to a subdomain, as the filing fetches allow.
+  const base = world({ omit: NO_FILINGS, pages: { ...WITH_STAGE, "https://corporate.northco.invalid/": LIVE_HOME } }).fetchDeps;
+  const redirecting = { ...base, http: async (url: string): Promise<HttpResponse> => url === "https://northco.invalid/"
+    ? { status: 301, headers: {}, location: "https://corporate.northco.invalid/", body: new Uint8Array() }
+    : base.http(url) };
+  const r = await pass2(db, periodId, northco.id, redirecting);
+  assert.ok(r.notes.includes("no filing read; read the home page: https://corporate.northco.invalid/"), r.notes.join(" | "));
+
+  // The website moves to another host: pass 1's page is not on it.
+  const fresh = await withSavedHomePage();
+  await fresh.db.run(`update company_period_field_values set value = ? where period_id = ? and company_id = ?
+      and field_key = 'website'`, JSON.stringify("https://northco-gold.invalid"), fresh.periodId, fresh.northco.id);
+  const moved = await pass2(fresh.db, fresh.periodId, fresh.northco.id,
+                            world({ omit: [...NO_FILINGS, "https://northco.invalid/"], pages: WITH_STAGE }).fetchDeps);
+  assert.equal(moved.asked.length, 0);
+  assert.ok(moved.notes.includes("the home page pass 1 saved is not on the company's website: https://northco.invalid/"));
+  assert.ok(saved);
 });
 
 test("PASS 2: filings from the trusted domain only, the wrong company's filing refused, the fabricated fee rejected", async () => {
@@ -598,8 +759,9 @@ test("pass 2 reads a filing that names the company only as it was before a renam
     return { notes: raw.notes as string[], stored };
   };
   const without = await read(false);
-  assert.deepEqual(without.notes, ["does not name the company: https://northco.invalid/docs/kirkland-aif-2025.pdf"],
-                   "without the former name it reads as someone else's");
+  assert.deepEqual(without.notes, ["does not name the company: https://northco.invalid/docs/kirkland-aif-2025.pdf",
+                                   "no filing read; read the home page: https://northco.invalid/"],
+                   "without the former name it reads as someone else's, and only the home page is left");
   assert.ok(!without.stored.some((u) => u.includes("kirkland")));
   const withAlias = await read(true);
   assert.ok(withAlias.stored.some((u) => u.endsWith("kirkland-aif-2025.pdf")), "with it, the company's own");

@@ -31,7 +31,7 @@ import { DISCOVERY_MAX_SEARCHES, ROUTE_CONFIG } from "./client.ts";
 import {
   asStored, edgarFindings, edgarIndexDocuments, edgarProxy, lookupEdgar, normalizeName, SEC_HOST, type EdgarRecord,
 } from "./edgar.ts";
-import { fetchDocument, type FetchDeps, type FetchedDocument } from "./fetch.ts";
+import { fetchDocument, isAllowedHost, type FetchDeps, type FetchedDocument } from "./fetch.ts";
 import { buildPrompt, egressScan, PROMPT_VERSION, type PublicCompanyRow, type RestrictionSet } from "./prompt.ts";
 import type { Pass } from "./scope.ts";
 import type { CassetteBody, ProposedFinding } from "./worker.ts";
@@ -50,6 +50,11 @@ const MAX_DOCUMENTS = 5;
 const WINDOW_CHARS = 1200;
 const MAX_CHARS_PER_DOCUMENT = 30_000;
 const MAX_CHARS_TOTAL = 100_000;
+/**
+ * The most of a home page pass 2 sends, when it is all pass 2 has. Q4's saved
+ * home pages ran from 1,800 to 18,500 characters for the companies concerned.
+ */
+const HOME_PAGE_CHARS = 20_000;
 /**
  * Pass 2's answer, thinking included. 16,000 stopped enCore Energy's on 20
  * October 2026, when the run's other 243 answers peaked at 11,849. This is
@@ -517,6 +522,14 @@ export type LiveJob = {
   website: string | null;
   /** Documents pass 1 found, reused by pass 2 instead of searching again. */
   priorCandidates: CandidateDoc[] | null;
+  /**
+   * The home pages pass 1 verified and saved in this period, by content hash,
+   * newest first. Pass 2's fallback when it reads no filing and cannot fetch
+   * the page itself.
+   */
+  savedHomePages: string[];
+  /** Pass 2 has already read only the home page in this period: not again. */
+  homePageRead: boolean;
 };
 
 export type LiveBody = CassetteBody & { candidates?: CandidateDoc[]; notes?: string[] };
@@ -539,6 +552,8 @@ export type PassContext = {
   /** Documents pass 2 fetched, by content hash, in the order the prompt indexes them. */
   docHashes?: string[];
   notes?: string[];
+  /** Pass 2 read no filing, only the company's home page. See fieldsPrepare. */
+  homePageOnly?: boolean;
 };
 
 export function identityPrepare(job: LiveJob): Prepared {
@@ -1203,6 +1218,20 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
     await deps.store(doc);
     docs.push(doc);
   }
+  // No filing read: every link off the allowed hosts, every fetch refused,
+  // the one filing naming someone else. The company's own home page is still
+  // the company describing itself, and that is where a stage is most often
+  // said: in Q4, five of the eleven companies left with no stage had a home
+  // page calling them an exploration company, or an exploration and
+  // development one (5 November). Only then: beside a filing, a page of
+  // marketing copy would compete with it for the stage.
+  let homePageOnly = false;
+  if (docs.length === 0 && job.homePageRead) {
+    notes.push("no filing read; the home page was already read in this period and is in review");
+  } else if (docs.length === 0) {
+    const home = await readHomePage(job, siteHost, deps, notes);
+    if (home) { docs.push(home); homePageOnly = true; }
+  }
   if (docs.length === 0) {
     // Nothing to read, so nothing to ask. This pass finishes without a model
     // call, which is why prepare may return a finished body.
@@ -1212,6 +1241,13 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
 
   let budget = MAX_CHARS_TOTAL;
   const blocks = docs.map((d, i) => {
+    if (homePageOnly) {
+      // Whole, up to a cap. windowsOf looks for the passages a FILING puts
+      // things in, and a home page says "an exploration company" in none of
+      // them: Rev's sentence, at character 4,051, would never be sent.
+      return { type: "text", text: `<document index="${i}" url="${d.finalUrl}" source="the company's home page">\n` +
+        `${d.text.slice(0, HOME_PAGE_CHARS)}\n</document>` };
+    }
     // What is left of the budget is this document's cap, so a later document
     // still gets its fee windows first rather than losing its tail to a cut.
     const w = windowsOf(d.text, Math.min(MAX_CHARS_PER_DOCUMENT, Math.max(0, budget)));
@@ -1233,8 +1269,54 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
     // The documents are named by hash rather than carried: the worker that
     // reads the answer is not the one that fetched them. They are already
     // stored -- deps.store above -- so the hash is enough.
-    context: { docHashes: docs.map((d) => d.contentHash), notes },
+    context: { docHashes: docs.map((d) => d.contentHash), notes, ...(homePageOnly ? { homePageOnly } : {}) },
   };
+}
+
+/**
+ * The company's home page, for a pass 2 that read no filing.
+ *
+ * Fetched now, from the website the application trusts. Failing that, the
+ * copy pass 1 saved when it verified the website. Pass 1 saves one only when
+ * it had a website to verify, so from the quarter after an accepted website
+ * there is none, and the fetch is what makes this work at all. Either way the
+ * page must be on the trusted website -- its host or a subdomain of it, as
+ * the fetch allows -- have text, and name the company: a page saved while
+ * another host was only proposed, or since emptied by retention
+ * (scripts/retention.mjs), is not read.
+ */
+async function readHomePage(
+  job: LiveJob, siteHost: string, deps: LiveDeps, notes: string[],
+): Promise<FetchedDocument | null> {
+  const usable = (doc: FetchedDocument, what: string): boolean => {
+    const host = hostOf(doc.finalUrl);
+    const why = !host || !isAllowedHost(host, new Set([siteHost])) ? "is not on the company's website"
+      : !doc.text.trim() ? "has no text"
+      : namesCompany(doc.text, job.row) < 0 ? "does not name the company"
+      : null;
+    if (why) notes.push(`${what} ${why}: ${doc.finalUrl}`);
+    return why === null;
+  };
+
+  const url = `https://${siteHost}`;
+  try {
+    const doc = await fetchDocument(url, new Set([siteHost]), deps.fetch);
+    if (usable(doc, "the home page")) {
+      await deps.store(doc);
+      notes.push(`no filing read; read the home page: ${doc.finalUrl}`);
+      return doc;
+    }
+  } catch (err) {
+    notes.push(`home page not fetched: ${url} (${(err as Error).message.slice(0, 120)})`);
+  }
+
+  for (const saved of await deps.load(job.savedHomePages)) {
+    if (usable(saved, "the home page pass 1 saved")) {
+      notes.push(`no filing read; read the home page pass 1 saved on ${saved.retrievedAt.slice(0, 10)}: ${saved.finalUrl}`);
+      return saved;
+    }
+  }
+  return null;
 }
 
 export async function fieldsResume(
@@ -1257,7 +1339,8 @@ export async function fieldsResume(
 
   const findings = parsed.findings.map((e) => toFinding(e, docs)).filter((f): f is ProposedFinding => f !== null);
   const documents = docs.map((d) => asStored(d, detectScale(d.text) ?? null));
-  return { findings, documents, usage: meter.usage, cost_usd: meter.cost, notes };
+  return { findings, documents, usage: meter.usage, cost_usd: meter.cost, notes,
+           ...(context.homePageOnly ? { homePageOnly: true } : {}) };
 }
 
 export async function fieldsPass(job: LiveJob, deps: LiveDeps, meter: Meter): Promise<LiveBody> {

@@ -18,7 +18,8 @@ export const PASS_COPY: Record<Pass, { label: string; detail: string }> = {
   general: {
     label: "Pass 2 — fields",
     detail: "Stage, auditor, tenure, change of auditor, fees and the rest, read from filings on the " +
-            "company's own website and SEC EDGAR. Only companies with a trusted website.",
+            "company's own website and SEC EDGAR. Where no filing can be read, the company's home page, " +
+            "for its stage. Only companies with a trusted website.",
   },
 };
 
@@ -26,8 +27,9 @@ export const SCOPE_COPY: Record<Scope, { label: string; detail: string }> = {
   unresearched: {
     label: "Companies not yet researched",
     detail: "Every company this pass has not researched yet. A run that read no document for a " +
-            "company does not count, so that company is offered again. The default, and the only " +
-            "scope that never re-spends on work already done.",
+            "company does not count, nor does a pass 2 run that read only its home page, so that " +
+            "company is offered again. The default, and the only scope that never re-spends on work " +
+            "already done.",
   },
   all: {
     label: "Every company in the period",
@@ -43,7 +45,8 @@ export const SCOPE_COPY: Record<Scope, { label: string; detail: string }> = {
  * that pass in this period that asked for the group (in flight, or completed
  * having written a finding -- a pass can find nothing and still be done, as
  * long as it read something; one that read no document did not research
- * anything), or a value of the group
+ * anything, and a pass 2 that read only the home page read no filing), or a
+ * value of the group
  * settled in review, here or in an earlier period and carried here. Settled
  * means accepted research, an accepted "found nothing", or an override. A
  * finding nobody decided is not carried, so it does not count next quarter.
@@ -127,7 +130,8 @@ export const DONE_COPY: Record<Pass, string> = {
            "audit-related and other fees, reporting currency), which pass 2 has asked for since 17 October. " +
            "Research from before then covers the first half only. The ERP change signal, asked for since " +
            "22 October, is collected whenever pass 2 runs and does not decide what is done. A pass 2 run " +
-           "that read no document for a company does not count: the company is offered again.",
+           "that read no document for a company does not count, nor one that read only its home page: the " +
+           "company is offered again.",
 };
 
 /** The counts behind a pass's two options (start.ts, passScopes). */

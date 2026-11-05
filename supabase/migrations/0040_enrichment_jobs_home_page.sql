@@ -1,0 +1,12 @@
+-- A pass 2 job that read no filing, only the company's home page.
+--
+-- Pass 2 falls back to the home page when every filing link fails (live.ts,
+-- readHomePage): it can say what stage a company is at, never its fees,
+-- auditor or financials. Such a job does not count as having researched the
+-- company (start.ts, passCoverage), so the company is still offered as not
+-- yet researched until a filing is read or a value is settled in review.
+-- Samuel's decision, 5 November 2026.
+--
+-- Idempotent on purpose, as 0039 explains. Applied before the code that
+-- writes it is pushed; the code before it never reads it.
+alter table enrichment_jobs add column if not exists read_only_home_page boolean not null default false;
