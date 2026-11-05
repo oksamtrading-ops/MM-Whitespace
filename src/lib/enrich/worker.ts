@@ -284,14 +284,21 @@ async function priorPass1(db: Sql, companyId: string, periodId: string): Promise
 }
 
 /**
- * Has pass 2 already read this company's home page, and nothing else, in this
- * period? Then reading it again would ask the same question of the same page:
- * the answer is in review, and the company is still offered for its filings.
+ * The company's own pages pass 2 has already read, and nothing else, in this
+ * period, by address and content hash. Reading one again would ask the same question of the
+ * same page: the answer is in review, and the company is still offered for
+ * its filings. A page not among them -- an about page first followed since --
+ * is still read.
  */
-async function homePageReadHere(db: Sql, companyId: string, periodId: string): Promise<boolean> {
-  return !!await db.get(`select 1 from enrichment_jobs j join enrichment_runs run on run.id = j.run_id
+async function pagesReadHere(db: Sql, companyId: string, periodId: string): Promise<LiveJob["pagesRead"]> {
+  const rows = await db.all(`select r.raw from enrichment_job_results r
+      join enrichment_jobs j on j.id = r.job_id
+      join enrichment_runs run on run.id = j.run_id
      where j.company_id = ? and run.period_id = ? and j.field_group = 'general'
-       and j.state = 'completed' and j.read_only_home_page`, companyId, periodId);
+       and j.state = 'completed' and j.read_only_home_page`, companyId, periodId) as Array<{ raw: unknown }>;
+  const documents = rows.flatMap((r) => ((safeJson(r.raw) as LiveBody).documents ?? []) as Array<{ url?: unknown; contentHash?: unknown }>);
+  const strings = (xs: unknown[]) => [...new Set(xs.filter((x): x is string => typeof x === "string" && x.length > 0))];
+  return { urls: strings(documents.map((d) => d.url)), hashes: strings(documents.map((d) => d.contentHash)) };
 }
 
 /**
@@ -363,11 +370,11 @@ async function researchLiveJob(
 async function liveJobFor(db: Sql, row: PublicCompanyRow, fieldGroup: string, periodId: string): Promise<LiveJob> {
   const pass: Pass = fieldGroup === "identity" ? "identity" : "general";
   if (pass !== "general") {
-    return { pass, row, website: row.knownWebsite, priorCandidates: null, savedHomePages: [], homePageRead: false };
+    return { pass, row, website: row.knownWebsite, priorCandidates: null, savedHomePages: [], pagesRead: { urls: [], hashes: [] } };
   }
   const prior = await priorPass1(db, row.companyId, periodId);
   return { pass, row, website: row.knownWebsite, priorCandidates: prior.candidates,
-           savedHomePages: prior.savedHomePages, homePageRead: await homePageReadHere(db, row.companyId, periodId) };
+           savedHomePages: prior.savedHomePages, pagesRead: await pagesReadHere(db, row.companyId, periodId) };
 }
 
 /** The period a run researches. Every job's lookups are read from it. */

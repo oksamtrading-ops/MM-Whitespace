@@ -18,8 +18,9 @@ export const PASS_COPY: Record<Pass, { label: string; detail: string }> = {
   general: {
     label: "Pass 2 — fields",
     detail: "Stage, auditor, tenure, change of auditor, fees and the rest, read from filings on the " +
-            "company's own website and SEC EDGAR. Where no filing can be read, the company's home page, " +
-            "for its stage. Only companies with a trusted website.",
+            "company's own website and SEC EDGAR. Where none can be read, the filings its home page links " +
+            "to, and failing those its home page and about page, for its stage. Only companies with a " +
+            "trusted website.",
   },
 };
 

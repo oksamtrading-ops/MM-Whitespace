@@ -528,8 +528,13 @@ export type LiveJob = {
    * the page itself.
    */
   savedHomePages: string[];
-  /** Pass 2 has already read only the home page in this period: not again. */
-  homePageRead: boolean;
+  /**
+   * The company's own pages -- its home page, its about pages -- that a pass 2
+   * reading no filing has already sent in this period, by address and by
+   * content hash. Their answer is in review: not asked again. A page not
+   * among them still is.
+   */
+  pagesRead: { urls: string[]; hashes: string[] };
 };
 
 export type LiveBody = CassetteBody & { candidates?: CandidateDoc[]; notes?: string[] };
@@ -552,7 +557,7 @@ export type PassContext = {
   /** Documents pass 2 fetched, by content hash, in the order the prompt indexes them. */
   docHashes?: string[];
   notes?: string[];
-  /** Pass 2 read no filing, only the company's home page. See fieldsPrepare. */
+  /** Pass 2 read no filing, only the company's own pages: its home page, its about pages. See fieldsPrepare. */
   homePageOnly?: boolean;
 };
 
@@ -1086,14 +1091,23 @@ function rankCandidates(
     .sort(order);
 }
 
-/** Most fetches a pass-2 job makes, index pages included: bounded work per company. */
+/**
+ * Most fetches pass 2 makes from its candidates, index pages included:
+ * bounded work per company. Reading no filing, it has SITE_FETCHES more on
+ * the company's own site, and the home page and about pages besides.
+ */
 const MAX_FETCHES = 12;
 /** Most filings taken from one index page. */
 const MAX_LINKS_PER_PAGE = 6;
 
+/** An address as words, or as it is when it is not valid percent-encoding ("100%-owned"). */
+function decoded(s: string): string {
+  try { return decodeURIComponent(s); } catch { return s; }
+}
+
 /** What a linked file most likely is, from its address. */
 export function kindFromUrl(url: string): DocKind | null {
-  const u = decodeURIComponent(url).toLowerCase();
+  const u = decoded(url).toLowerCase();
   if (/form[-_ ]?of[-_ ]?proxy|voting[-_ ]?instruction|\bvif\b|notice[-_ ]?and[-_ ]?access/.test(u)) return null;
   const interim = /\bq[123]\b|q[123][-_]|[-_]q[123]|interim|quarter/.test(u);
   if (/circular|\bmic\b|proxy/.test(u)) return "information_circular";
@@ -1185,52 +1199,107 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
   const docs: FetchedDocument[] = [];
   const queue = rankCandidates(candidates, allow, order);
   const seen = new Set(queue.map((c) => canonicalUrl(c.url)));
-  let fetches = 0;
-  while (queue.length > 0 && docs.length < MAX_DOCUMENTS && fetches < MAX_FETCHES) {
-    const c = queue.shift()!;
-    fetches++;
-    let doc: FetchedDocument;
-    try {
-      doc = await fetchDocument(c.url, allow, deps.fetch);
-    } catch (err) {
-      notes.push(`not fetched: ${c.url} (${(err as Error).message.slice(0, 120)})`);
-      continue;
-    }
-    // A page on the company's own site that links to its filings is an index:
-    // discovery often stops at "Investors" or "AGM materials" when its search
-    // budget runs out (Run 1, Radisson). Follow its links, read none of it.
-    if (doc.docType === "html") {
-      const linked = linkedFilings(doc.links ?? [], allow, seen, order);
-      if (linked.length > 0) {
-        // Into the reading order, not ahead of it. Put first, a page of 2023
-        // filings had Andina read four of them before anything current.
-        queue.push(...linked);
-        queue.sort(order);
-        notes.push(`followed ${linked.length} filing link(s) from ${c.url}`);
+  // The investor pages the home page links to: followed, never read. One
+  // with no filing on it is a menu, not a document.
+  const indexOnly = new Set<string>();
+  /** pdfOnly: what the company's own site leads to is read only if it is a PDF. See below. */
+  const drain = async (limit: number, pdfOnly = false) => {
+    let fetches = 0;
+    while (queue.length > 0 && docs.length < MAX_DOCUMENTS && fetches < limit) {
+      const c = queue.shift()!;
+      fetches++;
+      let doc: FetchedDocument;
+      try {
+        doc = await fetchDocument(c.url, allow, deps.fetch);
+      } catch (err) {
+        notes.push(`not fetched: ${c.url} (${(err as Error).message.slice(0, 120)})`);
         continue;
       }
+      // A page on the company's own site that links to its filings is an index:
+      // discovery often stops at "Investors" or "AGM materials" when its search
+      // budget runs out (Run 1, Radisson). Follow its links, read none of it.
+      if (doc.docType === "html") {
+        const linked = linkedFilings(doc.links ?? [], allow, seen, order);
+        if (linked.length > 0) {
+          // Into the reading order, not ahead of it. Put first, a page of 2023
+          // filings had Andina read four of them before anything current.
+          queue.push(...linked);
+          queue.sort(order);
+          notes.push(`followed ${linked.length} filing link(s) from ${c.url}`);
+          continue;
+        }
+      }
+      if (indexOnly.has(canonicalUrl(c.url))) { notes.push(`no filing linked from ${c.url}`); continue; }
+      if (pdfOnly && doc.docType !== "pdf") { notes.push(`not a filing (${doc.docType}): ${c.url}`); continue; }
+      if (!doc.hasTextLayer) { notes.push(`no text layer: ${c.url}`); continue; }
+      // The worst output this system can produce is a well-cited fee from the
+      // wrong company's filing. A document that does not name the company is
+      // not this company's document.
+      if (namesCompany(doc.text, job.row) < 0) { notes.push(`does not name the company: ${c.url}`); continue; }
+      await deps.store(doc);
+      docs.push(doc);
     }
-    if (!doc.hasTextLayer) { notes.push(`no text layer: ${c.url}`); continue; }
-    // The worst output this system can produce is a well-cited fee from the
-    // wrong company's filing. A document that does not name the company is
-    // not this company's document.
-    if (namesCompany(doc.text, job.row) < 0) { notes.push(`does not name the company: ${c.url}`); continue; }
-    await deps.store(doc);
-    docs.push(doc);
-  }
+  };
+  await drain(MAX_FETCHES);
+
   // No filing read: every link off the allowed hosts, every fetch refused,
-  // the one filing naming someone else. The company's own home page is still
-  // the company describing itself, and that is where a stage is most often
-  // said: in Q4, five of the eleven companies left with no stage had a home
-  // page calling them an exploration company, or an exploration and
-  // development one (5 November). Only then: beside a filing, a page of
-  // marketing copy would compete with it for the stage.
+  // the one filing naming someone else. The company's own site is still
+  // there. Its home page links to its filings, or to the investor pages that
+  // do -- pass 1 often spends its searches on newswire copies and never
+  // reaches them (Cadillac, Centauri and Amapá, 5 November) -- and failing
+  // any filing, the home page and the about page are the company describing
+  // itself, which is where a stage is most often said: in Q4, five of the
+  // eleven companies left with no stage had a home page calling them an
+  // exploration company, or an exploration and development one (5 November).
+  // Only then: beside a filing, a page of marketing copy would compete with
+  // it for the stage.
   let homePageOnly = false;
-  if (docs.length === 0 && job.homePageRead) {
-    notes.push("no filing read; the home page was already read in this period and is in review");
-  } else if (docs.length === 0) {
-    const home = await readHomePage(job, siteHost, deps, notes);
-    if (home) { docs.push(home); homePageOnly = true; }
+  const pageSource = new Map<FetchedDocument, string>();
+  if (docs.length === 0) {
+    const found = await readHomePage(job, siteHost, deps, notes);
+    const home = found?.doc ?? null;
+    const { index, about } = home ? sitePages(home.links ?? [], siteHost, seen) : { index: [], about: [] };
+    if (home) {
+      const filings = linkedFilings(home.links ?? [], allow, seen, order);
+      for (const url of index) indexOnly.add(canonicalUrl(url));
+      // Only the home page's own leads: pass 1's leftovers past MAX_FETCHES
+      // were never going to be read, and would take the site's fetches.
+      if (queue.length > 0) notes.push(`left unread: ${queue.length} candidate(s) past the first ${MAX_FETCHES} fetches`);
+      queue.length = 0;
+      queue.push(...filings, ...index.map((url): CandidateDoc => ({
+        url, kind: "other", fiscal_year: null, title: "an investor page linked from the home page", provenance: "reported" })));
+      queue.sort(order);
+      if (filings.length + index.length > 0) {
+        notes.push(`followed the home page: ${filings.length} filing link(s), ${index.length} investor page(s)`);
+        // A PDF only: a filing link that answers with a page -- a "not found"
+        // under the company's header, a redirect home -- is the company's
+        // own page, and read as a filing it would count the company as
+        // researched.
+        await drain(SITE_FETCHES, true);
+      }
+    }
+    if (docs.length === 0 && home) {
+      const pages = [home, ...(await readAboutPages(about, job, siteHost, deps, notes))
+        .filter((p) => p.contentHash !== home.contentHash)];
+      // The same page by content, or by address with or without "www." and
+      // its trailing slash: a home page read at www.northco.com and fetched
+      // later at northco.com is the page in review.
+      const readUrls = new Set(job.pagesRead.urls.map(pageKey));
+      const readHashes = new Set(job.pagesRead.hashes);
+      for (const page of pages) {
+        if (readHashes.has(page.contentHash) || readUrls.has(pageKey(page.finalUrl)) || readUrls.has(pageKey(page.url))) {
+          notes.push(page === home ? "no filing read; the home page was already read in this period and is in review"
+                                   : `no filing read; already read in this period and in review: ${page.finalUrl}`);
+          continue;
+        }
+        notes.push(page !== home ? `no filing read; read the company's page: ${page.finalUrl}`
+          : found!.saved ? `no filing read; read the home page pass 1 saved on ${home.retrievedAt.slice(0, 10)}: ${home.finalUrl}`
+          : `no filing read; read the home page: ${home.finalUrl}`);
+        pageSource.set(page, page === home ? "the company's home page" : "the company's own website");
+        docs.push(page);
+      }
+      homePageOnly = docs.length > 0;
+    }
   }
   if (docs.length === 0) {
     // Nothing to read, so nothing to ask. This pass finishes without a model
@@ -1245,7 +1314,7 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
       // Whole, up to a cap. windowsOf looks for the passages a FILING puts
       // things in, and a home page says "an exploration company" in none of
       // them: Rev's sentence, at character 4,051, would never be sent.
-      return { type: "text", text: `<document index="${i}" url="${d.finalUrl}" source="the company's home page">\n` +
+      return { type: "text", text: `<document index="${i}" url="${d.finalUrl}" source="${pageSource.get(d)}">\n` +
         `${d.text.slice(0, HOME_PAGE_CHARS)}\n</document>` };
     }
     // What is left of the budget is this document's cap, so a later document
@@ -1287,7 +1356,7 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
  */
 async function readHomePage(
   job: LiveJob, siteHost: string, deps: LiveDeps, notes: string[],
-): Promise<FetchedDocument | null> {
+): Promise<{ doc: FetchedDocument; saved: boolean } | null> {
   const usable = (doc: FetchedDocument, what: string): boolean => {
     const host = hostOf(doc.finalUrl);
     const why = !host || !isAllowedHost(host, new Set([siteHost])) ? "is not on the company's website"
@@ -1314,18 +1383,113 @@ async function readHomePage(
     }
     if (usable(doc, "the home page")) {
       await deps.store(doc);
-      notes.push(`no filing read; read the home page: ${doc.finalUrl}`);
-      return doc;
+      return { doc, saved: false };
     }
   }
 
   for (const saved of await deps.load(job.savedHomePages)) {
-    if (usable(saved, "the home page pass 1 saved")) {
-      notes.push(`no filing read; read the home page pass 1 saved on ${saved.retrievedAt.slice(0, 10)}: ${saved.finalUrl}`);
-      return saved;
-    }
+    if (usable(saved, "the home page pass 1 saved")) return { doc: saved, saved: true };
   }
   return null;
+}
+
+/** Most fetches pass 2 makes on the company's own site after reading no filing: investor pages and the filings on them. */
+const SITE_FETCHES = 8;
+/** Most investor pages followed from the home page. */
+const INVESTOR_PAGES = 3;
+/** Most about pages read beside the home page. */
+const ABOUT_PAGES = 2;
+
+// Path words, matched whole between separators, that name a page of filings
+// or a page about the company. Menus also link to governance, team and news
+// pages, which say neither.
+const FILINGS_WORDS = /(^|[-_/])(financials?|financial-statements|filings?|reports?|circulars?|agm|shareholders?|meetings?|disclosures?|documents?|results?(-center|-centre)?|sedar)([-_/]|$)/;
+const INVESTOR_WORDS = /(^|[-_/])(investors?|investor-relations|ir)([-_/]|$)/;
+const ABOUT_WORDS = /(^|[-_/])(about|about-us|overview|who-we-are|the-company|company-overview|company-profile|profile)([-_/]|$)/;
+const COMPANY_WORDS = /(^|[-_/])(corporate|company)([-_/]|$)/;
+const NEITHER = /(^|[-_/])(governance|management|board|directors?|team|leadership|history|contact|privacy|terms|careers?|esg|sustainability|news|events?|media|presentations?|analysts?|coverage|estma|stock|calendar|gallery|subscribe|login)([-_/]|$)/;
+
+/**
+ * The pages on the company's own site worth opening from its home page: up
+ * to three investor pages, filings-named first, and up to two about pages,
+ * about-named first, each the shortest path of its kind. Only the website's
+ * host and its subdomains, only plain pages (no file, no query string), and
+ * none already queued. Centauri's menu, 5 November: /investors/financial-statements
+ * and /investors/shareholder-meetings, then /corporate, whose page says
+ * "Copper, gold, and silver exploration across northern Argentina".
+ */
+export function sitePages(links: string[], siteHost: string, seen: Set<string>): { index: string[]; about: string[] } {
+  const index: Array<{ url: string; rank: number; depth: number }> = [];
+  const about: Array<{ url: string; rank: number; depth: number }> = [];
+  const taken = new Set<string>();
+  for (const link of links) {
+    let u: URL;
+    try { u = new URL(link); } catch { continue; }
+    const host = hostOf(link);
+    if (!host || !isAllowedHost(host, new Set([siteHost])) || u.search) continue;
+    const path = decoded(u.pathname).toLowerCase().replace(/\/+$/, "");
+    if (!path || /\.[a-z0-9]{2,5}$/.test(path) && !/\.(html?|php|aspx?)$/.test(path)) continue;
+    const key = canonicalUrl(`${u.origin}${u.pathname}`);
+    if (seen.has(key) || taken.has(key)) continue;
+    taken.add(key);
+    const segments = path.split("/").filter(Boolean);
+    const depth = segments.length;
+    // An article, not a menu page: Irruptive's home page links to
+    // /irruptive-metals-announces-engagement-of-vp-investor-relations/,
+    // which is a news release that says "investor relations" (5 November).
+    const article = segments.some((s) => s.split(/[-_]+/).filter(Boolean).length >= 6) ||
+      segments.some((s) => /^20\d\d$/.test(s));
+    if (article || NEITHER.test(path)) continue;
+    if (FILINGS_WORDS.test(path)) index.push({ url: u.href, rank: 0, depth });
+    else if (INVESTOR_WORDS.test(path)) index.push({ url: u.href, rank: 1, depth });
+    else if (ABOUT_WORDS.test(path)) about.push({ url: u.href, rank: 0, depth });
+    else if (COMPANY_WORDS.test(path)) about.push({ url: u.href, rank: 1, depth });
+  }
+  const best = (xs: typeof index, n: number) =>
+    xs.sort((a, b) => a.rank - b.rank || a.depth - b.depth || a.url.length - b.url.length).slice(0, n).map((x) => x.url);
+  const picked = { index: best(index, INVESTOR_PAGES), about: best(about, ABOUT_PAGES) };
+  for (const url of [...picked.index, ...picked.about]) seen.add(canonicalUrl(url));
+  return picked;
+}
+
+/**
+ * The about pages, read as the home page is: on the website, with text, and
+ * naming the company. Amapá's home page, 5 November, called it "an
+ * established producer"; its /about/the-company says it is "focused on the
+ * restart and expansion" of a mine that has been on care and maintenance.
+ */
+async function readAboutPages(
+  urls: string[], job: LiveJob, siteHost: string, deps: LiveDeps, notes: string[],
+): Promise<FetchedDocument[]> {
+  const pages: FetchedDocument[] = [];
+  for (const url of urls) {
+    let doc: FetchedDocument;
+    try {
+      doc = await fetchDocument(url, new Set([siteHost]), deps.fetch);
+    } catch (err) {
+      notes.push(`not fetched: ${url} (${(err as Error).message.slice(0, 120)})`);
+      continue;
+    }
+    const host = hostOf(doc.finalUrl);
+    const why = doc.docType !== "html" ? "is not a page"
+      : !host || !isAllowedHost(host, new Set([siteHost])) ? "is not on the company's website"
+      : !doc.text.trim() ? "has no text"
+      : namesCompany(doc.text, job.row) < 0 ? "does not name the company"
+      : null;
+    if (why) { notes.push(`the company's page ${why}: ${doc.finalUrl}`); continue; }
+    if (pages.some((p) => p.contentHash === doc.contentHash)) continue;
+    await deps.store(doc);
+    pages.push(doc);
+  }
+  return pages;
+}
+
+/** A page's address for "already read": host without "www.", path without its trailing slash, the query kept. */
+export function pageKey(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${hostOf(url) ?? u.hostname}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+  } catch { return url; }
 }
 
 /** The accepted website's own host first, then the same host with "www." added or taken away. */

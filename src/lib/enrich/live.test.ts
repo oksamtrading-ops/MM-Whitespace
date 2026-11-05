@@ -11,7 +11,7 @@ import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
   BATCH_DISCOUNT, EXTRACTED_FIELDS, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
-  canonicalAuditor, collectSearchUrls, discoveryRequest, homePageHosts, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany,
+  canonicalAuditor, collectSearchUrls, discoveryRequest, homePageHosts, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany, pageKey, sitePages,
   readingOrder, toFinding, windowsOf, type CandidateDoc,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
@@ -498,6 +498,189 @@ test("the home page's names: the accepted host first, then www added or taken aw
   assert.deepEqual(homePageHosts("https://coppergiant.co/", "coppergiant.co"), ["coppergiant.co", "www.coppergiant.co"]);
   assert.deepEqual(homePageHosts("https://IR.Example.com", "ir.example.com"), ["ir.example.com", "www.ir.example.com"]);
   assert.deepEqual(homePageHosts(null, "northco.invalid"), ["northco.invalid", "www.northco.invalid"]);
+});
+
+/* ------------------------------- pass 2's last resort, widened: the home page's own links */
+
+const ABOUT = { type: "text/html", body: "<html><body><h1>About Northco</h1>" +
+  "<p>Northco Mining Corp. is a gold exploration company advancing projects in Ontario.</p></body></html>" };
+// A home page that is all menu, as Centauri's: the stage is one click away.
+const MENU_HOME = { type: "text/html", body: `<html><body><h1>Northco Mining Corp.</h1><nav>
+  <a href="/investors/shareholder-meetings/">Shareholder meetings</a>
+  <a href="/about-us/">About us</a>
+  <a href="/corporate/governance/">Governance</a>
+  <a href="/news/">News</a>
+  <a href="/?page_id=3">Draft</a>
+  <a href="https://elsewhere.invalid/about/">Someone else</a>
+  <a href="/docs/northco-presentation.pdf">Presentation</a></nav></body></html>` };
+const MEETINGS = { type: "text/html", body:
+  "<html><body><h1>Northco Mining Corp. Shareholder meetings</h1><p>Materials will be posted here.</p></body></html>" };
+const MENU_SITE = { ...PAGES, "https://northco.invalid/": MENU_HOME, "https://northco.invalid/about-us/": ABOUT,
+                    "https://northco.invalid/investors/shareholder-meetings/": MEETINGS };
+
+const STAGE_FROM_ABOUT = { findings: STAGE_FROM_HOME.findings.map((f) =>
+  f.field_key === "stage_evidence_state" ? { ...f, document_index: 1 } : f) } as unknown as typeof EXTRACTION;
+
+const sources = (asked: Array<Record<string, unknown>>) =>
+  [...JSON.stringify(asked[0]?.messages ?? "").matchAll(/url=\\"([^\\]+)\\" source=\\"([^\\]+)\\"/g)].map((m) => [m[1], m[2]]);
+
+test("PASS 2, no filing read: the home page's investor page leads to a filing, which is read as a filing", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const site = { ...PAGES,
+    "https://northco.invalid/": { type: "text/html", body:
+      `<html><body><h1>Northco Mining Corp.</h1><a href="/investors/agm/">AGM materials</a></body></html>` },
+    "https://northco.invalid/investors/agm/": { type: "text/html", body:
+      `<html><body><a href="/investors/agm/2026-management-information-circular.pdf">Circular</a></body></html>` },
+    "https://northco.invalid/investors/agm/2026-management-information-circular.pdf": PAGES["https://northco.invalid/docs/circular-2026.pdf"],
+  };
+  const { v, requests } = vendor();
+  const { fetched, fetchDeps } = world({ omit: NO_FILINGS, pages: site });
+  const { runId, by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  const notes = await notesOf(db, runId);
+  assert.ok(notes.includes("followed the home page: 0 filing link(s), 1 investor page(s)"), notes.join(" | "));
+  assert.ok(notes.includes("followed 1 filing link(s) from https://northco.invalid/investors/agm/"), notes.join(" | "));
+  assert.ok(fetched.includes("https://northco.invalid/investors/agm/2026-management-information-circular.pdf"));
+  assert.ok(!notes.some((n) => n.startsWith("no filing read")), "a filing was read");
+
+  const sent = JSON.stringify(extractions(requests)[0].messages);
+  assert.doesNotMatch(sent, /source=/, "read as a filing, in windows, not as a page of the company's");
+  assert.equal(by.audit_fee.state, "proposed");
+  const job = await db.get("select read_only_home_page from enrichment_jobs where run_id = ?", runId) as
+    { read_only_home_page: unknown };
+  assert.equal(Number(job.read_only_home_page), 0, "a filing read: the company counts as researched");
+});
+
+test("PASS 2, no filing anywhere: an investor page with no filing is not read, the about page is read beside the home page", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v, requests } = vendor({ extraction: STAGE_FROM_ABOUT });
+  const { fetched, fetchDeps } = world({ omit: NO_FILINGS, pages: MENU_SITE });
+  const { runId, by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  const notes = await notesOf(db, runId);
+
+  assert.ok(notes.includes("no filing linked from https://northco.invalid/investors/shareholder-meetings/"), notes.join(" | "));
+  assert.deepEqual(sources(extractions(requests)), [
+    ["https://northco.invalid/", "the company's home page"],
+    ["https://northco.invalid/about-us/", "the company's own website"],
+  ], "the meetings page is a menu, not a document");
+  assert.ok(notes.includes("no filing read; read the home page: https://northco.invalid/"));
+  assert.ok(notes.includes("no filing read; read the company's page: https://northco.invalid/about-us/"));
+  for (const never of ["https://northco.invalid/corporate/governance/", "https://northco.invalid/news/",
+                       "https://elsewhere.invalid/about/", "https://northco.invalid/?page_id=3"]) {
+    assert.ok(!fetched.includes(never), `not opened: ${never}`);
+  }
+
+  assert.equal(by.stage_evidence_state.state, "proposed");
+  const about = await db.get("select content_hash from documents where final_url = 'https://northco.invalid/about-us/'") as
+    { content_hash: string };
+  assert.equal(by.stage_evidence_state.anchor_document_hash, about.content_hash, "cited to the about page");
+  const job = await db.get("select read_only_home_page from enrichment_jobs where run_id = ?", runId) as
+    { read_only_home_page: unknown };
+  assert.equal(Number(job.read_only_home_page), 1, "no filing: still offered again");
+
+  // Both pages are in review now: nothing to ask.
+  const again = await pass2(db, periodId, northco.id, world({ omit: NO_FILINGS, pages: MENU_SITE }).fetchDeps);
+  assert.equal(again.asked.length, 0);
+  assert.ok(again.notes.includes("no filing read; the home page was already read in this period and is in review"));
+  assert.ok(again.notes.includes("no filing read; already read in this period and in review: https://northco.invalid/about-us/"));
+});
+
+test("PASS 2: a home page already in review does not keep an about page first linked since from being read", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  // Read once, when the home page linked nowhere (Amapá and Centauri, 5 November).
+  const first = await pass2(db, periodId, northco.id, world({ omit: NO_FILINGS, pages: WITH_STAGE }).fetchDeps);
+  assert.equal(first.asked.length, 1);
+
+  // Its menu now leads to an about page: that page alone is sent.
+  const later = await pass2(db, periodId, northco.id, world({ omit: NO_FILINGS, pages: MENU_SITE }).fetchDeps);
+  assert.deepEqual(sources(later.asked), [["https://northco.invalid/about-us/", "the company's own website"]]);
+  assert.ok(later.notes.includes("no filing read; the home page was already read in this period and is in review"));
+  assert.equal(later.by.stage_evidence_state.state, "proposed");
+});
+
+test("PASS 2: a filing link from the home page that answers with a page is not a filing, and the company is not counted", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const site = { ...WITH_STAGE,
+    "https://northco.invalid/": { type: "text/html", body: HOME_WITH_STAGE.body.replace("</body>",
+      `<a href="/docs/2026-management-information-circular.pdf">Circular</a></body>`) },
+    // A "not found" under the company's own header, answered 200.
+    "https://northco.invalid/docs/2026-management-information-circular.pdf": { type: "text/html",
+      body: "<html><body><h1>Northco Mining Corp.</h1><p>Sorry, that page could not be found.</p></body></html>" },
+  };
+  const r = await pass2(db, periodId, northco.id, world({ omit: NO_FILINGS, pages: site }).fetchDeps);
+  assert.ok(r.notes.includes("not a filing (html): https://northco.invalid/docs/2026-management-information-circular.pdf"),
+            r.notes.join(" | "));
+  assert.deepEqual(sources(r.asked), [["https://northco.invalid/", "the company's home page"]]);
+  const job = await db.get("select read_only_home_page from enrichment_jobs where run_id = ?", r.runId) as
+    { read_only_home_page: unknown };
+  assert.equal(Number(job.read_only_home_page), 1, "only the company's own page was read");
+});
+
+test("PASS 2: a link with a stray % in it is read past, not a failed job", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const site = { ...WITH_STAGE, "https://northco.invalid/": { type: "text/html", body: HOME_WITH_STAGE.body.replace("</body>",
+    `<a href="/projects/100%-owned-gold/">Gold</a><a href="/about/100%-ours/">Us</a><a href="/docs/100%-aif-2026.pdf">AIF</a></body>`) } };
+  const r = await pass2(db, periodId, northco.id, world({ omit: NO_FILINGS, pages: site }).fetchDeps);
+  assert.equal(r.outcome.jobState, "completed");
+  assert.equal(r.by.stage_evidence_state.state, "proposed");
+  assert.equal(kindFromUrl("https://northco.invalid/docs/100%-aif-2026.pdf"), "annual_information_form");
+});
+
+test("PASS 2: the home page in review is the same page at www or not, and with the same bytes at another address", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  // Read at www, the bare name being down that day.
+  const first = await pass2(db, periodId, northco.id, oneNameOnly("northco.invalid"));
+  assert.ok(first.notes.includes("no filing read; read the home page: https://www.northco.invalid/"), first.notes.join(" | "));
+  // The bare name answers now, with other words: the same page by address.
+  const bare = await pass2(db, periodId, northco.id, world({ omit: NO_FILINGS, pages: WITH_STAGE }).fetchDeps);
+  assert.equal(bare.asked.length, 0, bare.notes.join(" | "));
+  assert.ok(bare.notes.includes("no filing read; the home page was already read in this period and is in review"));
+  assert.equal(pageKey("https://www.northco.invalid/"), pageKey("https://northco.invalid"));
+  assert.notEqual(pageKey("https://northco.invalid/about"), pageKey("https://northco.invalid/"));
+});
+
+test("PASS 2: pass 1's leftovers past the fetch cap do not take the fetches the home page's investor pages need", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const many = { ...DISCOVERY_REPORT, documents: Array.from({ length: 14 }, (_, i) => ({
+    url: `https://northco.invalid/docs/gone-circular-${2010 + i}.pdf`, kind: "information_circular", fiscal_year: 2010 + i,
+    title: "Circular" })) };
+  const { v } = vendor({ report: many, extraction: STAGE_FROM_ABOUT });
+  const { runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, world({ pages: MENU_SITE }).fetchDeps));
+  const notes = await notesOf(db, runId);
+  assert.ok(notes.includes(`left unread: 2 candidate(s) past the first 12 fetches`), notes.join(" | "));
+  assert.ok(notes.includes("no filing linked from https://northco.invalid/investors/shareholder-meetings/"), notes.join(" | "));
+  assert.ok(notes.includes("no filing read; read the company's page: https://northco.invalid/about-us/"));
+});
+
+test("the pages worth opening from a home page: investor pages filings-first, about pages, never menus of something else", () => {
+  const seen = new Set<string>(["https://www.northco.invalid/investors/archive"]);
+  const links = [
+    "https://www.northco.invalid/", "https://www.northco.invalid/contact",
+    "https://www.northco.invalid/investors", "https://www.northco.invalid/investors/",
+    "https://www.northco.invalid/investors/financial-statements", "https://www.northco.invalid/investors/shareholder-meetings/",
+    "https://www.northco.invalid/investors/analyst-coverage", "https://www.northco.invalid/investors/estma-reports",
+    "https://www.northco.invalid/investors/media-events", "https://www.northco.invalid/investors/archive/",
+    "https://www.northco.invalid/investors/aldebaran-investors",
+    "https://www.northco.invalid/corporate/", "https://www.northco.invalid/corporate/corporate-governance/",
+    "https://www.northco.invalid/corporate/history", "https://www.northco.invalid/corporate/management-team-board-of-directors/",
+    "https://www.northco.invalid/about/the-company", "https://www.northco.invalid/projects/rio-grande",
+    "https://www.northco.invalid/?page_id=2229", "https://www.northco.invalid/wp-content/uploads/2026/11/presentation.pdf",
+    "https://ir.northco.invalid/results-center", "https://northco-ir.invalid/financial-statements", "mailto:ir@northco.invalid",
+    // News releases, not menus: Irruptive's, 5 November, and a dated post.
+    "https://www.northco.invalid/northco-mining-announces-engagement-of-vp-investor-relations/",
+    "https://www.northco.invalid/2026/10/about/",
+  ];
+  const picked = sitePages(links, "northco.invalid", seen);
+  assert.deepEqual(picked.index, [
+    "https://ir.northco.invalid/results-center",
+    "https://www.northco.invalid/investors/financial-statements",
+    "https://www.northco.invalid/investors/shareholder-meetings/",
+  ], "filings-named first, the shortest path first; a subdomain is the company's, another host is not");
+  assert.deepEqual(picked.about, ["https://www.northco.invalid/about/the-company", "https://www.northco.invalid/corporate/"],
+                   "about-named first, then the corporate page; governance, history and the team say neither");
+  for (const url of [...picked.index, ...picked.about]) assert.ok(seen.has(url.replace(/\/$/, "")), `marked seen: ${url}`);
+  assert.deepEqual(sitePages(links, "northco.invalid", seen), { index: ["https://www.northco.invalid/investors",
+                                                                   "https://www.northco.invalid/investors/aldebaran-investors"], about: [] },
+                   "a second look finds only what was not taken");
 });
 
 test("PASS 2: filings from the trusted domain only, the wrong company's filing refused, the fabricated fee rejected", async () => {
