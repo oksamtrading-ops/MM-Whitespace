@@ -1298,16 +1298,25 @@ async function readHomePage(
     return why === null;
   };
 
-  const url = `https://${siteHost}`;
-  try {
-    const doc = await fetchDocument(url, new Set([siteHost]), deps.fetch);
+  // The website as accepted, then its other spelling, until one gives a page
+  // that can be read. siteHost has lost any "www." (hostOf drops it so hosts
+  // compare), and some sites answer on one name only: Amapá's
+  // www.amapaminerals.com has a page, amapaminerals.com no address at all.
+  // Both names are on the website, and every redirect is held to it.
+  for (const host of homePageHosts(job.website, siteHost)) {
+    const url = `https://${host}`;
+    let doc: FetchedDocument;
+    try {
+      doc = await fetchDocument(url, new Set([siteHost]), deps.fetch);
+    } catch (err) {
+      notes.push(`home page not fetched: ${url} (${(err as Error).message.slice(0, 120)})`);
+      continue;
+    }
     if (usable(doc, "the home page")) {
       await deps.store(doc);
       notes.push(`no filing read; read the home page: ${doc.finalUrl}`);
       return doc;
     }
-  } catch (err) {
-    notes.push(`home page not fetched: ${url} (${(err as Error).message.slice(0, 120)})`);
   }
 
   for (const saved of await deps.load(job.savedHomePages)) {
@@ -1317,6 +1326,14 @@ async function readHomePage(
     }
   }
   return null;
+}
+
+/** The accepted website's own host first, then the same host with "www." added or taken away. */
+export function homePageHosts(website: string | null, siteHost: string): string[] {
+  let accepted = siteHost;
+  try { if (website) accepted = new URL(website).hostname.toLowerCase(); } catch { /* siteHost it is */ }
+  const other = accepted.startsWith("www.") ? accepted.slice(4) : `www.${accepted}`;
+  return [accepted, other];
 }
 
 export async function fieldsResume(

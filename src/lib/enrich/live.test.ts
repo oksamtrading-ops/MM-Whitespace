@@ -11,7 +11,7 @@ import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
   BATCH_DISCOUNT, EXTRACTED_FIELDS, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
-  canonicalAuditor, collectSearchUrls, discoveryRequest, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany,
+  canonicalAuditor, collectSearchUrls, discoveryRequest, homePageHosts, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany,
   readingOrder, toFinding, windowsOf, type CandidateDoc,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
@@ -464,6 +464,40 @@ test("PASS 2's home page: one on a subdomain of the website is the company's; on
   assert.equal(moved.asked.length, 0);
   assert.ok(moved.notes.includes("the home page pass 1 saved is not on the company's website: https://northco.invalid/"));
   assert.ok(saved);
+});
+
+/** A site that answers on one name only: the other has no address, as Amapá's bare amapaminerals.com. */
+function oneNameOnly(dead: string) {
+  const base = world({ omit: NO_FILINGS, pages: { ...WITH_STAGE, "https://www.northco.invalid/": LIVE_HOME } }).fetchDeps;
+  return { ...base, resolve: async (host: string) => {
+    if (host === dead) throw new Error(`getaddrinfo ENOTFOUND ${dead}`);
+    return base.resolve();
+  } };
+}
+
+test("PASS 2's home page: fetched at the website as accepted, www and all", async () => {
+  const { db, periodId, northco, saved } = await withSavedHomePage();
+  await db.run(`update company_period_field_values set value = ? where period_id = ? and company_id = ?
+      and field_key = 'website'`, JSON.stringify("https://www.northco.invalid"), periodId, northco.id);
+  const r = await pass2(db, periodId, northco.id, oneNameOnly("northco.invalid"));
+  assert.ok(r.notes.includes("no filing read; read the home page: https://www.northco.invalid/"), r.notes.join(" | "));
+  assert.ok(!r.notes.some((n) => n.startsWith("home page not fetched")), "the accepted name is tried first");
+  assert.notEqual(r.by.stage_evidence_state.anchor_document_hash, saved);
+});
+
+test("PASS 2's home page: a website accepted without www that answers only with it is still read", async () => {
+  const { db, periodId, northco } = await withSavedHomePage();
+  const r = await pass2(db, periodId, northco.id, oneNameOnly("northco.invalid"));
+  assert.ok(r.notes.some((n) => n.startsWith("home page not fetched: https://northco.invalid (")), r.notes.join(" | "));
+  assert.ok(r.notes.includes("no filing read; read the home page: https://www.northco.invalid/"), r.notes.join(" | "));
+});
+
+test("the home page's names: the accepted host first, then www added or taken away", () => {
+  assert.deepEqual(homePageHosts("https://www.amapaminerals.com", "amapaminerals.com"),
+                   ["www.amapaminerals.com", "amapaminerals.com"]);
+  assert.deepEqual(homePageHosts("https://coppergiant.co/", "coppergiant.co"), ["coppergiant.co", "www.coppergiant.co"]);
+  assert.deepEqual(homePageHosts("https://IR.Example.com", "ir.example.com"), ["ir.example.com", "www.ir.example.com"]);
+  assert.deepEqual(homePageHosts(null, "northco.invalid"), ["northco.invalid", "www.northco.invalid"]);
 });
 
 test("PASS 2: filings from the trusted domain only, the wrong company's filing refused, the fabricated fee rejected", async () => {
