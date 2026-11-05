@@ -18,7 +18,7 @@ import {
 import { EgressViolation, PROMPT_VERSION } from "./prompt.ts";
 import { DISCOVERY_MAX_SEARCHES, ROUTE_CONFIG } from "./client.ts";
 import { extractPdf } from "./pdf.ts";
-import { createRun, JobFailed, loadDocuments, processJob, storeDocument } from "./worker.ts";
+import { createRun, JobFailed, loadDocuments, processJob, publicRow, storeDocument } from "./worker.ts";
 import { seedFixtureDatabase, PERIOD_AS_OF } from "../../../tests/cassettes/build_cassettes.mjs";
 import { makePdf } from "../../../tests/fixtures/make_pdf.mjs";
 
@@ -267,6 +267,42 @@ test("PASS 1: the website is verified on its own homepage, and EDGAR answers thr
   assert.ok(urls.includes("https://www.sec.gov/Archives/edgar/data/1234567/000123456726000004/d40f.htm"));
   assert.ok(urls.includes("https://www.sec.gov/Archives/edgar/data/1234567/000123456726000004/ex99-1.htm"));
   assert.ok(raw.cost_usd > 0.02, "tokens plus two searches at $0.01");
+});
+
+test("A run reads its own quarter: the website, regions and pass 1's links of another period are not its own", async () => {
+  const { db, periodId: q1, northco } = await seeded({ website: "https://northco.invalid" });
+  const q2 = (await db.get(`insert into periods (label, market_cap_as_of) values ('Later', '2027-03-31')
+      returning id`) as { id: string }).id;
+  const put = (period: string, key: string, value: unknown) => db.run(`insert into company_period_field_values
+      (period_id, company_id, field_key, value, source, evidence_state) values (?, ?, ?, ?, 'extract', 'asserted')`,
+    period, northco.id, key, JSON.stringify(value));
+  await put(q2, "website", "https://northco-later.invalid");
+  await put(q2, "property_regions", { CANADA: ["BC"] });
+
+  // Each quarter's row, whichever the database would have returned first.
+  const first = await publicRow(db, northco.id, PERIOD_AS_OF, q1);
+  const later = await publicRow(db, northco.id, "2027-03-31", q2);
+  assert.equal(first.knownWebsite, "https://northco.invalid");
+  assert.equal(later.knownWebsite, "https://northco-later.invalid");
+  assert.match(JSON.stringify(first.knownRegions), /ON/);
+  assert.doesNotMatch(JSON.stringify(first.knownRegions), /BC/);
+  assert.match(JSON.stringify(later.knownRegions), /BC/);
+  assert.doesNotMatch(JSON.stringify(later.knownRegions), /ON/);
+
+  // Pass 1 in the first quarter saves its links.
+  const { fetchDeps } = world();
+  await runOne(db, q1, northco.id, "identity", deps(db, vendor().v, fetchDeps));
+
+  // Pass 2 in that quarter reads them and does not search.
+  const same = vendor();
+  await runOne(db, q1, northco.id, "general", deps(db, same.v, world().fetchDeps));
+  const searches = (r: Array<Record<string, unknown>>) => r.filter((x) => Array.isArray(x.tools)).length;
+  assert.equal(searches(same.requests), 0, "pass 1's links of this quarter are read, not searched for again");
+
+  // Pass 2 in the later quarter has no pass 1 of its own, so it searches.
+  const other = vendor();
+  await runOne(db, q2, northco.id, "general", deps(db, other.v, world().fetchDeps));
+  assert.ok(searches(other.requests) >= 1, "last quarter's links are last quarter's");
 });
 
 test("PASS 2: filings from the trusted domain only, the wrong company's filing refused, the fabricated fee rejected", async () => {

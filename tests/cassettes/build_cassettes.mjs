@@ -169,11 +169,11 @@ conducts no exploration, development or mining operations of its own.`,
 };
 
 export async function buildAll() {
-  const { db, companies } = seedFixtureDatabase();
+  const { db, periodId, companies } = seedFixtureDatabase();
   const cassettes = new Cassettes(CASSETTE_DIR, "record");
   const written = [];
   for (const c of companies) {
-    const row = await publicRow(db, c.id, PERIOD_AS_OF);
+    const row = await publicRow(db, c.id, PERIOD_AS_OF, periodId);
     const prompt = buildPrompt("extract_general", row);
     const key = cassetteKey({
       route: "extract_general", model: DEFAULT_MODEL,

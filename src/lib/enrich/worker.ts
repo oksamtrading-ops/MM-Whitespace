@@ -172,7 +172,20 @@ export async function createRun(
   return { runId: run.id, jobIds };
 }
 
-export async function publicRow(db: Sql, companyId: string, periodAsOf: string): Promise<PublicCompanyRow> {
+/**
+ * What research starts from for one company, read from ONE period.
+ *
+ * Every lookup of a period's values names the period. Until 5 November these
+ * read `where company_id = ? and field_key = ? limit 1`, with no period and no
+ * order, so once a company sat in two periods a run could start from either
+ * quarter's website, head office or regions -- whichever row the database
+ * returned first. Q4's runs happened to read Q4's rows; nothing made them.
+ * The period is not part of the row itself: the row is what the prompt is
+ * built from, and the cassettes are keyed on that.
+ */
+export async function publicRow(
+  db: Sql, companyId: string, periodAsOf: string, periodId: string,
+): Promise<PublicCompanyRow> {
   const c = await db.get("select id, canonical_name from companies where id = ?", companyId) as
     { id: string; canonical_name: string };
   const ident = await db.get(`select value, exchange from company_identifiers
@@ -180,7 +193,8 @@ export async function publicRow(db: Sql, companyId: string, periodAsOf: string):
   const aliases = (await db.all("select name from company_aliases where company_id = ?", companyId) as Array<{ name: string }>)
     .map((r) => r.name);
   const regionsRow = await db.get(`select value from company_period_field_values
-      where company_id = ? and field_key = 'property_regions' limit 1`, companyId) as { value: string } | undefined;
+      where period_id = ? and company_id = ? and field_key = 'property_regions'`, periodId, companyId) as
+    { value: string } | undefined;
 
   // A committed period writes every region bucket, empty ones included. An
   // empty bucket says nothing a prompt should carry, and dropping it is what
@@ -196,7 +210,8 @@ export async function publicRow(db: Sql, companyId: string, periodAsOf: string):
   // accepted one -- so research starts from them rather than rediscovering.
   const known = async (key: string): Promise<string | null> => {
     const r = await db.get(`select value from company_period_field_values
-        where company_id = ? and field_key = ? limit 1`, companyId, key) as { value: string } | undefined;
+        where period_id = ? and company_id = ? and field_key = ?`, periodId, companyId, key) as
+      { value: string } | undefined;
     if (!r) return null;
     try { const v = JSON.parse(r.value); return typeof v === "string" && v.trim() ? v.trim() : null; }
     catch { return null; }
@@ -238,12 +253,17 @@ export async function defaultLiveDeps(db: Sql): Promise<LiveDeps> {
   };
 }
 
-/** What pass 1 found for this company, so pass 2 reads it instead of searching again. */
-async function priorCandidates(db: Sql, companyId: string): Promise<CandidateDoc[] | null> {
+/**
+ * What pass 1 found for this company in THIS period, so pass 2 reads it
+ * instead of searching again. Only this period's: last quarter's filings are
+ * last quarter's, and with none here pass 2 searches for itself.
+ */
+async function priorCandidates(db: Sql, companyId: string, periodId: string): Promise<CandidateDoc[] | null> {
   const row = await db.get(`select r.raw from enrichment_job_results r
       join enrichment_jobs j on j.id = r.job_id
-     where j.company_id = ? and j.field_group = 'identity'
-     order by r.created_at desc limit 1`, companyId) as { raw: string } | undefined;
+      join enrichment_runs run on run.id = j.run_id
+     where j.company_id = ? and j.field_group = 'identity' and run.period_id = ?
+     order by r.created_at desc limit 1`, companyId, periodId) as { raw: string } | undefined;
   if (!row) return null;
   try { return (JSON.parse(row.raw) as LiveBody).candidates ?? null; } catch { return null; }
 }
@@ -253,10 +273,10 @@ async function priorCandidates(db: Sql, companyId: string): Promise<CandidateDoc
  * here, and nothing downstream may read anything but the stored row.
  */
 async function research(
-  db: Sql, jobId: string, row: PublicCompanyRow, opts: RunOptions,
+  db: Sql, jobId: string, row: PublicCompanyRow, periodId: string, opts: RunOptions,
   fieldGroup = "general", spent?: (usd: number) => Promise<void>,
 ): Promise<{ body: CassetteBody; attempt: number }> {
-  if ((opts.mode ?? "replay") === "live") return researchLiveJob(db, jobId, row, opts, fieldGroup, spent);
+  if ((opts.mode ?? "replay") === "live") return researchLiveJob(db, jobId, row, periodId, opts, fieldGroup, spent);
   const route: Route = opts.route ?? "extract_general";
   const model = opts.model ?? DEFAULT_MODEL;
   const prompt = buildPrompt(route, row);
@@ -296,7 +316,7 @@ async function research(
  * is: a crash after the calls costs a re-derivation, not a second bill.
  */
 async function researchLiveJob(
-  db: Sql, jobId: string, row: PublicCompanyRow, opts: RunOptions, fieldGroup: string,
+  db: Sql, jobId: string, row: PublicCompanyRow, periodId: string, opts: RunOptions, fieldGroup: string,
   spent?: (usd: number) => Promise<void>,
 ): Promise<{ body: CassetteBody; attempt: number }> {
   if (!LIVE_ENABLED && !opts.live) {
@@ -306,7 +326,7 @@ async function researchLiveJob(
       "and with a key present.");
   }
   const deps = { ...(opts.live ?? await defaultLiveDeps(db)), ...(spent ? { spent } : {}) };
-  const job = await liveJobFor(db, row, fieldGroup);
+  const job = await liveJobFor(db, row, fieldGroup, periodId);
   const body = await researchLive(job, deps);
   const attempt = await nextAttempt(db, jobId);
   await storeRawResult(db, jobId, attempt, body, `live-${job.pass}`);
@@ -314,12 +334,20 @@ async function researchLiveJob(
 }
 
 /** The pass, the company and what pass 1 already found. One definition. */
-async function liveJobFor(db: Sql, row: PublicCompanyRow, fieldGroup: string): Promise<LiveJob> {
+async function liveJobFor(db: Sql, row: PublicCompanyRow, fieldGroup: string, periodId: string): Promise<LiveJob> {
   const pass: Pass = fieldGroup === "identity" ? "identity" : "general";
   return {
     pass, row, website: row.knownWebsite,
-    priorCandidates: pass === "general" ? await priorCandidates(db, row.companyId) : null,
+    priorCandidates: pass === "general" ? await priorCandidates(db, row.companyId, periodId) : null,
   };
+}
+
+/** The period a run researches. Every job's lookups are read from it. */
+async function periodOfRun(db: Sql, runId: string): Promise<string> {
+  const r = await db.get("select period_id from enrichment_runs where id = ?", runId) as
+    { period_id: string } | undefined;
+  if (!r) throw new Error(`no run ${runId}`);
+  return String(r.period_id);
 }
 
 async function nextAttempt(db: Sql, jobId: string): Promise<number> {
@@ -355,13 +383,14 @@ export async function prepareJobForBatch(
   db: Sql, runId: string, job: ClaimedJob, periodAsOf: string, opts: RunOptions,
 ): Promise<{ submission: Submission } | { outcome: ResearchOutcome }> {
   await transition(db, job.id, "researching", { chargeAttempt: true });
-  const row = await publicRow(db, job.company_id, periodAsOf);
+  const periodId = await periodOfRun(db, runId);
+  const row = await publicRow(db, job.company_id, periodAsOf, periodId);
   const deps = opts.live ?? await defaultLiveDeps(db);
   const meter = new Meter();
 
   let prepared: Prepared;
   try {
-    prepared = await preparePass(await liveJobFor(db, row, job.field_group), deps, meter);
+    prepared = await preparePass(await liveJobFor(db, row, job.field_group, periodId), deps, meter);
   } catch (err) {
     throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
   }
@@ -461,9 +490,10 @@ export async function settleBatchResult(
 
     let resumed: LiveBody;
     try {
-      const row = await publicRow(db, job.company_id, String(context.periodAsOf ?? "").slice(0, 10));
+      const periodId = await periodOfRun(db, runId);
+      const row = await publicRow(db, job.company_id, String(context.periodAsOf ?? "").slice(0, 10), periodId);
       resumed = await resumePass(
-        await liveJobFor(db, row, String(context.fieldGroup ?? job.field_group)),
+        await liveJobFor(db, row, String(context.fieldGroup ?? job.field_group), periodId),
         context, result.message, deps, meter);
     } catch (err) {
       throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
@@ -876,7 +906,8 @@ export async function processJob(
   db: Sql, runId: string, job: ClaimedJob, periodAsOf: string, opts: RunOptions,
 ): Promise<ResearchOutcome> {
   await transition(db, job.id, "researching", { chargeAttempt: true });
-  const row = await publicRow(db, job.company_id, periodAsOf);
+  const periodId = await periodOfRun(db, runId);
+  const row = await publicRow(db, job.company_id, periodAsOf, periodId);
 
   // Each call's cost goes on the run as it returns, so an attempt the platform
   // cuts off, or one that fails, is still counted; finishing records the rest.
@@ -885,7 +916,7 @@ export async function processJob(
 
   let body: CassetteBody, attempt: number;
   try {
-    ({ body, attempt } = await research(db, job.id, row, opts, job.field_group, spent));
+    ({ body, attempt } = await research(db, job.id, row, periodId, opts, job.field_group, spent));
   } catch (err) {
     throw new JobFailed(await routeFailure(db, runId, job.id, err), err);
   }
