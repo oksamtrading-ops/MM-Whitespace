@@ -25,8 +25,9 @@ export const PASS_COPY: Record<Pass, { label: string; detail: string }> = {
 export const SCOPE_COPY: Record<Scope, { label: string; detail: string }> = {
   unresearched: {
     label: "Companies not yet researched",
-    detail: "Every company in the period with no finding from any run. The default, and " +
-            "the only scope that never re-spends on work already done.",
+    detail: "Every company this pass has not researched yet. A run that read no document for a " +
+            "company does not count, so that company is offered again. The default, and the only " +
+            "scope that never re-spends on work already done.",
   },
   all: {
     label: "Every company in the period",
@@ -39,8 +40,10 @@ export const SCOPE_COPY: Record<Scope, { label: string; detail: string }> = {
  * The values a pass produces, in the groups a run's "not yet done" counts.
  *
  * A company has had a pass when every group of it is researched: a job of
- * that pass in this period that asked for the group (completed or in flight
- * -- a pass can find nothing and still be done), or a value of the group
+ * that pass in this period that asked for the group (in flight, or completed
+ * having written a finding -- a pass can find nothing and still be done, as
+ * long as it read something; one that read no document did not research
+ * anything), or a value of the group
  * settled in review, here or in an earlier period and carried here. Settled
  * means accepted research, an accepted "found nothing", or an override. A
  * finding nobody decided is not carried, so it does not count next quarter.
@@ -116,14 +119,15 @@ export const FIELD_GROUPS: Record<Pass, readonly FieldGroup[]> = {
 /** What "not yet done" leaves out, per pass, as the start form says it. */
 export const DONE_COPY: Record<Pass, string> = {
   identity: "Not yet done leaves out a company whose website, SEC registration, fiscal year-end or head " +
-            "office is researched: by a pass 1 run in this period, or accepted, overridden or accepted as " +
-            "not found in review, here or in an earlier quarter and carried here.",
+            "office is researched: by a pass 1 run in this period that read something, or accepted, " +
+            "overridden or accepted as not found in review, here or in an earlier quarter and carried here.",
   general: "Not yet done leaves out a company only when both halves of pass 2 are researched, here or in an " +
            "earlier quarter and carried here: the filing fields (stage, auditor, tenure, change of auditor, " +
            "audit and tax fees, ERP), and commodities with the financials (revenue, net income, total assets, " +
            "audit-related and other fees, reporting currency), which pass 2 has asked for since 17 October. " +
            "Research from before then covers the first half only. The ERP change signal, asked for since " +
-           "22 October, is collected whenever pass 2 runs and does not decide what is done.",
+           "22 October, is collected whenever pass 2 runs and does not decide what is done. A pass 2 run " +
+           "that read no document for a company does not count: the company is offered again.",
 };
 
 /** The counts behind a pass's two options (start.ts, passScopes). */

@@ -63,8 +63,8 @@ export type PassCoverage = {
  * pass's field groups (FIELD_GROUPS) are already researched for it:
  *
  *   here     a job of this pass in this period that asked for the group,
- *            completed or in flight; or a value of the group accepted or
- *            overridden in this period
+ *            in flight, or completed having written at least one finding;
+ *            or a value of the group accepted or overridden in this period
  *   carried  a value carried from an earlier period (committsx.ts) that
  *            was settled in review there -- accepted, accepted as "found
  *            nothing", or overridden
@@ -93,10 +93,20 @@ export async function passCoverage(db: Sql, periodId: string, pass: Pass): Promi
     if (m.get(group) !== "here") m.set(group, how);
   };
 
-  // A run here. A job that halted or was abandoned researched nothing.
+  // A run here. A job that halted or was abandoned researched nothing, and
+  // neither did one that completed without writing a finding. That is a pass
+  // that read no document at all: every link off the allowed hosts, every
+  // fetch refused, or the one filing not naming the company. Each document
+  // read yields a finding per field, a "not found" included, so no finding
+  // means nothing was read. Counting such a job as done is how 11 of Q4's
+  // companies reached revision 6 with no stage research and were never
+  // offered again (5 November). A job still in flight has no findings yet and
+  // counts, so a company is not queued twice.
   for (const j of await db.all(`select j.company_id, r.prompt_version from enrichment_jobs j
       join enrichment_runs r on r.id = j.run_id
-     where r.period_id = ? and j.field_group = ? and j.state not in ('halted', 'dead_letter')`,
+     where r.period_id = ? and j.field_group = ? and j.state not in ('halted', 'dead_letter')
+       and (j.state <> 'completed'
+            or exists (select 1 from enrichment_findings f where f.job_id = j.id))`,
     periodId, pass) as Array<{ company_id: string; prompt_version: string }>) {
     for (const g of groups) if (askedFor(g, j.prompt_version)) mark(j.company_id, g.key, "here");
   }

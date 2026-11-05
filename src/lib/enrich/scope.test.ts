@@ -190,6 +190,38 @@ test("a run in the period counts only for the fields it asked for", async () => 
   assert.deepEqual(p2.carriedFrom, []);
 });
 
+test("a pass that read no document has not researched the company, so it is offered again", async () => {
+  // Production, 5 November: eleven Q4 companies reached revision 6 with no
+  // stage research because their pass 2 job completed having read nothing --
+  // every link off the allowed hosts, or every fetch refused -- and that job
+  // counted as done, so no later run offered them again.
+  const db = await researchedQ3();
+  const q3 = await periodId(db, Q3);
+  assert.deepEqual(await tickers(db, Q3, "unresearched", "general"), ["BLNK", "CARY", "DEVL", "NRTH", "STHC"]);
+
+  // Southco: a completed pass 2 under today's rules that wrote no finding.
+  await research(db, Q3, "STHC", "general", TODAY, {}, []);
+  assert.deepEqual(await tickers(db, Q3, "unresearched", "general"), ["BLNK", "CARY", "DEVL", "NRTH", "STHC"],
+                   "a completed job with no finding read nothing, so Southco is still not yet done");
+
+  // Carryco: a pass 2 still running has no findings yet, and must not be queued twice.
+  const run = await db.get(`insert into enrichment_runs (period_id, budget_usd, model, prompt_version, mode)
+      values (?, 5, 'test', ?, 'live') returning id`, q3, TODAY) as { id: string };
+  await db.run(`insert into enrichment_jobs (run_id, company_id, field_group, state) values (?, ?, 'general', 'researching')`,
+               run.id, await companyId(db, "CARY"));
+  assert.deepEqual(await tickers(db, Q3, "unresearched", "general"), ["BLNK", "DEVL", "NRTH", "STHC"],
+                   "a job in flight still counts");
+
+  // Southco again, this time reading a filing that is silent on everything:
+  // "not found" is a finding, so the pass is done.
+  await research(db, Q3, "STHC", "general", TODAY, { auditor: null, commodities: null }, []);
+  assert.deepEqual(await tickers(db, Q3, "unresearched", "general"), ["BLNK", "DEVL", "NRTH"]);
+
+  // The same rule for pass 1: a job that wrote nothing is not a pass.
+  await research(db, Q3, "BLNK", "identity", TODAY, {}, []);
+  assert.deepEqual(await tickers(db, Q3, "unresearched", "identity"), ["BLNK", "DEVL"]);
+});
+
 test("an override here keeps carried research counted, and so does a second quarter", async () => {
   const db = await researchedQ3();
   await publishPeriod(db, await periodId(db, Q3), { overrideReason: "test" });
