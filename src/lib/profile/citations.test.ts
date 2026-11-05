@@ -197,11 +197,12 @@ test("an ERP override must name its public source, and that source is its citati
   assert.equal(c.citation.kind, "review");
   assert.equal(c.citation.kind === "review" && c.citation.url, "https://northco.example/aif-2025.pdf");
   const [row] = await listCompanies(db, { allowDraft: true });
-  assert.equal(row.erp, "SAP S/4HANA");
+  assert.equal(row.meta.find((m) => m.field === "incumbent_erp")?.text, "SAP S/4HANA",
+               "no column of its own, so search finds it as a detail");
   assert.equal(row.sources.incumbent_erp, "manual_override");
 });
 
-test("an ERP change override must name its public source as well, and the table words it", async () => {
+test("an ERP change override must name its public source as well, and search words it", async () => {
   // An ERP project known from an engagement is client information, exactly as
   // the system is.
   const { db, periodId, companyId } = await committed();
@@ -215,9 +216,9 @@ test("an ERP change override must name its public source as well, and the table 
   const c = (await citationsForPeriod(db, periodId)).get(citeKey(companyId, "erp_change"))!;
   assert.equal(c.citation.kind === "review" && c.citation.url, "https://northco.example/mda-2025.pdf");
   const [row] = await listCompanies(db, { allowDraft: true });
-  assert.equal(row.erpChange, "Implementing (2026)");
   assert.equal(row.sources.erp_change, "manual_override");
-  assert.ok(!row.meta.some((m) => m.field === "erp_change"), "it has a column, so it is not repeated as a search-only value");
+  assert.equal(row.meta.find((m) => m.field === "erp_change")?.text, "Implementing (2026)",
+               "no column of its own, so search finds it as a detail");
 });
 
 test("a document is named by its title, else its file, and only last by its host", () => {

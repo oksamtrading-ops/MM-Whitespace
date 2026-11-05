@@ -42,8 +42,6 @@ const BASE_COLUMNS: Column[] = [
   { key: "hq", label: "Company HQ", kind: "text", field: "head_office_region" },
   { key: "auditor", label: "Auditor", kind: "text", field: "auditor" },
   { key: "audit_fee", label: "Audit fees", kind: "fee", field: "audit_fee" },
-  { key: "erp", label: "Incumbent ERP", kind: "text", field: "incumbent_erp" },
-  { key: "erp_change", label: "ERP change", kind: "text", field: "erp_change" },
   { key: "market_cap", label: "Market cap (CAD)", kind: "money" },
 ];
 
@@ -62,8 +60,6 @@ function cellsOf(r: RosterRow): Record<string, unknown> {
     hq: hqWord(r),
     auditor: r.auditor ? auditorWord(r.auditor) : null,
     audit_fee: r.auditFee ?? null,
-    erp: r.erp,
-    erp_change: r.erpChange,
     market_cap: r.marketCap,
   };
   for (const s of STAGE_ORDER) out[s] = stageMark(r, s);
