@@ -3,6 +3,7 @@
 /** Access review actions. Admin only, asserted first. */
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/context.ts";
+import { checkName, personName } from "../../../lib/auth/person.ts";
 import { revokeAllForUser } from "../../../lib/auth/sessions.ts";
 import { setTemporaryPassword } from "../../../lib/auth/signin.ts";
 
@@ -36,7 +37,7 @@ export async function setActive(form: FormData): Promise<void> {
 }
 
 export type TempPasswordResult =
-  | { ok: true; email: string; password: string; sessionsRevoked: number }
+  | { ok: true; name: string; password: string; sessionsRevoked: number }
   | { ok: false; message: string };
 
 /**
@@ -62,8 +63,8 @@ export async function issueTemporaryPassword(
     return { ok: false, message: "Use the password screen to change your own." };
   }
   const target = await db.get(
-    "select email, is_active from app_users where id = ?", targetId) as
-    { email: string; is_active: number } | undefined;
+    "select email, first_name, last_name, is_active from app_users where id = ?", targetId) as
+    { email: string; first_name: string | null; last_name: string | null; is_active: number } | undefined;
   if (!target) return { ok: false, message: "That account no longer exists." };
 
   const { password, sessionsRevoked } = await setTemporaryPassword(
@@ -74,11 +75,11 @@ export async function issueTemporaryPassword(
                JSON.stringify({ targetId, targetEmail: target.email,
                                 by: user.email, sessionsRevoked }));
   revalidatePath("/access");
-  return { ok: true, email: target.email, password, sessionsRevoked };
+  return { ok: true, name: personName(target), password, sessionsRevoked };
 }
 
 export type InviteResult =
-  | { ok: true; email: string; role: string; password: string }
+  | { ok: true; name: string; role: string; password: string }
   | { ok: false; message: string };
 
 const ROLES = ["admin", "analyst", "viewer"] as const;
@@ -101,6 +102,10 @@ export async function inviteUser(
   const { user, db } = await requireRole(["admin"]);
   const email = String(form.get("email") ?? "").trim();
   const role = String(form.get("role") ?? "");
+  // Every account has a name from the start, so nobody invited from here
+  // ever meets the name gate.
+  const named = checkName(form.get("first"), form.get("last"));
+  if (!named.ok) return named;
 
   if (!email || !email.includes("@") || email.length > 320) {
     return { ok: false, message: "That is not an email address." };
@@ -120,7 +125,8 @@ export async function inviteUser(
   let created: { id: string };
   try {
     created = await db.get(
-      "insert into app_users (email, role) values (?, ?) returning id", email, role) as { id: string };
+      "insert into app_users (email, role, first_name, last_name) values (?, ?, ?, ?) returning id",
+      email, role, named.first, named.last) as { id: string };
   } catch (err) {
     // The 0024 trigger refuses an address outside the allowlist, and its
     // message is written for a database session rather than for this screen.
@@ -140,7 +146,7 @@ export async function inviteUser(
                "user_invited", user.id,
                JSON.stringify({ targetId: created.id, targetEmail: email, role, by: user.email }));
   revalidatePath("/access");
-  return { ok: true, email, role, password };
+  return { ok: true, name: `${named.first} ${named.last}`, role, password };
 }
 
 /**

@@ -67,10 +67,11 @@ const B = 1e9;
 const Q3 = { key: "q3", label: "Q3-2026 (2026-05-31)", asOf: "2026-05-31", threshold: 200 * M };
 const Q4 = { key: "q4", label: "Q4-2026 (2026-08-31)", asOf: "2026-08-31", threshold: 100 * M };
 
+// Synthetic people, named as every account must be.
 const USERS = [
-  ["analyst@example.invalid", "analyst"],
-  ["viewer@example.invalid", "viewer"],
-  ["admin@example.invalid", "admin"],
+  ["analyst@example.invalid", "analyst", "Jordan", "Reyes"],
+  ["viewer@example.invalid", "viewer", "Casey", "Morgan"],
+  ["admin@example.invalid", "admin", "Riley", "Chen"],
 ];
 
 /* ---------------------------------------------------------------- dice */
@@ -1057,8 +1058,8 @@ const db = new SqliteSql(handle);
 await db.run("insert into audit_log (event, detail) values (?, ?)", MARK,
              JSON.stringify({ seed: SEED, script: "scripts/seed_showcase.mjs", synthetic: true }));
 
-const insertUser = "insert into app_users (email, role) values (?, ?)";
-for (const [email, role] of USERS) await db.run(insertUser, email, role);
+const insertUser = "insert into app_users (email, role, first_name, last_name) values (?, ?, ?, ?)";
+for (const [email, role, first, last] of USERS) await db.run(insertUser, email, role, first, last);
 const userId = async (email) => (await db.get("select id from app_users where email = ?", email)).id;
 const actors = { analyst: await userId("analyst@example.invalid"), admin: await userId("admin@example.invalid") };
 

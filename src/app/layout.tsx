@@ -7,6 +7,7 @@ import { resolveUser } from "../lib/auth/session.ts";
 import Sidebar, { type NavItem } from "./_ui/Sidebar.tsx";
 import { RAIL_COOKIE, showsWorking, THEME_COOKIE, WORKING_COOKIE, type Theme } from "./_ui/theme.ts";
 import { periodName } from "./_ui/format.ts";
+import NameForm from "./profile/NameForm.tsx";
 
 /* Open Sans is the brand face and carries everything you read. Archivo carries
    every figure that measures something -- its width axis lets the hero and
@@ -55,7 +56,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // temporary password, so offering them is offering a row of dead ends. The
   // rail keeps the user, because signing out must stay reachable from anywhere.
   const gated = user?.mustChangePassword === true;
-  const canReview = !gated && (user?.role === "analyst" || user?.role === "admin");
+  // The name gate, after the password one. Every page and action already
+  // refuses this account (assertRole); here the form that lets them past
+  // takes the page's place, so they meet it wherever they land.
+  const needsName = !gated && user?.needsName === true;
+  const held = gated || needsName;
+  const canReview = !held && (user?.role === "analyst" || user?.role === "admin");
   const jar = await cookies();
   const theme = await readTheme();
   const railCollapsed = jar.get(RAIL_COOKIE)?.value === "1";
@@ -65,7 +71,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
      partner reads, the period an analyst builds, and the administration
      behind both. A Viewer sees the first group only. */
   const items: NavItem[] = [];
-  if (!gated) {
+  if (!held) {
     items.push({ href: "/dashboard", label: "Dashboard", icon: "layout-dashboard", group: "product" });
     items.push({ href: "/companies", label: "Companies", icon: "building-2", group: "product" });
   }
@@ -73,9 +79,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   if (canReview) items.push({ href: "/runs", label: "Runs", icon: "play", group: "period" });
   if (canReview) items.push({ href: "/review", label: "Review", icon: "clipboard-check", group: "period" });
   if (canReview) items.push({ href: "/publish", label: "Publish", icon: "badge-check", group: "period" });
-  if (!gated && user?.role === "admin") items.push({ href: "/access", label: "Access", icon: "users", group: "admin" });
-  if (!gated && user?.role === "admin") items.push({ href: "/settings", label: "Settings", icon: "settings", group: "admin" });
-  if (!gated && user?.role === "admin") items.push({ href: "/styleguide", label: "Styleguide", icon: "palette", group: "admin" });
+  if (!held && user?.role === "admin") items.push({ href: "/access", label: "Access", icon: "users", group: "admin" });
+  if (!held && user?.role === "admin") items.push({ href: "/settings", label: "Settings", icon: "settings", group: "admin" });
+  if (!held && user?.role === "admin") items.push({ href: "/styleguide", label: "Styleguide", icon: "palette", group: "admin" });
 
   // The period, in the rail's foot. A Viewer is shown the newest PUBLISHED one,
   // the one every page they can open is reading; draft state is the
@@ -99,7 +105,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <Sidebar items={items} collapsed={railCollapsed} theme={theme}
                    period={showPeriod ? { name: periodName(period.label).name, draft: period.revision === null } : null}
                    user={user ? { name: user.name, role: user.role } : null} />
-          <main id="main" tabIndex={-1}>{children}</main>
+          <main id="main" tabIndex={-1}>
+            {needsName && user
+              ? <div className="page"><div className="signin rise">
+                  <div className="lockup">
+                    <h1 translate="no">Market Assessment Tool<span className="stop" aria-hidden="true" /></h1>
+                    <p className="firm">Deloitte</p>
+                  </div>
+                  <NameForm first={user.firstName} last={user.lastName} required />
+                </div></div>
+              : children}
+          </main>
         </div>
       </body>
     </html>

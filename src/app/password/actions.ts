@@ -22,7 +22,7 @@ export async function changePasswordAction(
   _prev: ChangeResult | null, form: FormData,
 ): Promise<ChangeResult> {
   const { user, db } = await requireRole(
-    ["admin", "analyst", "viewer"], { allowPasswordChange: true });
+    ["admin", "analyst", "viewer"], { allowPasswordChange: true, allowMissingName: true });
 
   const current = String(form.get("current") ?? "");
   const next = String(form.get("next") ?? "");

@@ -31,6 +31,14 @@ export default function InviteForm() {
       <form action={action}>
         <div className="fields">
           <span>
+            <label htmlFor="invite-first">First name</label>
+            <input id="invite-first" name="first" type="text" required maxLength={80} autoComplete="off" />
+          </span>
+          <span>
+            <label htmlFor="invite-last">Last name</label>
+            <input id="invite-last" name="last" type="text" required maxLength={80} autoComplete="off" />
+          </span>
+          <span>
             <label htmlFor="invite-email">Work email</label>
             <input id="invite-email" name="email" type="email" required
                    spellCheck={false} placeholder="someone@deloitte.ca" autoComplete="off" />
@@ -49,7 +57,7 @@ export default function InviteForm() {
 
       <div role="status" aria-live="polite">
         {state?.ok === true && (
-          <Callout tone="ok" title={`${state.email} can sign in as ${state.role}`}>
+          <Callout tone="ok" title={`${state.name} can sign in as ${state.role}`}>
             <code className="issued-code">{state.password}</code>
             Shown once. Give it to them over something other than this screen — they
             will be asked to replace it the first time they sign in.

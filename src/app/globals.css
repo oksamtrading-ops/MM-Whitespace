@@ -481,6 +481,10 @@ mark { background: var(--green-soft); color: var(--ink); padding: 0 .1em; border
 .sidebar.collapsed .foot { align-items: center; width: 100%; }
 .sidebar .who { font-size: 11.5px; color: var(--ink-3); display: flex; align-items: center; gap: 7px; padding: 0 var(--space-2); min-width: 0; }
 .sidebar .who .whoname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The identity line leads to your profile, so it is a link -- but it reads as
+   the line it was, and lights only on hover, like the rail buttons under it. */
+.sidebar a.who { min-height: 30px; border-radius: var(--radius-3); text-decoration: none; }
+.sidebar a.who:hover { color: var(--ink); background: var(--surface-2); }
 /* .whorole and NOT .role. The sign-in screen's development account buttons
    already own `.role`, and they define it as a three-column grid with 22px of
    padding and a bottom border -- so the rail's identity line silently became
@@ -1345,6 +1349,7 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 /* Every field but the last sits above another label, so it needs the gap the
    .help paragraph gives the last one. */
 .credentials input + label { margin-top: var(--space-4); }
+.credentials input + .btn { margin-top: var(--space-5); }
 .credentials input[type="email"]:focus-visible,
 .credentials input[type="password"]:focus-visible,
 .credentials input[type="text"]:focus-visible {

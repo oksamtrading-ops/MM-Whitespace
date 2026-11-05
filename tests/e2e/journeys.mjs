@@ -56,11 +56,12 @@ const FLAGGED = /class="pill warn">(?:<svg[\s\S]*?<\/svg>)?review<\/span>/;
 
 /**
  * One account's row, so an assertion is about that account and not the page.
- * Scoped to the table: the signed-in Admin's address is also in the top bar.
+ * Scoped to the table: the signed-in Admin's name is also in the rail. Found by
+ * the person's name, since the table shows names, not addresses.
  */
-function accountRow(html, email) {
+function accountRow(html, name) {
   const table = html.slice(html.indexOf('<table class="accounts"'), html.indexOf("</table>"));
-  const at = table.indexOf(email);
+  const at = table.indexOf(`>${name}<`);
   if (at < 0) return "";
   const start = table.lastIndexOf("<tr", at);
   const end = table.indexOf("</tr>", at);
@@ -232,24 +233,28 @@ function buildDatabase(dir) {
     // as the current one and the timeline stays coherent.
     db.prepare("update enrichment_runs set created_at = ?")
       .run(new Date(Date.now() - 3600000).toISOString().replace("T", " ").slice(0, 19));
-    const ins = db.prepare("insert into app_users (email, role) values (?, ?)");
-    ins.run("analyst@example.invalid", "analyst");
-    ins.run("viewer@example.invalid", "viewer");
-    ins.run("admin@example.invalid", "admin");
+    // Every account has a first and last name, as every account invited from
+    // /access does. "unnamed@" alone has none, for the name gate.
+    const ins = db.prepare("insert into app_users (email, role, first_name, last_name) values (?, ?, ?, ?)");
+    ins.run("analyst@example.invalid", "analyst", "Ana", "Lyst");
+    ins.run("viewer@example.invalid", "viewer", "Vee", "Ewer");
+    ins.run("admin@example.invalid", "admin", "Ad", "Min");
     // The two accounts an access review exists to find. Without them the
     // review has nothing to flag and its central number is 0 either way.
-    ins.run("never@example.invalid", "viewer");
+    ins.run("never@example.invalid", "viewer", "Nev", "Er");
     const dormant = new Date(Date.now() - 200 * 86400000)
       .toISOString().replace("T", " ").slice(0, 19);
+    db.prepare("insert into app_users (email, role, last_sign_in_at, first_name, last_name) values (?, ?, ?, ?, ?)")
+      .run("dormant@example.invalid", "viewer", dormant, "Dor", "Mant");
     db.prepare("insert into app_users (email, role, last_sign_in_at) values (?, ?, ?)")
-      .run("dormant@example.invalid", "viewer", dormant);
+      .run("unnamed@example.invalid", "viewer", new Date().toISOString().replace("T", " ").slice(0, 19));
     // An analyst holding a password somebody else chose, for the gate. It is
     // given a recent sign-in on purpose: the access review's own fixture is two
     // stale accounts and exactly two, and a third would quietly weaken the
     // assertion that its central number is the number actually flagged.
-    db.prepare("insert into app_users (email, role, last_sign_in_at) values (?, ?, ?)")
+    db.prepare("insert into app_users (email, role, last_sign_in_at, first_name, last_name) values (?, ?, ?, ?, ?)")
       .run("temp@example.invalid", "analyst",
-           new Date().toISOString().replace("T", " ").slice(0, 19));
+           new Date().toISOString().replace("T", " ").slice(0, 19), "Tem", "Porary");
   `], q);
 
   // Passwords, hashed the way the application hashes them. The dev sign-in
@@ -391,10 +396,10 @@ async function journeys(dbPath) {
   // whenever the "never" markup is absent -- which it always is -- so it could
   // not fail. Each account the review is meant to sort is now checked on its
   // own row.
-  const adminRow = accountRow(access.html, "admin@example.invalid");
+  const adminRow = accountRow(access.html, "Ad Min");
   check("the sign-in that just happened is recorded as today",
         /\(today\)/.test(adminRow), adminRow.replace(/\s+/g, " ").slice(0, 160));
-  const dormantRow = accountRow(access.html, "dormant@example.invalid");
+  const dormantRow = accountRow(access.html, "Dor Mant");
   check("a dormant account is counted in days and flagged for review",
         /\(\d+d ago\)/.test(dormantRow) && FLAGGED.test(dormantRow),
         dormantRow.replace(/\s+/g, " ").slice(0, 160));
@@ -404,15 +409,34 @@ async function journeys(dbPath) {
   check("the access review offers a way to invite somebody",
         access.html.includes("Invite somebody") && access.html.includes('name="role"'),
         "no invite form on /access");
+  check("and an invitation asks for a first and a last name",
+        access.html.includes('name="first"') && access.html.includes('name="last"'));
+  const accountsTable = access.html.slice(access.html.indexOf('<table class="accounts"'),
+                                          access.html.indexOf("</table>"));
+  check("the access review names people, and shows the address only of the one with no name",
+        accountsTable.includes(">Ad Min<") && !accountsTable.includes("admin@example.invalid")
+          && accountsTable.includes("unnamed@example.invalid"));
+
+  // The name gate. An account with no name is let in only as far as the form
+  // that asks for it, wherever it lands -- and nothing behind that form is drawn.
+  const unnamed = await signIn("unnamed@example.invalid");
+  const unnamedDash = await get("/dashboard", unnamed.cookie);
+  check("an account with no name meets the name form instead of the page",
+        unnamedDash.html.includes("Add your name to continue") && unnamedDash.html.includes('name="first"')
+          && !unnamedDash.html.includes('href="/companies"'));
+  const unnamedExport = await get("/api/companies/export", unnamed.cookie);
+  check("and is refused behind it as well, not only shown a form",
+        unnamedExport.status === 401 || unnamedExport.status === 403,
+        `export answered ${unnamedExport.status}`);
   check("and a way to change what somebody may do",
         access.html.includes('class="rolepick"'), "no role control on the rows");
   // Your own role is the one you cannot change: an Admin demoting themselves
   // is one click from an application with no Admin in it.
-  const ownRow = accountRow(access.html, "admin@example.invalid");
+  const ownRow = accountRow(access.html, "Ad Min");
   check("but not your own role", /disabled/.test(ownRow),
         ownRow.replace(/\s+/g, " ").slice(0, 200));
 
-  const neverRow = accountRow(access.html, "never@example.invalid");
+  const neverRow = accountRow(access.html, "Nev Er");
   check("an account that has never signed in says so, and is flagged",
         /never<\/span>/.test(neverRow) && FLAGGED.test(neverRow),
         neverRow.replace(/\s+/g, " ").slice(0, 160));

@@ -130,11 +130,11 @@ export default function Sidebar({ items, collapsed: initial, theme, period, user
         {user
           ? (
             <>
-              <p className="who" title={`${user.name} · ${user.role}`}>
+              <Link href={"/profile" as Route} className="who" title={`${user.name} · ${user.role} · your profile`}>
                 <Icon name="circle-user" size={15} />
                 {!collapsed && <><span className="whoname">{user.name}</span><span className="whorole">{user.role}</span></>}
-                {collapsed && <span className="sr-only">{user.name}, {user.role}</span>}
-              </p>
+                {collapsed && <span className="sr-only">{user.name}, {user.role}: your profile</span>}
+              </Link>
               {/* Signing out belongs where a person can find it, which is
                   wherever they are. It used to live on /signin alone -- a page
                   nobody signed in has any reason to open -- so ending your own

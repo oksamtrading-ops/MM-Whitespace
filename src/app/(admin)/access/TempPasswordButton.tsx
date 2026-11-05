@@ -39,7 +39,7 @@ export default function TempPasswordButton({ userId }: { userId: string }) {
           <div className="issued">
             <code>{state.password}</code>
             <p>
-              Shown once. Give it to {state.email} over something other than this
+              Shown once. Give it to {state.name} over something other than this
               screen — they will be asked to replace it when they sign in.
               {state.sessionsRevoked > 0 &&
                 ` ${state.sessionsRevoked} session${state.sessionsRevoked === 1 ? "" : "s"} ended.`}

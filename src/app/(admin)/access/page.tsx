@@ -34,9 +34,9 @@ export default async function AccessReview() {
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
-  const users = await ctx.db.all(`select id, email, display_name, role, is_active, last_sign_in_at, created_at
+  const users = await ctx.db.all(`select id, email, first_name, last_name, role, is_active, last_sign_in_at, created_at
        from app_users order by is_active desc, email`) as Array<{
-    id: string; email: string; display_name: string | null; role: string; is_active: number;
+    id: string; email: string; first_name: string | null; last_name: string | null; role: string; is_active: number;
     last_sign_in_at: string | null; created_at: string;
   }>;
 

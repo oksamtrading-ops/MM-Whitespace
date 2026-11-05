@@ -19,7 +19,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Sql } from "../db/sql.ts";
-import { personName } from "./person.ts";
+import { hasFullName, personName } from "./person.ts";
 import { SESSION_COOKIE, userForSession } from "./sessions.ts";
 
 export type Role = "admin" | "analyst" | "viewer";
@@ -30,11 +30,18 @@ export type AppUser = {
   id: string;
   email: string;
   /**
-   * What the tool calls this person: their display name, else their address.
+   * What the tool calls this person: first and last name, else their address.
    * Required for the same reason as mustChangePassword below: every site that
    * builds an AppUser must say it.
    */
   name: string;
+  firstName: string | null;
+  lastName: string | null;
+  /**
+   * Missing a first or a last name, so held at the name gate. Required, not
+   * optional, for the reason mustChangePassword gives below.
+   */
+  needsName: boolean;
   role: Role;
   isActive: boolean;
   /**
@@ -77,6 +84,30 @@ export class PasswordChangeRequired extends Unauthenticated {
     super("your temporary password has to be replaced before you can go on");
     this.name = "PasswordChangeRequired";
   }
+}
+
+/**
+ * An account with no first or last name yet. Like the password gate, a
+ * subclass of Unauthenticated, so every existing catch already handles it; the
+ * root layout puts the name form in place of the page, so nobody actually sees
+ * that refusal.
+ */
+export class NameRequired extends Unauthenticated {
+  constructor() {
+    super("add your first and last name before you go on");
+    this.name = "NameRequired";
+  }
+}
+
+/** The name fields every AppUser carries, from a row holding first_name and last_name. */
+export function namesOf(row: { email: string; first_name: string | null; last_name: string | null }):
+  Pick<AppUser, "name" | "firstName" | "lastName" | "needsName"> {
+  return {
+    name: personName(row),
+    firstName: row.first_name?.trim() || null,
+    lastName: row.last_name?.trim() || null,
+    needsName: !hasFullName(row),
+  };
 }
 
 export class Forbidden extends Error {
@@ -225,14 +256,14 @@ export function readCookie(cookieHeader: string | null, name: string): string | 
 export async function resolveUser(db: Sql, email: string | null): Promise<AppUser | null> {
   if (!email) return null;
   const row = await db.get(
-    `select id, email, display_name, role, is_active, must_change_password
+    `select id, email, first_name, last_name, role, is_active, must_change_password
        from app_users where lower(email) = lower(?)`, email) as
-    { id: string; email: string; display_name: string | null; role: Role; is_active: number;
-      must_change_password: number } | undefined;
+    { id: string; email: string; first_name: string | null; last_name: string | null; role: Role;
+      is_active: number; must_change_password: number } | undefined;
   if (!row) return null;
   if (!row.is_active) return null;
   return {
-    id: row.id, email: row.email, name: personName(row), role: row.role, isActive: true,
+    id: row.id, email: row.email, ...namesOf(row), role: row.role, isActive: true,
     mustChangePassword: Boolean(row.must_change_password),
   };
 }
@@ -302,6 +333,9 @@ export async function assertRole(
   // this is the one function every route, action and guarded page already calls,
   // and a rule enforced in 39 places is a rule enforced in 38.
   if (user.mustChangePassword && !options.allowPasswordChange) throw new PasswordChangeRequired();
+  // Second, so somebody holding a temporary password replaces it first. Here
+  // for the same reason: one chokepoint, not a check in every page.
+  if (user.needsName && !options.allowMissingName) throw new NameRequired();
   return user;
 }
 
@@ -318,7 +352,15 @@ export async function assertRole(
  * which is a real weakening of the one chokepoint. This stays a genuine role
  * assertion; it waives the password gate by name and nothing else.
  */
-export type AssertOptions = { allowPasswordChange?: boolean };
+export type AssertOptions = {
+  allowPasswordChange?: boolean;
+  /**
+   * Waives the name gate, and nothing else. For the screens where a person
+   * gives their name (and the password screen, which comes first): see the
+   * test that asserts which files may pass it.
+   */
+  allowMissingName?: boolean;
+};
 
 /**
  * The cron endpoint is publicly addressable, so the secret is compared in

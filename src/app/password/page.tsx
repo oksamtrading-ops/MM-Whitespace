@@ -21,7 +21,7 @@ export const metadata: Metadata = { title: "Your password" };
  */
 export default async function PasswordPage() {
   const { user } = await requireRole(
-    ["admin", "analyst", "viewer"], { allowPasswordChange: true })
+    ["admin", "analyst", "viewer"], { allowPasswordChange: true, allowMissingName: true })
     .catch((err: unknown) => ({ user: err as Error }));
 
   if (user instanceof Error) {

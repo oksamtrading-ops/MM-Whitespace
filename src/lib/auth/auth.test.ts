@@ -12,22 +12,22 @@ import {
   allowedDomains,
   assertRole, authoriseCron, constantTimeEquals, devClaimSource, Forbidden,
   PasswordChangeRequired,
-  hasRole, isAllowedDomain, readCookie, resolveUser, signDevSession, Unauthenticated,
+  hasRole, isAllowedDomain, NameRequired, readCookie, resolveUser, signDevSession, Unauthenticated,
   sessionClaimSource,
 } from "./session.ts";
 import { createSession, revokeSession, SESSION_COOKIE, userForSession } from "./sessions.ts";
-import { personSql } from "./person.ts";
+import { checkName, personSql } from "./person.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SECRET = "test-secret";
 
 async function seeded() {
   const db = memorySql();
-  const ins = "insert into app_users (email, role) values (?, ?)";
-  await db.run(ins, "analyst@example.invalid", "analyst");
-  await db.run(ins, "viewer@example.invalid", "viewer");
-  await db.run(ins, "admin@example.invalid", "admin");
-  await db.run(ins, "gone@example.invalid", "analyst");
+  const ins = "insert into app_users (email, role, first_name, last_name) values (?, ?, ?, ?)";
+  await db.run(ins, "analyst@example.invalid", "analyst", "Ana", "Lyst");
+  await db.run(ins, "viewer@example.invalid", "viewer", "Vee", "Ewer");
+  await db.run(ins, "admin@example.invalid", "admin", "Ad", "Min");
+  await db.run(ins, "gone@example.invalid", "analyst", "Gone", "Away");
   await db.run("update app_users set is_active = 0 where email = 'gone@example.invalid'");
   return db;
 }
@@ -49,23 +49,80 @@ test("authorisation resolves ONE claim against the application's own user table"
   assert.equal((await resolveUser(await db, "ANALYST@EXAMPLE.INVALID"))?.role, "analyst");
 });
 
-test("a person is named by their display name, and by their address only when they have none", async () => {
+test("a person is named by first and last name, and only an unnamed account falls back to its address", async () => {
   const db = await seeded();
-  await db.run("update app_users set display_name = ? where email = ?", "Ada Example", "admin@example.invalid");
-  await db.run("update app_users set display_name = ? where email = ?", "   ", "viewer@example.invalid");
   const admin = await resolveUser(db, "admin@example.invalid");
-  assert.equal(admin?.name, "Ada Example");
+  assert.equal(admin?.name, "Ad Min");
   assert.equal(admin?.email, "admin@example.invalid", "the address is still the account");
-  assert.equal((await resolveUser(db, "viewer@example.invalid"))?.name, "viewer@example.invalid",
-               "a blank name is no name");
+  assert.equal(admin?.needsName, false);
+
+  await db.run("update app_users set last_name = '  ' where email = ?", "viewer@example.invalid");
+  const viewer = await resolveUser(db, "viewer@example.invalid");
+  assert.equal(viewer?.needsName, true, "a blank last name is no last name");
+  assert.equal(viewer?.name, "Vee", "what there is of a name still beats the address");
+
+  await db.run("update app_users set first_name = null, last_name = null where email = ?", "analyst@example.invalid");
   assert.equal((await resolveUser(db, "analyst@example.invalid"))?.name, "analyst@example.invalid");
 
   const session = await createSession(db, admin!.id, { ip: null, ua: null });
-  assert.equal((await userForSession(db, session.token))?.name, "Ada Example", "the session path names them too");
+  const fromSession = await userForSession(db, session.token);
+  assert.equal(fromSession?.name, "Ad Min", "the session path names them too");
+  assert.equal(fromSession?.needsName, false);
 
   const named = await db.all(`select ${personSql("u")} as name from app_users u order by u.email`) as Array<{ name: string }>;
-  assert.deepEqual(named.map((r) => r.name),
-                   ["Ada Example", "analyst@example.invalid", "gone@example.invalid", "viewer@example.invalid"]);
+  assert.deepEqual(named.map((r) => r.name), ["Ad Min", "analyst@example.invalid", "Gone Away", "Vee"]);
+});
+
+test("an account without both names stops at the name gate, after the password gate", async () => {
+  const db = await seeded();
+  await db.run("update app_users set last_name = null where email = ?", "analyst@example.invalid");
+  const err = await assertRole(ctxFor(db, "analyst@example.invalid"), ["analyst"]).then(() => null, (e: unknown) => e);
+  assert.ok(err instanceof NameRequired);
+  assert.ok(err instanceof Unauthenticated, "a subclass, so every catch already handles it");
+
+  const ok = await assertRole(ctxFor(db, "analyst@example.invalid"), ["analyst"], { allowMissingName: true });
+  assert.equal(ok.needsName, true);
+  await assert.rejects(() => assertRole(ctxFor(db, "analyst@example.invalid"), ["admin"], { allowMissingName: true }),
+                       Forbidden, "waiving the name gate does not waive the role");
+
+  await db.run("update app_users set must_change_password = true where email = ?", "analyst@example.invalid");
+  await assert.rejects(() => assertRole(ctxFor(db, "analyst@example.invalid"), ["analyst"], { allowMissingName: true }),
+                       PasswordChangeRequired, "the password comes first");
+});
+
+test("a name is two parts, trimmed, and never an address", () => {
+  assert.deepEqual(checkName("  Samuel ", " Owusu"), { ok: true, first: "Samuel", last: "Owusu" });
+  assert.deepEqual(checkName("Mary  Ann", "de la Cruz"), { ok: true, first: "Mary Ann", last: "de la Cruz" });
+  assert.equal(checkName("Samuel", "").ok, false);
+  assert.equal(checkName("", "Owusu").ok, false);
+  assert.equal(checkName("someone@example.invalid", "x").ok, false);
+  assert.equal(checkName("a".repeat(81), "b").ok, false);
+});
+
+test("only these files may waive the name gate", async () => {
+  const root = join(ROOT, "src");
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.tsx?$/.test(entry.name)) continue;
+      if (readFileSync(full, "utf8").includes("allowMissingName")) {
+        found.push(full.slice(root.length + 1).replaceAll("\\", "/"));
+      }
+    }
+  };
+  walk(root);
+  // The name screens, the password screens (which come first), the check, this.
+  assert.deepEqual(found.sort(), [
+    "app/password/actions.ts",
+    "app/password/page.tsx",
+    "app/profile/actions.ts",
+    "app/profile/page.tsx",
+    "lib/auth/auth.test.ts",
+    "lib/auth/session.ts",
+  ]);
 });
 
 test("invite-only: an email the provider would accept is still not a user", async () => {
@@ -154,7 +211,7 @@ test("an analyst is not an admin", async () => {
 
 test("hasRole is exact membership, never a rank comparison", async () => {
   const admin = {
-    id: "1", email: "a", name: "a", role: "admin" as const, isActive: true, mustChangePassword: false,
+    id: "1", email: "a", name: "a", firstName: null, lastName: null, needsName: false, role: "admin" as const, isActive: true, mustChangePassword: false,
   };
   assert.equal(hasRole(admin, ["admin"]), true);
   assert.equal(hasRole(admin, ["analyst"]), false, "admin is not silently an analyst");

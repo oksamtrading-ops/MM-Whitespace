@@ -34,8 +34,7 @@ import { formatStamp } from "../db/stamp.ts";
 import {
   DUMMY_HASH, hashPassword, needsRehash, validatePassword, verifyPassword, WeakPassword,
 } from "./password.ts";
-import { personName } from "./person.ts";
-import { allowedDomains, isAllowedDomain, type AppUser, type Role } from "./session.ts";
+import { allowedDomains, isAllowedDomain, namesOf, type AppUser, type Role } from "./session.ts";
 import { createSession, revokeAllForUser, type NewSession } from "./sessions.ts";
 
 /** Failures counted per address, in a sliding window. */
@@ -81,7 +80,7 @@ export type Attempt =
 type Meta = { ip?: string | null; ua?: string | null };
 
 type Candidate = {
-  id: string; email: string; display_name: string | null; role: Role;
+  id: string; email: string; first_name: string | null; last_name: string | null; role: Role;
   is_active: number; hash: string | null; must_change: number;
 };
 
@@ -170,7 +169,7 @@ export async function attemptSignIn(
 
   // 4. One roster read for every well-formed address alike.
   const row = await db.get(
-    `select u.id, u.email, u.display_name, u.role, u.is_active, u.must_change_password as must_change,
+    `select u.id, u.email, u.first_name, u.last_name, u.role, u.is_active, u.must_change_password as must_change,
             p.hash as hash
        from app_users u
        left join auth_passwords p on p.user_id = u.id
@@ -222,7 +221,7 @@ export async function attemptSignIn(
     ok: true,
     session,
     user: {
-      id: user.id, email: user.email, name: personName(user), role: user.role, isActive: true,
+      id: user.id, email: user.email, ...namesOf(user), role: user.role, isActive: true,
       mustChangePassword: Boolean(user.must_change),
     },
     mustChangePassword: Boolean(user.must_change),
