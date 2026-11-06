@@ -486,10 +486,18 @@ export async function companyRows(
   const fields = await reviewableFields(db, periodId);
   const byCompany = new Map<string, CompanyRow>();
 
-  // Sequential rather than mapped: the column index is the field's position,
-  // so the loop carries it, and one connection does the work either way.
+  // Every candidate once, then split by field: exactly what fieldRows gives
+  // each column ("all" is no narrowing), without reading the period once per
+  // field. That was 30 loads of the whole period, 20 seconds a page on
+  // 6 November 2026.
+  const all = await allCandidates(db, periodId);
+  const byField = new Map<string, Row[]>();
+  for (const r of all) {
+    const list = byField.get(r.fieldKey);
+    if (list) list.push(r); else byField.set(r.fieldKey, [r]);
+  }
   for (const [column, field] of fields.entries()) {
-    for (const row of await fieldRows(db, periodId, field.fieldKey, "all", threshold)) {
+    for (const row of inBucket(byField.get(field.fieldKey) ?? [], "all", threshold)) {
       let entry = byCompany.get(row.companyId);
       if (!entry) {
         entry = {
@@ -583,15 +591,22 @@ export function formatValue(value: unknown, fieldKey = ""): string {
   return formatFieldValue(fieldKey, value);
 }
 
-/** Stage is the only field that moves tier, so the consequence is shown live. */
-export async function tierConsequence(
-  db: Sql, periodId: string, row: Row,
-): Promise<string | null> {
-  if (!isStageField(row.fieldKey)) return null;
-  const current = await db.get("select tier, status from tiers where period_id = ? and company_id = ?", periodId, row.companyId) as { tier: number | null; status: string } | undefined;
-  if (!current) return null;
-  const from = current.tier === null ? "Unclassified" : `Tier ${current.tier}`;
-  return `Accepting re-runs the classifier for ${row.companyName}, currently ${from}.`;
+/**
+ * Stage is the only field that moves tier, so the consequence is shown live.
+ * Every company's tier is read in one query, and the note is then made per
+ * row: one query a row was some 350 round trips a page.
+ */
+export async function tierConsequences(
+  db: Sql, periodId: string,
+): Promise<(row: Pick<Row, "fieldKey" | "companyId" | "companyName">) => string | null> {
+  const tiers = new Map(((await db.all("select company_id, tier from tiers where period_id = ?", periodId)) as
+    Array<{ company_id: string; tier: number | null }>).map((t) => [String(t.company_id), t.tier]));
+  return (row) => {
+    if (!isStageField(row.fieldKey) || !tiers.has(row.companyId)) return null;
+    const tier = tiers.get(row.companyId);
+    const from = tier === null || tier === undefined ? "Unclassified" : `Tier ${tier}`;
+    return `Accepting re-runs the classifier for ${row.companyName}, currently ${from}.`;
+  };
 }
 
 function safeParse(raw: string): unknown {

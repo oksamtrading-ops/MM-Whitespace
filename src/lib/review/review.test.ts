@@ -6,7 +6,7 @@ import {
   bulkConfirmation, effectiveDecision, evidenceBand, extractedFact, isConflict,
   partitionForBulkAccept, recordDecision, undoLast, type Candidate,
 } from "./decide.ts";
-import { cellLabel, companyRows, fieldRows, formatValue, IN_BUCKET, inBucket, queueBuckets } from "./queue.ts";
+import { cellLabel, companyRows, fieldRows, formatValue, IN_BUCKET, inBucket, queueBuckets, tierConsequences } from "./queue.ts";
 import { chosenThreshold, DEFAULT_THRESHOLD, THRESHOLDS } from "./threshold.ts";
 
 function candidate(over: Partial<Candidate> = {}): Candidate {
@@ -474,6 +474,22 @@ test("company-major and field-major show the same proposals", async () => {
       `${field.fieldKey} differs between the two axes`);
     assert.equal(across?.band ?? null, down?.band ?? null);
   }
+});
+
+test("the tier a stage decision would move is read once, and said only of stage", async () => {
+  const { db, periodId } = await seeded();
+  await db.run("insert into companies (canonical_name, name_normalized) values ('Southco','southco')");
+  const companies = await db.all("select id, canonical_name from companies order by canonical_name") as Array<{ id: string; canonical_name: string }>;
+  await db.run("delete from tiers where period_id = ?", periodId);
+  await db.run(`insert into tiers (period_id, company_id, tier, status, footprint, rule_set_version)
+      values (?, ?, 6, 'classified', 'canada_only', 'v'), (?, ?, null, 'unclassified_no_stage_evidence', 'none', 'v')`,
+    periodId, companies[0].id, periodId, companies[1].id);
+  const note = await tierConsequences(db, periodId);
+  const row = (i: number, fieldKey: string) => ({ fieldKey, companyId: String(companies[i].id), companyName: companies[i].canonical_name });
+  assert.equal(note(row(0, "stage_evidence_state")), `Accepting re-runs the classifier for ${companies[0].canonical_name}, currently Tier 6.`);
+  assert.equal(note(row(1, "stage_evidence_state")), `Accepting re-runs the classifier for ${companies[1].canonical_name}, currently Unclassified.`);
+  assert.equal(note(row(0, "auditor")), null, "only stage moves tier");
+  assert.equal(note({ fieldKey: "stage_evidence_state", companyId: "nobody", companyName: "Nobody" }), null);
 });
 
 test("one load narrowed in memory shows what each bucket's own load shows", async () => {

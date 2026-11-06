@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
-import { cellLabel, companyRows, formatValue, olderFilingNote, tierConsequence } from "../../../../lib/review/queue.ts";
+import { cellLabel, companyRows, formatValue, olderFilingNote, tierConsequences } from "../../../../lib/review/queue.ts";
 import Facts from "../../../_ui/Facts.tsx";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Page from "../../../_ui/Page.tsx";
@@ -37,10 +37,11 @@ export default async function ByCompany(
   }
 
   const { fields, rows } = await companyRows(ctx.db, period.id, THRESHOLD);
-  const grid: Row[] = await Promise.all(rows.map(async (r) => ({
+  const tierNote = await tierConsequences(ctx.db, period.id);
+  const grid: Row[] = rows.map((r) => ({
     companyId: r.companyId,
     companyName: r.companyName,
-    cells: await Promise.all(r.cells.map(async (c, i) => c && {
+    cells: r.cells.map((c, i) => c && {
       fieldKey: c.fieldKey,
       value: c.abstained ? "abstained" : formatValue(c.proposedValue, c.fieldKey),
       band: c.band,
@@ -59,9 +60,9 @@ export default async function ByCompany(
       findingAttempt: c.findingAttempt,
       extractValue: c.extractValue === null ? null : formatValue(c.extractValue, c.fieldKey),
       cellLabel: cellLabel(c, fields[i].label),
-      tierNote: await tierConsequence(ctx.db, period.id, c),
-    })),
-  })));
+      tierNote: tierNote(c),
+    }),
+  }));
 
   return (
     <Page title="By company" count={rows.length}

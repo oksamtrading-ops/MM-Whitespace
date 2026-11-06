@@ -5,7 +5,7 @@ import { requireRole } from "../../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../../lib/auth/session.ts";
 import { isStageField } from "../../../../lib/review/decide.ts";
 import {
-  cellLabel, fieldRows, formatValue, inBucket, olderFilingNote, tierConsequence, unresearched,
+  cellLabel, fieldRows, formatValue, inBucket, olderFilingNote, tierConsequences, unresearched,
 } from "../../../../lib/review/queue.ts";
 import { chosenThreshold, DEFAULT_THRESHOLD, THRESHOLDS } from "../../../../lib/review/threshold.ts";
 import Refusal from "../../../_ui/Refusal.tsx";
@@ -70,7 +70,8 @@ export default async function FieldReview(
   // period, and eight of them made each decision slow to redraw.
   const all = await fieldRows(ctx.db, period.id, field, "all", threshold);
   const raw = inBucket(all, bucket, threshold);
-  const rows: GridRow[] = await Promise.all(raw.map(async (r) => ({
+  const tierNote = await tierConsequences(ctx.db, period.id);
+  const rows: GridRow[] = raw.map((r) => ({
     companyId: r.companyId,
     companyName: r.companyName,
     value: r.abstained ? "abstained" : formatValue(r.proposedValue, r.fieldKey),
@@ -91,8 +92,8 @@ export default async function FieldReview(
     findingAttempt: r.findingAttempt,
     extractValue: r.extractValue === null ? null : formatValue(r.extractValue, r.fieldKey),
     cellLabel: cellLabel(r, catalogue.label),
-    tierNote: await tierConsequence(ctx.db, period.id, r),
-  })));
+    tierNote: tierNote(r),
+  }));
 
   // The companies with no row at all: research never reached them for this
   // field. A search that finds one offers an override with its source.
