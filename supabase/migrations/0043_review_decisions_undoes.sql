@@ -1,0 +1,12 @@
+-- Index the undo link, so finding a value's standing decision is cheap.
+--
+-- Review asks of every finding which decision on its field still stands: the
+-- newest one no undo row points at (queue.ts, allCandidates, and the same
+-- test in withdrawSupplied). Without an index on undoes_id, Postgres answered
+-- "not exists (... where u.undoes_id = d.id)" by scanning every review
+-- decision, for every finding with one. With 3,147 decisions and 9,217
+-- findings in Q4-2026 that query took 14.7 seconds on 6 November 2026, and
+-- the review pages two minutes or more.
+--
+-- Idempotent on purpose, as 0039 explains.
+create index if not exists review_decisions_undoes_idx on review_decisions (undoes_id);
