@@ -28,6 +28,7 @@ import { formatStamp } from "../src/lib/db/stamp.ts";
 import { purgeSignInFailures } from "../src/lib/auth/signin.ts";
 import { purgeExpiredSessions } from "../src/lib/auth/sessions.ts";
 import { sweepQuarantine } from "../src/lib/ingest/quarantine.ts";
+import { sweepUploads } from "../src/lib/supply/supply.ts";
 
 const UNOWNED = "UNASSIGNED";
 
@@ -60,9 +61,13 @@ export const RULES = [
       // validation report has to precede the commit -- swept here when it is
       // not committed.
       const { examined, deleted } = await sweepQuarantine(db, Date.now(), { dryRun: !apply });
-      return { examined, deleted,
-               note: "parsed payloads past their hour in upload_quarantine; " +
-                     "the workbook itself is never stored" };
+      // A supplied PDF too large for one request waits in pieces until its
+      // last arrives (src/lib/supply). Every upload request sweeps those past
+      // their hour itself; this catches what is left when nobody uploads.
+      const pdfs = await sweepUploads(db, Date.now(), { dryRun: !apply });
+      return { examined: examined + pdfs.examined, deleted: deleted + pdfs.deleted,
+               note: "parsed payloads past their hour in upload_quarantine, and supplied PDFs' " +
+                     "unfinished uploads past theirs in document_uploads; the workbook itself is never stored" };
     },
   },
   {

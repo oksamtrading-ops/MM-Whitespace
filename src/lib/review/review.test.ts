@@ -69,6 +69,18 @@ test("REFUSED: stage flags without a typed per-session opt-in", async () => {
   assert.equal(withOptIn.accept.length, 1, "the opt-in is a gate, not a prohibition");
 });
 
+test("REFUSED: a value read from a document an analyst supplied, however strong; and never counted as bulk-acceptable", async () => {
+  // Doc 11, line 84: a quote not in text the application fetched itself can
+  // never be bulk-accepted. The board's bucket and the action are one statement.
+  const supplied = candidate({ evidenceStrength: 0.99, supplied: { by: "Ana Lyst", at: "2026-11-05 10:00:00", kind: "annual_mdna" } });
+  const { accept, refused } = partitionForBulkAccept("auditor", [supplied, candidate({ companyId: "c2" })], OPTS);
+  assert.deepEqual(accept.map((c) => c.companyId), ["c2"]);
+  assert.match(refused[0].reason, /supplied/);
+  assert.equal(IN_BUCKET.bulkable(supplied, 0.8), false);
+  assert.equal(IN_BUCKET.need_review(supplied, 0.8), true, "it waits for a person instead");
+  assert.equal(IN_BUCKET.bulkable(candidate(), 0.8), true);
+});
+
 test("REFUSED: anything with zero sources", async () => {
   // A confident answer with no source is a hallucination with good posture.
   const { accept, refused } = await partitionForBulkAccept(

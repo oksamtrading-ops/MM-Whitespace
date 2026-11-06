@@ -15,6 +15,8 @@ import { formatFieldValue, sourceUrlIn } from "../format/fields.ts";
 import type { Sql } from "../db/sql.ts";
 import { evidenceBand, isConflict, isStageField, type Candidate } from "./decide.ts";
 import { EDGAR_PROFILE_FIELDS } from "../enrich/sources.ts";
+import { personSql } from "../auth/person.ts";
+import { safeHref } from "../profile/citations.ts";
 
 export type QueueBucket = {
   key: string;
@@ -71,6 +73,7 @@ type Bucketable = {
   conflict?: boolean; findingState: string; anchorMode: string; sourceCount: number;
   abstained?: boolean; bulkAcceptableField: boolean; evidenceStrength: number | null;
   fieldKey: string; newerThanDecision?: boolean; fromOlderFiling?: boolean;
+  supplied?: unknown;
 };
 
 /** The bucket of DECIDED rows research has since overtaken, counted apart. */
@@ -141,7 +144,9 @@ export const IN_BUCKET: Record<string, (c: Bucketable, threshold: number) => boo
   bulkable: (c, t) => !IN_BUCKET.quarantined(c, t) && !IN_BUCKET.no_evidence(c, t) &&
                       !IN_BUCKET.conflict(c, t) &&
                       c.bulkAcceptableField && (c.evidenceStrength ?? 0) >= t &&
-                      !isStageField(c.fieldKey),
+                      !isStageField(c.fieldKey) &&
+                      // Never bulk-accepted (decide.ts, refusal 6), so never counted as such.
+                      !c.supplied,
   need_review: (c, t) => !IN_BUCKET.quarantined(c, t) && !IN_BUCKET.no_evidence(c, t) &&
                          !IN_BUCKET.conflict(c, t) && !IN_BUCKET.bulkable(c, t),
   // Decided, and overtaken since. Every other bucket is about undecided rows.
@@ -232,6 +237,9 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
             (select s.url from finding_sources s where s.finding_id = e.id limit 1) as "sourceUrl",
             (select s.source_tier from finding_sources s where s.finding_id = e.id limit 1) as "sourceTier",
             e.anchor_document_hash as "documentHash",
+            -- Read from a document an analyst supplied (0041): who, when, what.
+            sd.supplied_at as "suppliedAt", sd.kind as "suppliedKind",
+            case when sd.id is null then null else ${personSql("su")} end as "suppliedBy",
             -- The fiscal year the finding's document reports on (0035): the
             -- one it anchored to, else the first it cites.
             (select doc.reports_on from documents doc
@@ -268,6 +276,8 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
        join enrichment_runs r on r.id = e.run_id and r.period_id = ?
        join companies c on c.id = e.company_id
        join field_catalog f on f.key = e.field_key
+       left join supplied_documents sd on sd.id = e.supplied_document_id
+       left join app_users su on su.id = sd.supplied_by
       where e.state != 'superseded'`,
     periodId, periodId, periodId, periodId, periodId, periodId) as Array<Record<string, unknown>>;
 
@@ -313,9 +323,13 @@ async function allCandidates(db: Sql, periodId: string): Promise<Row[]> {
       abstained: Number(r.abstained) === 1,
       band: evidenceBand(r.evidenceStrength === null ? null : Number(r.evidenceStrength)),
       excerpt: r.excerpt ? String(r.excerpt) : null,
-      sourceUrl: r.sourceUrl ? String(r.sourceUrl) : null,
+      // Only a link that is a link: a supplied document's address is one a
+      // person typed (checked when supplied, and again here).
+      sourceUrl: safeHref(r.sourceUrl),
       documentHash: r.documentHash ? String(r.documentHash) : null,
       conflict: false,
+      supplied: r.suppliedAt === null || r.suppliedAt === undefined ? null
+        : { by: String(r.suppliedBy ?? "an analyst"), at: String(r.suppliedAt), kind: String(r.suppliedKind) },
     };
     candidate.conflict = isConflict(candidate);
     return {

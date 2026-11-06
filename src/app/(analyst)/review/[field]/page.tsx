@@ -10,7 +10,8 @@ import {
 import { chosenThreshold, DEFAULT_THRESHOLD, THRESHOLDS } from "../../../../lib/review/threshold.ts";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Facts from "../../../_ui/Facts.tsx";
-import { periodName } from "../../../_ui/format.ts";
+import { fmtDate, periodName } from "../../../_ui/format.ts";
+import { suppliedWords } from "../../../../lib/supply/kinds.ts";
 import Grid, { type GridRow } from "./Grid.tsx";
 import Page from "../../../_ui/Page.tsx";
 
@@ -84,6 +85,7 @@ export default async function FieldReview(
     sourceCount: r.sourceCount,
     excerpt: r.excerpt,
     sourceUrl: r.sourceUrl,
+    suppliedNote: r.supplied ? suppliedWords(r.supplied, fmtDate(r.supplied.at)) : null,
     anchorMode: r.anchorMode,
     findingId: r.findingId,
     findingAttempt: r.findingAttempt,

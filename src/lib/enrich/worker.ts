@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { Sql } from "../db/sql.ts";
 import { formatStamp } from "../db/stamp.ts";
+import { isRowId } from "../db/rowid.ts";
 import { gate, type StoredDocument } from "./anchor.ts";
 import { evidenceStrength, type EvidenceInput } from "./evidence.ts";
 import { Cassettes, cassetteKey, type Mode } from "./cassette.ts";
@@ -27,7 +28,7 @@ import { buildAllowlist, type FetchedDocument } from "./fetch.ts";
 import { reportsOn, REPORTS_ON_VERSION } from "./reportson.ts";
 import {
   BATCH_DISCOUNT, Meter, preparePass, promptVersionFor, researchLive, resumePass, sdkVendor,
-  type CandidateDoc, type LiveBody, type LiveDeps, type LiveJob, type Pass,
+  type CandidateDoc, type DocKind, type LiveBody, type LiveDeps, type LiveJob, type Pass,
   type PassContext, type Prepared,
 } from "./live.ts";
 import type { BatchRequestRow, BatchResult, Submission, Verdict } from "./batch.ts";
@@ -108,12 +109,14 @@ export type ProposedFinding = {
   document_hash?: string | null;
   document_age_days?: number | null;
   corroborating_sources?: number;
+  /** Read from a document an analyst supplied: its supplied_documents row. See FetchedDocument.suppliedId. */
+  supplied_document_id?: string | null;
 };
 
 export type CassetteBody = {
   findings: ProposedFinding[];
   /** What the application had fetched and stored at record time. */
-  documents?: Array<StoredDocument & { url: string; sourceTier: 1 | 2 | 3 | 4 | 5; docType?: string }>;
+  documents?: Array<StoredDocument & { url: string; sourceTier: 1 | 2 | 3 | 4 | 5; docType?: string; suppliedId?: string }>;
   usage?: Record<string, number>;
   cost_usd?: number;
   /**
@@ -302,6 +305,19 @@ async function pagesReadHere(db: Sql, companyId: string, periodId: string): Prom
 }
 
 /**
+ * The documents an analyst supplied for the company this period and has not
+ * removed, oldest first (src/lib/supply). Pass 2 reads them before anything it
+ * fetches. Only the hash and the address the analyst gave: the text is read
+ * back from `documents` when the job is prepared, and checked there again.
+ */
+async function suppliedHere(db: Sql, companyId: string, periodId: string): Promise<LiveJob["supplied"]> {
+  return (await db.all(`select id, content_hash, url, kind from supplied_documents
+      where company_id = ? and period_id = ? and withdrawn_at is null
+      order by supplied_at, id`, companyId, periodId) as Array<{ id: string; content_hash: string; url: string; kind: string }>)
+    .map((r) => ({ id: String(r.id), hash: String(r.content_hash), url: String(r.url), kind: String(r.kind) as DocKind }));
+}
+
+/**
  * Step one: obtain a validated response and store it raw. Nothing is derived
  * here, and nothing downstream may read anything but the stored row.
  */
@@ -370,11 +386,13 @@ async function researchLiveJob(
 async function liveJobFor(db: Sql, row: PublicCompanyRow, fieldGroup: string, periodId: string): Promise<LiveJob> {
   const pass: Pass = fieldGroup === "identity" ? "identity" : "general";
   if (pass !== "general") {
-    return { pass, row, website: row.knownWebsite, priorCandidates: null, savedHomePages: [], pagesRead: { urls: [], hashes: [] } };
+    return { pass, row, website: row.knownWebsite, priorCandidates: null, savedHomePages: [], pagesRead: { urls: [], hashes: [] },
+             supplied: [] };
   }
   const prior = await priorPass1(db, row.companyId, periodId);
   return { pass, row, website: row.knownWebsite, priorCandidates: prior.candidates,
-           savedHomePages: prior.savedHomePages, pagesRead: await pagesReadHere(db, row.companyId, periodId) };
+           savedHomePages: prior.savedHomePages, pagesRead: await pagesReadHere(db, row.companyId, periodId),
+           supplied: await suppliedHere(db, row.companyId, periodId) };
 }
 
 /** The period a run researches. Every job's lookups are read from it. */
@@ -662,6 +680,26 @@ async function persist(
           d.hasTextLayer === false ? 0 : 1,
           reportsOn(d.text, retrievedAt), REPORTS_ON_VERSION);
   }
+  // The supplied documents this job read, and whether each has been removed
+  // since. A batched answer lands up to a day after prepare, so a document
+  // withdrawn in between was still read -- and what was read from it is
+  // superseded as it is written, as the withdrawal superseded the findings
+  // already there (supply.ts, withdrawSupplied). The no-op update holds the
+  // row for this save, so a removal at the same moment waits for it, or this
+  // waits for the removal and sees it. An id this database does not hold
+  // (a replayed cassette's) is not recorded at all.
+  const withdrawn = new Map<string, boolean>();
+  for (const id of new Set(fetched.map((d) => d.suppliedId).filter(isRowId))) {
+    await db.run("update supplied_documents set withdrawn_at = withdrawn_at where id = ?", id);
+    const r = await db.get("select withdrawn_at from supplied_documents where id = ?", id) as
+      { withdrawn_at: unknown } | undefined;
+    if (r) withdrawn.set(id, r.withdrawn_at !== null && r.withdrawn_at !== undefined);
+  }
+  // Which supplied documents this job read, whatever it found in them: the
+  // company stays offered for pass 2 until a job has (start.ts, passCoverage).
+  for (const id of withdrawn.keys()) {
+    await db.run(`insert into supplied_reads (supplied_id, job_id) values (?, ?) on conflict do nothing`, id, jobId);
+  }
 
   const judged = body.findings.map((f) => {
     // A finding is checked against the document it names and no other. One
@@ -711,30 +749,39 @@ async function persist(
 
   const out: ResearchOutcome["findings"] = [];
   for (const { f, verdict, value, score } of onePerField(judged)) {
+    // Only a document this job read as supplied: a finding naming one the job
+    // did not list is not trusted to say so.
+    const suppliedId = f.supplied_document_id && withdrawn.has(f.supplied_document_id) &&
+      fetched.some((d) => d.suppliedId === f.supplied_document_id) ? f.supplied_document_id : null;
+    const state = suppliedId && withdrawn.get(suppliedId) ? "superseded" as const : verdict.state;
     const finding = await db.get(`insert into enrichment_findings
          (run_id, job_id, attempt, company_id, field_key, proposed_value,
           evidence_strength, evidence_version, evidence_components,
           model_self_confidence, anchor_mode, anchor_start, anchor_end,
           anchor_document_hash, evidence_excerpt, scale_token, abstained,
-          abstention_reason, state, model, prompt_version)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          abstention_reason, state, model, prompt_version, supplied_document_id)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        returning id`, runId, jobId, attempt, companyId, f.field_key, JSON.stringify(value ?? null),
           score.strength, score.version, JSON.stringify(score.components),
           f.model_self_confidence ?? null, verdict.anchor.mode,
           verdict.anchor.start, verdict.anchor.end, verdict.anchor.documentHash,
           f.evidence_excerpt ?? null, f.numeric?.scale ?? null,
           Boolean(f.abstained), f.abstention_reason ?? null,
-          verdict.state, model, promptVersionFor(opts.mode)) as { id: string };
+          state, model, promptVersionFor(opts.mode), suppliedId) as { id: string };
     if (f.source_url) {
       await db.run(`insert into finding_sources (finding_id, url, content_hash, source_tier, doc_type)
          values (?, ?, ?, ?, ?) on conflict do nothing`, finding.id, f.source_url, verdict.anchor.documentHash,
             f.source_tier ?? 5, null);
     }
 
+    // Doc 11, line 84: a quote not in text the application fetched itself is
+    // never bulk-accepted. Review refuses it too (decide.ts); this is the
+    // run's own account of what it proposed.
+    const supplied = Boolean(suppliedId);
     out.push({
-      fieldKey: f.field_key, state: verdict.state, anchorMode: verdict.anchor.mode,
-      strength: score.strength, bulkAcceptable: verdict.bulkAcceptable,
-      reason: verdict.reason,
+      fieldKey: f.field_key, state, anchorMode: verdict.anchor.mode,
+      strength: score.strength, bulkAcceptable: verdict.bulkAcceptable && !supplied,
+      reason: supplied && verdict.bulkAcceptable ? "read from a document an analyst supplied; never bulk-accepted" : verdict.reason,
     });
   }
   return out;

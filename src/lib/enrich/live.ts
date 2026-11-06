@@ -43,6 +43,15 @@ export type { Pass } from "./scope.ts";
  * behalf. A document there is still refused unless it names the company.
  */
 export const IR_PLATFORM_HOSTS = ["q4cdn.com"];
+
+/**
+ * The source tier of a document an analyst supplied: "other", below anything
+ * the application fetched from the issuer. Evidence strength weighs the tier
+ * (anchor.ts), so a value read from it never shows the band of the same value
+ * read from a filing the application fetched itself -- the application checked
+ * where the file came from only as far as the analyst's word (doc 11, line 84).
+ */
+export const SUPPLIED_TIER = 4 as const;
 /** Never searched, never fetched. Decision 1. */
 export const EXCLUDED_DOMAINS = ["sedarplus.ca", "sedarplus.com", "sedar.com"];
 
@@ -535,6 +544,12 @@ export type LiveJob = {
    * among them still is.
    */
   pagesRead: { urls: string[]; hashes: string[] };
+  /**
+   * Documents an analyst supplied for the company this period, oldest first
+   * (src/lib/supply): by hash, with the address on the company's website they
+   * downloaded it from and what they said it is. Read before anything fetched.
+   */
+  supplied: Array<{ id: string; hash: string; url: string; kind: DocKind }>;
 };
 
 export type LiveBody = CassetteBody & { candidates?: CandidateDoc[]; notes?: string[] };
@@ -559,6 +574,14 @@ export type PassContext = {
   notes?: string[];
   /** Pass 2 read no filing, only the company's own pages: its home page, its about pages. See fieldsPrepare. */
   homePageOnly?: boolean;
+  /**
+   * Which of docHashes were read because an analyst supplied them, and as
+   * which supplied row, at what address. Frozen here, when the prompt is
+   * built, not looked up again when the answer comes back: a batched answer
+   * settles up to a day later, and a document withdrawn in between was still
+   * what the model read.
+   */
+  supplied?: Array<{ hash: string; id: string; url: string }>;
 };
 
 export function identityPrepare(job: LiveJob): Prepared {
@@ -948,6 +971,7 @@ export function toFinding(raw: Extracted, docs: FetchedDocument[]): ProposedFind
     source_url: doc?.finalUrl ?? null, source_tier: doc?.sourceTier ?? 5,
     document_hash: doc?.contentHash ?? null, document_age_days: null,
     corroborating_sources: doc ? 1 : 0,
+    ...(doc?.suppliedId ? { supplied_document_id: doc.suppliedId } : {}),
   };
   if (e.abstained) return base;
   switch (e.field_key) {
@@ -1160,8 +1184,17 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
       provenance: found.seenUrls.has(canonicalUrl(d.url)) ? "search_result" as const : "reported" as const }));
   };
   const order = readingOrder(kindPriority(job.row.exchange), currentFrom(job.row));
+  // What an analyst supplied comes first: they downloaded it because the
+  // fetcher could not, or chose it over what it would find. It spends no
+  // fetch, and the same file is not fetched again from where they got it.
+  const supplied = await readSupplied(job, siteHost, deps, notes, order);
   let candidates = job.priorCandidates ?? [];
-  if (candidates.length === 0) {
+  if (candidates.length === 0 && job.priorCandidates !== null && supplied.length > 0) {
+    // Pass 1 searched this quarter and listed nothing readable. A paid search
+    // now would most likely find the same nothing; what the analyst supplied
+    // is what the site has.
+    notes.push("not searched: pass 1 listed nothing this quarter, and an analyst supplied documents");
+  } else if (candidates.length === 0) {
     candidates = await searched();
   }
 
@@ -1179,7 +1212,11 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
     }
   }
 
-  if (candidates.length > 0 && !rankCandidates(candidates, allow, order).some((c) => printsFees(c, job.row))) {
+  // A fee-bearing filing an analyst supplied is the filing the second search
+  // would be looking for.
+  const suppliedFees = supplied.some(({ kind }) => feeKinds(job.row.exchange).includes(kind));
+  if (candidates.length > 0 && !suppliedFees &&
+      !rankCandidates(candidates, allow, order).some((c) => printsFees(c, job.row))) {
     const venture = job.row.exchange !== "TSX";
     const what = venture ? "circular" : "AIF or SEC annual report";
     // Search again only for a company known to publish the filing: pass 1
@@ -1196,9 +1233,13 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
     }
   }
 
-  const docs: FetchedDocument[] = [];
-  const queue = rankCandidates(candidates, allow, order);
-  const seen = new Set(queue.map((c) => canonicalUrl(c.url)));
+  const docs: FetchedDocument[] = supplied.map(({ doc }) => doc);
+  /** What each document was read as, so supplied and fetched documents can be put in one reading order. */
+  const readAs = new Map<FetchedDocument, CandidateDoc>(supplied.map(({ doc, as }) => [doc, as]));
+  const suppliedUrls = new Set(job.supplied.map((s) => canonicalUrl(s.url)));
+  const suppliedHashes = new Set(docs.map((d) => d.contentHash));
+  const queue = rankCandidates(candidates, allow, order).filter((c) => !suppliedUrls.has(canonicalUrl(c.url)));
+  const seen = new Set([...queue.map((c) => canonicalUrl(c.url)), ...suppliedUrls]);
   // The investor pages the home page links to: followed, never read. One
   // with no filing on it is a menu, not a document.
   const indexOnly = new Set<string>();
@@ -1232,12 +1273,14 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
       if (indexOnly.has(canonicalUrl(c.url))) { notes.push(`no filing linked from ${c.url}`); continue; }
       if (pdfOnly && doc.docType !== "pdf") { notes.push(`not a filing (${doc.docType}): ${c.url}`); continue; }
       if (!doc.hasTextLayer) { notes.push(`no text layer: ${c.url}`); continue; }
+      if (suppliedHashes.has(doc.contentHash)) { notes.push(`already read as supplied: ${c.url}`); continue; }
       // The worst output this system can produce is a well-cited fee from the
       // wrong company's filing. A document that does not name the company is
       // not this company's document.
       if (namesCompany(doc.text, job.row) < 0) { notes.push(`does not name the company: ${c.url}`); continue; }
       await deps.store(doc);
       docs.push(doc);
+      readAs.set(doc, c);
     }
   };
   await drain(MAX_FETCHES);
@@ -1301,6 +1344,20 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
       homePageOnly = docs.length > 0;
     }
   }
+  if (supplied.length > 0) {
+    // One reading order for both: the prompt's character budget is spent in
+    // list order, and three supplied interim reports ahead of a fetched AIF
+    // would leave the AIF's fee table out.
+    // Of one kind, the analyst's comes first: a supplied document has no
+    // stated year, so the order alone would put a fetched one of a later
+    // year -- last quarter's interim report -- ahead of it.
+    const ranked = [...docs].sort((a, b) => {
+      const ca = readAs.get(a)!, cb = readAs.get(b)!;
+      const sa = a.suppliedId ? 1 : 0, sb = b.suppliedId ? 1 : 0;
+      return sa !== sb && ca.kind === cb.kind ? sb - sa : order(ca, cb);
+    });
+    docs.splice(0, docs.length, ...ranked);
+  }
   if (docs.length === 0) {
     // Nothing to read, so nothing to ask. This pass finishes without a model
     // call, which is why prepare may return a finished body.
@@ -1338,8 +1395,59 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
     // The documents are named by hash rather than carried: the worker that
     // reads the answer is not the one that fetched them. They are already
     // stored -- deps.store above -- so the hash is enough.
-    context: { docHashes: docs.map((d) => d.contentHash), notes, ...(homePageOnly ? { homePageOnly } : {}) },
+    context: { docHashes: docs.map((d) => d.contentHash), notes, ...(homePageOnly ? { homePageOnly } : {}),
+               ...(supplied.length > 0 ? { supplied: supplied.map(({ doc }) => ({
+                 hash: doc.contentHash, id: doc.suppliedId!, url: doc.finalUrl })) } : {}) },
   };
+}
+
+/**
+ * The documents an analyst supplied, in reading order, that can still be read.
+ *
+ * Checked again here, not only when they were supplied: the website the
+ * application trusts may have changed since, and retention empties a
+ * document's text after 90 days (scripts/retention.mjs) -- a supplied file
+ * cannot be fetched back, so it has to be supplied again. A document that does
+ * not name the company is never read, whoever supplied it.
+ */
+async function readSupplied(
+  job: LiveJob, siteHost: string, deps: LiveDeps, notes: string[],
+  order: (a: CandidateDoc, b: CandidateDoc) => number,
+): Promise<Array<{ doc: FetchedDocument; as: CandidateDoc; kind: DocKind }>> {
+  if (job.supplied.length === 0) return [];
+  const asCandidate = (s: LiveJob["supplied"][number]): CandidateDoc =>
+    ({ url: s.url, kind: s.kind, fiscal_year: null, title: "supplied by an analyst", provenance: "reported" });
+  const ranked = [...job.supplied].sort((a, b) => order(asCandidate(a), asCandidate(b)));
+  const byHash = new Map((await deps.load(ranked.map((s) => s.hash))).map((d) => [d.contentHash, d]));
+  const site = new Set([siteHost]);
+  const out: Array<{ doc: FetchedDocument; as: CandidateDoc; kind: DocKind }> = [];
+  for (const s of ranked) {
+    if (out.length >= MAX_DOCUMENTS) { notes.push(`not read, ${MAX_DOCUMENTS} documents already: the document an analyst supplied: ${s.url}`); continue; }
+    const doc = byHash.get(s.hash);
+    const host = hostOf(s.url);
+    const why = !doc ? "is not in the store"
+      : !host || !isAllowedHost(host, site) ? "is not on the company's website"
+      : !doc.text.trim() ? "has no text left: retention empties it after 90 days, so supply it again"
+      : !doc.hasTextLayer ? "has no text layer"
+      : namesCompany(doc.text, job.row) < 0 ? "does not name the company"
+      : null;
+    if (why) { notes.push(`not read: the document an analyst supplied ${why}: ${s.url}`); continue; }
+    if (out.some((o) => o.doc.contentHash === doc!.contentHash)) continue;
+    notes.push(`read the document an analyst supplied: ${s.url}`);
+    out.push({ doc: asSupplied(doc!, s), as: asCandidate(s), kind: s.kind });
+  }
+  return out;
+}
+
+/**
+ * A stored document as the analyst supplied it: cited at the address they
+ * gave, at the supplied tier, marked with the row it was read through. The
+ * stored row keeps whichever copy of the bytes came first -- the tool may
+ * have fetched the same file from elsewhere -- and says nothing of who
+ * supplied it.
+ */
+function asSupplied(doc: FetchedDocument, s: { id: string; url: string }): FetchedDocument {
+  return { ...doc, url: s.url, finalUrl: s.url, sourceTier: SUPPLIED_TIER, suppliedId: s.id };
 }
 
 /**
@@ -1504,7 +1612,9 @@ export async function fieldsResume(
   _job: LiveJob, context: PassContext, msg: VendorMessage, deps: LiveDeps, meter: Meter,
 ): Promise<LiveBody> {
   const notes = context.notes ?? [];
-  const docs = await deps.load(context.docHashes ?? []);
+  const supplied = new Map((context.supplied ?? []).map((s) => [s.hash, s]));
+  const docs = (await deps.load(context.docHashes ?? []))
+    .map((d) => supplied.has(d.contentHash) ? asSupplied(d, supplied.get(d.contentHash)!) : d);
   if (docs.length !== (context.docHashes ?? []).length) {
     // document_index in the answer points into THIS list. A short list would
     // silently attribute a finding to the wrong filing, which is the worst

@@ -49,6 +49,8 @@ export type GridRow = {
   sourceCount: number;
   excerpt: string | null;
   sourceUrl: string | null;
+  /** Read from a document an analyst supplied: who, when, and what that means. Null otherwise. */
+  suppliedNote: string | null;
   anchorMode: string;
   findingId: string | null;
   findingAttempt: number | null;
@@ -447,7 +449,9 @@ export default function Grid(props: Props) {
                     ? <span className="tag warn"><Icon name="search-x" size={11} />no sources</span>
                     : r.anchorMode === "label_only" || r.anchorMode === "none"
                       ? <span className="tag warn"><Icon name="shield-off" size={11} />not anchored</span>
-                      : <span className="tag ok"><Icon name="scroll-text" size={11} />{r.sourceCount} source{r.sourceCount === 1 ? "" : "s"}</span>}
+                      : r.suppliedNote
+                        ? <span className="tag warn" title="Read from a document an analyst supplied"><Icon name="upload" size={11} />supplied</span>
+                        : <span className="tag ok"><Icon name="scroll-text" size={11} />{r.sourceCount} source{r.sourceCount === 1 ? "" : "s"}</span>}
               </span>
             </div>
           ))}
@@ -486,10 +490,13 @@ export default function Grid(props: Props) {
                 <span>{ANCHOR_WORD[row.anchorMode] ?? row.anchorMode}</span>
                 {row.sourceUrl && (
                   <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer">
-                    open source<Icon name="external-link" size={12} />
+                    {row.suppliedNote ? "address given" : "open source"}<Icon name="external-link" size={12} />
                   </a>
                 )}
               </p>
+              {row.suppliedNote && (
+                <Callout tone="warn" icon="upload" title="Supplied by an analyst">{row.suppliedNote}</Callout>
+              )}
               {row.tierNote && <p className="tiernote">{row.tierNote}</p>}
               {row.olderFilingNote && (
                 <Callout tone="info" icon="calendar-clock" title="From an older filing">{row.olderFilingNote}</Callout>

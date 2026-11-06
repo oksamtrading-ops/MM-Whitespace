@@ -564,6 +564,18 @@ async function journeys(dbPath) {
   check("a company that is not in the population is refused plainly",
         missing.html.includes("No such company"));
 
+  // Supplying a company's document is for Analysts and Admins: the page, and
+  // the link to it from the profile.
+  const docsPage = await get(`/companies/${idMatch?.[1]}/documents`, analyst.cookie);
+  check("an Analyst can open a company's documents page", docsPage.status === 200 &&
+        docsPage.html.includes("Supply a PDF") && docsPage.html.includes("Supplied this quarter"),
+        `status ${docsPage.status}`);
+  const docsRefused = await get(`/companies/${idMatch?.[1]}/documents`, viewer.cookie);
+  check("a Viewer is refused it", docsRefused.html.includes("Not permitted") && !docsRefused.html.includes("Supply a PDF"));
+  check("and a Viewer's profile does not link to it", !profile.html.includes("/documents"));
+  const analystOnProfile = await get(`/companies/${idMatch?.[1]}`, analyst.cookie);
+  check("an Analyst's profile does", analystOnProfile.html.includes(`/companies/${idMatch?.[1]}/documents`));
+
   // Every value cites its source, frozen with the revision, and each row is
   // an anchor the companies table can link to.
   check("a published value cites where it came from",
@@ -989,6 +1001,8 @@ async function journeys(dbPath) {
     [`/companies/{id} (viewer)`, `/companies/${idMatch?.[1]}`, viewer.cookie],
     [`/upload/{id}, a TSX list (analyst)`, `/upload/${listParse.id}`, analyst.cookie],
     [`/companies/{id}, carried values (analyst)`, `/companies/${northco}`, analyst.cookie],
+    [`/companies/{id}/documents (analyst)`, `/companies/${idMatch?.[1]}/documents`, analyst.cookie],
+    [`/companies/{id}/documents (viewer, refused)`, `/companies/${idMatch?.[1]}/documents`, viewer.cookie],
   ];
   for (const [name, path, cookie] of routes) {
     const { html } = await get(path, cookie);

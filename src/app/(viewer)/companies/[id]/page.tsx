@@ -151,6 +151,13 @@ export default async function CompanyProfile({ params }: { params: Promise<{ id:
             </a>
           </p>
         )}
+        {canReview && (
+          <p className="site">
+            <Link className="btn sm secondary" href={`/companies/${id}/documents` as Route} prefetch={false}>
+              <Icon name="upload" size={13} />Supply a document
+            </Link>
+          </p>
+        )}
         {!p.publication && (
           <p className="meta site">
             This period is not published. A Viewer sees nothing here until it is.
@@ -378,7 +385,9 @@ function CitationLine({ citation: c, showReasons }: { citation: Citation | null;
                   </a>
                 : documentLabel(d)}
               {d.url && documentLabel(d) !== host(d.url) && <span className="dim">{` · ${host(d.url)}`}</span>}
-              {d.retrievedAt && <span className="dim">{` · read ${fmtDate(d.retrievedAt)}`}</span>}
+              {d.supplied
+                ? <span className="dim">{` · supplied by an analyst${d.supplied.at ? `, ${fmtDate(d.supplied.at)}` : ""}; not fetched by the application`}</span>
+                : d.retrievedAt && <span className="dim">{` · read ${fmtDate(d.retrievedAt)}`}</span>}
             </span>
           ))}
         </span>

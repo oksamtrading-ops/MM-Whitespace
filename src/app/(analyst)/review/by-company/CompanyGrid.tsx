@@ -34,6 +34,8 @@ export type Cell = {
   sourceCount: number;
   excerpt: string | null;
   sourceUrl: string | null;
+  /** Read from a document an analyst supplied: who, when, and what that means. Null otherwise. */
+  suppliedNote: string | null;
   anchorMode: string;
   findingId: string | null;
   findingAttempt: number | null;
@@ -308,10 +310,13 @@ export default function CompanyGrid({ periodId, fields, rows, initialQuery = "" 
                 <span>{cell.anchorMode.replace(/_/g, " ")}</span>
                 {cell.sourceUrl && (
                   <a href={cell.sourceUrl} target="_blank" rel="noopener noreferrer">
-                    open source<Icon name="external-link" size={12} />
+                    {cell.suppliedNote ? "address given" : "open source"}<Icon name="external-link" size={12} />
                   </a>
                 )}
               </p>
+              {cell.suppliedNote && (
+                <Callout tone="warn" icon="upload" title="Supplied by an analyst">{cell.suppliedNote}</Callout>
+              )}
               {cell.tierNote && <p className="tiernote">{cell.tierNote}</p>}
               {cell.olderFilingNote && (
                 <Callout tone="info" icon="calendar-clock" title="From an older filing">{cell.olderFilingNote}</Callout>

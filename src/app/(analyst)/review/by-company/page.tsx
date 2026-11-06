@@ -6,7 +6,8 @@ import { cellLabel, companyRows, formatValue, olderFilingNote, tierConsequence }
 import Facts from "../../../_ui/Facts.tsx";
 import Refusal from "../../../_ui/Refusal.tsx";
 import Page from "../../../_ui/Page.tsx";
-import { periodName } from "../../../_ui/format.ts";
+import { fmtDate, periodName } from "../../../_ui/format.ts";
+import { suppliedWords } from "../../../../lib/supply/kinds.ts";
 import CompanyGrid, { type Row } from "./CompanyGrid.tsx";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,7 @@ export default async function ByCompany(
       sourceCount: c.sourceCount,
       excerpt: c.excerpt,
       sourceUrl: c.sourceUrl,
+      suppliedNote: c.supplied ? suppliedWords(c.supplied, fmtDate(c.supplied.at)) : null,
       anchorMode: c.anchorMode,
       findingId: c.findingId,
       findingAttempt: c.findingAttempt,

@@ -41,6 +41,12 @@ export type Candidate = {
   alreadyOverridden: boolean;
   /** The catalogue says whether the field may ever be bulk-accepted. */
   bulkAcceptableField: boolean;
+  /**
+   * Read from a document an analyst supplied: who, when, and what they said
+   * it is. From the finding's own record (enrichment_findings.supplied_document_id),
+   * so removing the document later does not take the label away.
+   */
+  supplied?: { by: string; at: string; kind: string } | null;
 };
 
 export type Refusal = { companyId: string; reason: string };
@@ -52,7 +58,7 @@ export type BulkOptions = {
 };
 
 /**
- * The seven refusals, as a pure function over one field's candidates.
+ * The eight refusals, as a pure function over one field's candidates.
  *
  * Bulk accept is ALWAYS scoped to one field in one filtered view. There is no
  * accept-everything control anywhere in the product, which is why this takes a
@@ -105,13 +111,20 @@ export function partitionForBulkAccept(
       refuse(c, "no sources; a confident answer with no source is a hallucination");
       continue;
     }
-    // 6. Anything quarantined by the anchoring gate.
+    // 6. Anything read from a document an analyst supplied. Doc 11, line 84:
+    //    a quote not in text the application fetched itself can never be
+    //    bulk-accepted. Each one is a person's call.
+    if (c.supplied) {
+      refuse(c, "read from a document an analyst supplied, not one the application fetched; accept it on its own");
+      continue;
+    }
+    // 7. Anything quarantined by the anchoring gate.
     if (c.findingState !== "proposed" ||
         c.anchorMode === "none" || c.anchorMode === "label_only") {
       refuse(c, `not anchored (${c.findingState}/${c.anchorMode}); its excerpt did not verify`);
       continue;
     }
-    // 7. Below the threshold for this run.
+    // 8. Below the threshold for this run.
     if ((c.evidenceStrength ?? 0) < opts.threshold) {
       refuse(c, `evidence ${(c.evidenceStrength ?? 0).toFixed(3)} is below ${opts.threshold}`);
       continue;

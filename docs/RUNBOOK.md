@@ -293,6 +293,35 @@ catches up with the newcomers.
 
 ---
 
+## 5. A company's website refuses the fetcher: supply its documents
+
+The research fetcher identifies itself honestly, and some sites' bot checks
+answer it with 403 (Cadillac Mines and GR Silver, 5 November 2026). Never work
+around that by disguising the fetcher. Instead:
+
+1. In your own browser, download the company's filings from its website:
+   publicly, without signing in. An AIF or circular is worth most (it carries
+   the fees); statements and MD&A carry the stage and the financials.
+2. Open the company's profile and choose **Supply a document**
+   (`/companies/{id}/documents`). Give the PDF, the address in the browser's
+   address bar when you downloaded it, and what it is, and tick the statement.
+   Three at most per company a quarter, and only for the current quarter.
+3. Start a pass 2 run from **/runs** with the default scope. The company is
+   offered again until a run has read what was supplied.
+4. In review, every value read from it is tagged **supplied** and has to be
+   accepted on its own.
+
+If it is refused, the sentence says why. The usual ones: the address is not on
+the company's trusted website (accept the website in review first, or use the
+address on the company's own domain, not `q4cdn.com`), the PDF is a scan, or it
+does not name the company. A supplied document's text is emptied after 90 days
+like any other. Supplying the same file again then puts the text back and
+offers the company to pass 2 again; next quarter it has to be supplied anew.
+
+Removing a document stops research reading it and takes what it found that
+nobody has decided out of review, including what a run still in flight finds
+there later. `docs/decisions/SUPPLIED-DOCUMENTS.md`.
+
 ## A database is a migration behind
 
 A migration added later reaches new databases only: the schema is applied when

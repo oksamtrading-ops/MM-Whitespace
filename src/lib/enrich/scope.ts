@@ -29,8 +29,9 @@ export const SCOPE_COPY: Record<Scope, { label: string; detail: string }> = {
     label: "Companies not yet researched",
     detail: "Every company this pass has not researched yet. A run that read no document for a " +
             "company does not count, nor does a pass 2 run that read only its home page, so that " +
-            "company is offered again. The default, and the only scope that never re-spends on work " +
-            "already done.",
+            "company is offered again. So is one with a document an analyst has supplied since, until a " +
+            "pass 2 run has read it: that re-spends on purpose. The default, and otherwise the only scope " +
+            "that never re-spends on work already done.",
   },
   all: {
     label: "Every company in the period",
@@ -132,7 +133,8 @@ export const DONE_COPY: Record<Pass, string> = {
            "Research from before then covers the first half only. The ERP change signal, asked for since " +
            "22 October, is collected whenever pass 2 runs and does not decide what is done. A pass 2 run " +
            "that read no document for a company does not count, nor one that read only its home page: the " +
-           "company is offered again.",
+           "company is offered again. A company with a document an analyst supplied this quarter that no " +
+           "pass 2 run has read yet is offered again too, however much is done or settled.",
 };
 
 /** The counts behind a pass's two options (start.ts, passScopes). */

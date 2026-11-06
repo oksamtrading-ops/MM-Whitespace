@@ -359,11 +359,12 @@ export async function edgarIndexDocuments(indexUrl: string, deps: FetchDeps): Pr
 
 /** The fetched document, as the anchoring gate reads it. */
 export function asStored(doc: FetchedDocument, scalePhrase: string | null = null): StoredDocument & {
-  url: string; sourceTier: 1 | 2 | 3 | 4 | 5; docType?: string;
+  url: string; sourceTier: 1 | 2 | 3 | 4 | 5; docType?: string; suppliedId?: string;
 } {
   return {
     contentHash: doc.contentHash, text: doc.text, pageCount: doc.pageCount,
     charsPerPage: doc.charsPerPage, hasTextLayer: doc.hasTextLayer, scalePhrase,
     url: doc.finalUrl, sourceTier: doc.sourceTier, docType: doc.docType,
+    ...(doc.suppliedId ? { suppliedId: doc.suppliedId } : {}),
   };
 }

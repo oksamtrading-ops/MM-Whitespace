@@ -34,6 +34,8 @@ The reflex design — store the upload, then parse it — puts named individuals
 3. The **raw bytes are deleted, not archived.** If re-parsing is needed, store a redacted rebuild containing only allowlisted sheets and columns.
 4. **Strip before any sheet is read:** comments, legacy drawings, embedded media, and both document-property parts.
 5. **Positive allowlist** of sheets and columns, failing closed. Sheets outside it are never read, and their existence is reported as a count rather than silently dropped.
+
+> **Exception, 5 November 2026: a supplied filing over 3 MiB.** A PDF an analyst supplies that is too large for one request waits in Postgres, in pieces, for up to an hour (its first piece must be a PDF before anything is kept; no piece past the declared count; one open upload a person; 100 MiB across everyone; swept within a minute of its hour by the cron tick). It is a public document from the company's own website, attested as such, not a workbook carrying named people. `docs/decisions/SUPPLIED-DOCUMENTS.md`.
 6. **A person-data tripwire** runs over ingested free text — an email pattern, or a name-shaped value in a column that is not a company or firm name. A hit **blocks the commit** and names the cell. The event is logged with coordinates only, **never the value**.
 7. The person-data sheet is detected by signature and blocks with an explicit message, so an Analyst who did not realise what they uploaded finds out.
 
@@ -82,6 +84,8 @@ Its blast radius is total and row-level policy does not constrain it: every comp
 | Server-side request forgery | The application's own fetcher must block private and link-local address space **after DNS resolution**, disallow redirects into private space, cap body size and time, and allowlist domains from the extract — **never a domain the model proposed** |
 
 **The decisive control for fabricated fees is the grounding gate**, not the prompt: a numeric fee must appear verbatim, after normalisation, in text the application itself retrieved from a URL the application itself fetched. Failing that, the finding is created in an unverifiable state that can never be bulk-accepted. Section 6 specifies the matching rules.
+
+> **5 November 2026: a supplied filing.** Text an analyst supplied was not fetched by the application, so a finding read from it is recorded as such on the finding (`supplied_document_id`), scores at source tier 4, and is refused by bulk accept and never counted as bulk-acceptable. It still passes the same anchor gate. `docs/decisions/SUPPLIED-DOCUMENTS.md`.
 
 ## Formula injection on export
 

@@ -1740,7 +1740,8 @@ table.provenance tr:target > th, table.provenance tr:target > td { background: v
 .commit { max-width: 480px; }
 .commit .field { display: block; margin: 0 0 var(--space-5); }
 .commit label { display: block; font-size: var(--fs-body-sm); font-weight: 500; margin-bottom: var(--space-2); }
-.commit input[type="text"], .commit input:not([type]), .commit input[type="date"], .commit input[type="number"] {
+.commit input[type="text"], .commit input:not([type]), .commit input[type="date"], .commit input[type="number"],
+.commit input[type="url"] {
   font: inherit; font-size: var(--fs-body); width: 100%; min-height: var(--control-h); padding: 0 var(--space-3);
   border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
 }

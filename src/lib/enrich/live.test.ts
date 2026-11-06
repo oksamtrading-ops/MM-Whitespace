@@ -20,8 +20,12 @@ import { DISCOVERY_MAX_SEARCHES, ROUTE_CONFIG } from "./client.ts";
 import { extractPdf } from "./pdf.ts";
 import { createRun, JobFailed, loadDocuments, processJob, publicRow, storeDocument } from "./worker.ts";
 import { passCoverage } from "./start.ts";
+import { fieldRows } from "../review/queue.ts";
+import { recordDecision } from "../review/decide.ts";
+import { citationsForPeriod, citationWords } from "../profile/citations.ts";
 import { seedFixtureDatabase, PERIOD_AS_OF } from "../../../tests/cassettes/build_cassettes.mjs";
 import { makePdf } from "../../../tests/fixtures/make_pdf.mjs";
+import { addChunk, beginUpload, CHUNK_BYTES, finishUpload, supplyWhole, withdrawSupplied } from "../supply/supply.ts";
 
 const CASSETTE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "tests", "cassettes");
 
@@ -1907,4 +1911,233 @@ test("the financial windows never take the budget a fee needs, and are read when
   const far = `Cover page of Westco. ${filler} Total assets 512,870 ${filler} expressed in thousands of Canadian dollars ${filler}`;
   assert.ok(windowsOf(far).includes("Total assets 512,870"), "a balance sheet far from the rest is read");
   assert.ok(windowsOf(far).includes("expressed in thousands of Canadian dollars"), "and so is the currency sentence");
+});
+
+/* ------------------------------------------- a document an analyst supplied */
+
+/**
+ * An analyst supplies a PDF they downloaded from the company's site, as the
+ * browser sends it: whole when it fits one request, else piece by piece.
+ */
+async function supplyAs(db: Sql, periodId: string, companyId: string, url: string, bytes: Uint8Array,
+  kind = "information_circular", opts: { pieces?: boolean } = {}) {
+  await db.run("insert into app_users (email, role, first_name, last_name) values ('ana@example.invalid', 'analyst', 'Ana', 'Lyst') on conflict do nothing");
+  const ana = { id: String((await db.get("select id from app_users where email = 'ana@example.invalid'") as { id: string }).id) };
+  const input = { companyId, periodId, url, kind, filename: "f.pdf", sizeBytes: bytes.byteLength, attested: true };
+  if (!opts.pieces) return { ana, ...await supplyWhole(db, ana, input, bytes, { extractPdf }) };
+  const { uploadId, chunkCount } = await beginUpload(db, ana, input);
+  for (let i = 0; i < chunkCount; i++) await addChunk(db, ana, uploadId, i, bytes.subarray(i * CHUNK_BYTES, (i + 1) * CHUNK_BYTES));
+  return { ana, ...await finishUpload(db, ana, uploadId, { extractPdf }) };
+}
+
+/** The company's whole site behind a bot check: 403 to every request, as Cadillac's and GR Silver's were. */
+function refusingSite(host: string) {
+  const { fetched, fetchDeps } = world();
+  return { fetched, fetchDeps: { ...fetchDeps, http: async (url: string, s: { timeoutMs: number }): Promise<HttpResponse> =>
+    new URL(url).hostname.endsWith(host) ? (fetched.push(url), { status: 403, headers: {}, body: new Uint8Array() })
+      : fetchDeps.http(url) } };
+}
+
+const SUPPLIED_URL = "https://northco.invalid/wp-content/uploads/2026/08/circular-2026.pdf";
+
+test("PASS 2: a document an analyst supplied is read first, from the store, on a site that refuses every fetch", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { contentHash, id, ana } = await supplyAs(db, periodId, northco.id, SUPPLIED_URL, CIRCULAR as Uint8Array, "information_circular", { pieces: true });
+  const { v, requests } = vendor();
+  const { fetched, fetchDeps } = refusingSite("northco.invalid");
+  const { runId, outcome, by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.equal(outcome.jobState, "completed");
+  // Doc 11, line 84: never bulk-accepted, in the run's own account too.
+  assert.ok(outcome.findings.filter((f) => f.state === "proposed").length > 0);
+  assert.ok(outcome.findings.every((f) => !f.bulkAcceptable));
+
+  assert.ok(!fetched.includes(SUPPLIED_URL), "never fetched: it is already in hand");
+  const notes = await notesOf(db, runId);
+  assert.ok(notes.includes(`read the document an analyst supplied: ${SUPPLIED_URL}`));
+  assert.ok(!notes.some((n) => n.startsWith("no filing read")), "a filing was read: no home page fallback");
+
+  const [extraction] = extractions(requests);
+  const sent = JSON.stringify(extraction.messages);
+  assert.match(sent, new RegExp(`<document index=\\\\"0\\\\" url=\\\\"${SUPPLIED_URL.replace(/[./]/g, "\\$&")}\\\\">`));
+  assert.match(sent, /Audit fees\s+412/);
+
+  // Cited to the supplied document, at the address the analyst gave.
+  assert.equal(by.auditor.state, "proposed");
+  assert.equal(by.auditor.anchor_document_hash, contentHash);
+  assert.equal(by.tax_fee.state, "anchor_mismatch", "the anchor gate holds for a supplied document as for any other");
+  const src = await db.get(`select s.url, s.source_tier, f.supplied_document_id, f.evidence_strength
+      from finding_sources s join enrichment_findings f on f.id = s.finding_id
+      where f.run_id = ? and f.field_key = 'auditor'`, runId) as { url: string; source_tier: number; supplied_document_id: string; evidence_strength: number };
+  assert.equal(src.url, SUPPLIED_URL);
+  assert.equal(Number(src.source_tier), 4, "the supplied tier, not issuer-hosted");
+  assert.equal(src.supplied_document_id, id, "the finding itself says it was read from a supplied document");
+  assert.ok(await db.get("select 1 from supplied_reads where supplied_id = ?", id), "the read is recorded");
+  // The same finding from the same text, fetched by the application: a stronger band.
+  await withdrawSupplied(db, ana, id);
+  const fetchedRun = await runOne(db, periodId, northco.id, "general", deps(db, vendor().v, world().fetchDeps));
+  const fetchedAuditor = await db.get(`select f.evidence_strength, f.supplied_document_id from enrichment_findings f
+      where f.run_id = ? and f.field_key = 'auditor'`, fetchedRun.runId) as { evidence_strength: number; supplied_document_id: string | null };
+  assert.ok(Number(src.evidence_strength) < Number(fetchedAuditor.evidence_strength),
+    `supplied ${src.evidence_strength} < fetched ${fetchedAuditor.evidence_strength}`);
+  assert.equal(fetchedAuditor.supplied_document_id, null);
+  const job = await db.get("select read_only_home_page from enrichment_jobs where run_id = ?", runId) as { read_only_home_page: unknown };
+  assert.equal(Number(job.read_only_home_page), 0, "research, not a home page read");
+});
+
+test("PASS 2: a supplied document reopens a researched company until a job has read it", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const groupsOf = async () => (await passCoverage(db, periodId, "general")).companies.find((c) => c.companyId === northco.id)!.groups;
+  await runOne(db, periodId, northco.id, "general", deps(db, vendor().v, world().fetchDeps));
+  assert.equal((await groupsOf()).get("filings"), "here");
+
+  // Settled in review as well: still reopened. It was supplied to be read.
+  await db.run(`insert into company_period_field_values (period_id, company_id, field_key, value, source, evidence_state)
+      values (?, ?, 'auditor', '"Deloitte LLP"', 'ai_accepted', 'asserted')`, periodId, northco.id);
+  await db.run("update enrichment_jobs set created_at = datetime('now', '-1 hour')");
+  const { id } = await supplyAs(db, periodId, northco.id, SUPPLIED_URL, MDNA_ERP as Uint8Array, "annual_mdna");
+  assert.equal((await groupsOf()).size, 0, "offered again as not yet researched");
+
+  // A job waiting on its batch when the document arrived never reads it: open.
+  await db.run("update enrichment_jobs set state = 'awaiting_batch'");
+  assert.equal((await groupsOf()).size, 0, "a job that has not read it does not close it");
+  await db.run("update enrichment_jobs set state = 'completed'");
+
+  await runOne(db, periodId, northco.id, "general", deps(db, vendor().v, refusingSite("northco.invalid").fetchDeps));
+  assert.equal((await groupsOf()).get("filings"), "here", "read since: researched");
+  assert.ok(await db.get("select 1 from supplied_reads where supplied_id = ?", id));
+
+  // Removed, it reopens nothing.
+  await db.run("update enrichment_jobs set created_at = datetime('now', '-1 hour')");
+  const ana = await db.get("select id from app_users where email = 'ana@example.invalid'") as { id: string };
+  await withdrawSupplied(db, { id: String(ana.id) }, id);
+  assert.equal((await groupsOf()).get("filings"), "here");
+
+  // One that cannot be read -- emptied by retention -- is offered once, not in every run.
+  const unread = await supplyAs(db, periodId, northco.id, "https://northco.invalid/docs/aif.pdf", CURRENT_MDNA as Uint8Array, "annual_mdna");
+  await db.run("update documents set text_content = null where content_hash = ?", unread.contentHash);
+  assert.equal((await groupsOf()).size, 0);
+  await runOne(db, periodId, northco.id, "general", deps(db, vendor().v, refusingSite("northco.invalid").fetchDeps));
+  assert.equal((await db.get("select count(*) n from supplied_reads where supplied_id = ?", unread.id) as { n: number }).n, 0);
+  assert.equal((await groupsOf()).get("filings"), "here", "a finished job had its chance");
+});
+
+test("PASS 2: review names who supplied a document, and a Viewer's citation says a person did -- not who", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { ana } = await supplyAs(db, periodId, northco.id, SUPPLIED_URL, CIRCULAR as Uint8Array);
+  await runOne(db, periodId, northco.id, "general", deps(db, vendor().v, refusingSite("northco.invalid").fetchDeps));
+  const [row] = await fieldRows(db, periodId, "auditor", "all");
+  assert.equal(row.supplied?.by, "Ana Lyst");
+  assert.equal(row.supplied?.kind, "information_circular");
+  assert.equal(row.sourceUrl, SUPPLIED_URL);
+
+  await recordDecision(db, { periodId, companyId: northco.id, fieldKey: "auditor", decision: "accept",
+    findingId: row.findingId, findingAttempt: row.findingAttempt, actorId: ana.id });
+  const cite = (await citationsForPeriod(db, periodId, { companyId: northco.id })).get(`${northco.id}|auditor`)!;
+  assert.equal(cite.citation.kind, "document");
+  const doc = cite.citation.kind === "document" ? cite.citation.documents[0] : null;
+  assert.ok(doc?.supplied?.at, "marked as supplied, with the day");
+  assert.ok(!JSON.stringify(cite).includes("Ana"), "never who");
+  assert.equal(citationWords(cite.citation).kind, "Researched from a document an analyst supplied");
+});
+
+test("PASS 2: withdrawing a supplied document takes its undecided findings out of review, and leaves decided ones", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { id, ana } = await supplyAs(db, periodId, northco.id, SUPPLIED_URL, CIRCULAR as Uint8Array);
+  const { runId } = await runOne(db, periodId, northco.id, "general", deps(db, vendor().v, refusingSite("northco.invalid").fetchDeps));
+  const findings = await db.all("select id, field_key, state from enrichment_findings where run_id = ? and supplied_document_id = ?",
+    runId, id) as Array<{ id: string; field_key: string; state: string }>;
+  const auditor = findings.find((f) => f.field_key === "auditor")!;
+  await db.run(`insert into review_decisions (period_id, company_id, field_key, decision, finding_id, finding_attempt, actor_id)
+      values (?, ?, 'auditor', 'accept', ?, 1, ?)`, periodId, northco.id, auditor.id, ana.id);
+
+  const out = await withdrawSupplied(db, ana, id);
+  const after = new Map((await db.all("select id, state from enrichment_findings where run_id = ?", runId) as
+    Array<{ id: string; state: string }>).map((f) => [f.id, f.state]));
+  assert.equal(after.get(auditor.id), auditor.state, "decided: left as it was");
+  assert.equal(out.superseded, findings.length - 1);
+  for (const f of findings.filter((x) => x.id !== auditor.id)) assert.equal(after.get(f.id), "superseded", f.field_key);
+  const audit = JSON.parse((await db.get("select detail from audit_log where event = 'document_withdrawn'") as { detail: string }).detail);
+  assert.equal(audit.supersededFindings.length, findings.length - 1);
+});
+
+test("BATCH: what was read as supplied is fixed when the request is built, not when its answer comes back", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { id, ana } = await supplyAs(db, periodId, northco.id, SUPPLIED_URL, CIRCULAR as Uint8Array);
+  const { v } = vendor();
+  const live = deps(db, v, refusingSite("northco.invalid").fetchDeps);
+  const { runId } = await createRun(db, periodId, [northco.id], { cassetteDir: CASSETTE_DIR, fieldGroup: "general", mode: "live" });
+  const { vendor: bv } = batchVendor(v);
+  assert.equal((await drainBatched(db, live, bv)).jobsBatched, 1);
+
+  // Withdrawn while the batch is out: the model read it all the same, and
+  // what it found is still labelled as read from it -- and superseded as it
+  // is written, as the withdrawal superseded what was already there. It
+  // never waits in review to be accepted from a document taken back.
+  await withdrawSupplied(db, ana, id);
+  await settleReady(db, bv, { ...SETTLE, live });
+  const auditor = await db.get(`select f.supplied_document_id, f.state, s.url, s.source_tier from enrichment_findings f
+      join finding_sources s on s.finding_id = f.id where f.run_id = ? and f.field_key = 'auditor'`, runId) as
+    { supplied_document_id: string; state: string; url: string; source_tier: number };
+  assert.equal(auditor.supplied_document_id, id);
+  assert.equal(auditor.state, "superseded");
+  assert.equal(await db.get(`select 1 from enrichment_findings where supplied_document_id = ? and state != 'superseded'`, id), undefined);
+  assert.equal(auditor.url, SUPPLIED_URL);
+  assert.equal(Number(auditor.source_tier), 4);
+  assert.ok(await db.get("select 1 from supplied_reads where supplied_id = ?", id));
+});
+
+test("PASS 2: a supplied document is checked again when read -- removed, emptied by retention, off the website now", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const kept = await supplyAs(db, periodId, northco.id, SUPPLIED_URL, CIRCULAR as Uint8Array);
+  const gone = await supplyAs(db, periodId, northco.id, "https://northco.invalid/docs/mda-2025.pdf", MDNA_ERP as Uint8Array, "annual_mdna");
+  const late = await supplyAs(db, periodId, northco.id, "https://ir.northco.invalid/q1.pdf", CURRENT_MDNA as Uint8Array, "interim_report");
+
+  await withdrawSupplied(db, kept.ana, gone.id);
+  await db.run("update documents set text_content = null where content_hash = ?", late.contentHash);
+  const run = await runOne(db, periodId, northco.id, "general", deps(db, vendor().v, refusingSite("northco.invalid").fetchDeps));
+  const notes = await notesOf(db, run.runId);
+  assert.ok(notes.includes(`read the document an analyst supplied: ${SUPPLIED_URL}`));
+  assert.ok(!notes.some((n) => n.includes("mda-2025.pdf")), "a removed document is not even considered");
+  assert.ok(notes.some((n) => n.startsWith("not read: the document an analyst supplied has no text left") && n.endsWith("https://ir.northco.invalid/q1.pdf")));
+
+  // The website changes: what was supplied from the old one is not the company's any more.
+  await db.run(`update company_period_field_values set value = '"https://northco-new.invalid"'
+      where period_id = ? and company_id = ? and field_key = 'website'`, periodId, northco.id);
+  const moved = await runOne(db, periodId, northco.id, "general", deps(db, vendor().v, refusingSite("northco").fetchDeps));
+  assert.ok((await notesOf(db, moved.runId)).includes(
+    `not read: the document an analyst supplied is not on the company's website: ${SUPPLIED_URL}`));
+});
+
+test("PASS 2: of one kind, the analyst's document is read before a fetched one of a stated year", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  // Pass 1 lists a current circular, which the site serves. The analyst's
+  // circular has no stated year, which alone would put it second.
+  const mine = "https://northco.invalid/docs/my-circular.pdf";
+  await supplyAs(db, periodId, northco.id, mine, CURRENT_MDNA as Uint8Array, "information_circular");
+  const { v, requests } = vendor();
+  await runOne(db, periodId, northco.id, "general", deps(db, v, world().fetchDeps));
+  const sent = JSON.stringify(extractions(requests)[0].messages);
+  const at = (url: string) => sent.indexOf(`url=\\"${url}\\"`);
+  assert.ok(at(mine) >= 0 && at("https://northco.invalid/docs/circular-2026.pdf") > at(mine),
+    "the supplied circular comes first");
+});
+
+test("PASS 2: a fee-bearing filing an analyst supplied stands in for the second search for one", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  // Pass 1's list holds only a stale AIF -- where a TSX company prints its
+  // fees -- which would send pass 2 searching again.
+  const stale = { ...DISCOVERY_REPORT, documents: [
+    { url: "https://northco.invalid/docs/old/aif-2019.pdf", kind: "annual_information_form", fiscal_year: 2019, title: "AIF 2019" }] };
+  // No EDGAR record: its 40-F is a current annual report, and would print the fees itself.
+  const noEdgar = () => world({ omit: ["https://data.sec.gov/submissions/CIK0001234567.json"] }).fetchDeps;
+  await runOne(db, periodId, northco.id, "identity", deps(db, vendor({ report: stale }).v, noEdgar()));
+  const without = vendor({ report: stale });
+  const r1 = await runOne(db, periodId, northco.id, "general", deps(db, without.v, noEdgar()));
+  assert.ok((await notesOf(db, r1.runId)).some((n) => n.startsWith("searched again")));
+
+  await supplyAs(db, periodId, northco.id, SUPPLIED_URL, CIRCULAR as Uint8Array, "annual_information_form");
+  const withIt = vendor({ report: stale });
+  const r2 = await runOne(db, periodId, northco.id, "general", deps(db, withIt.v, refusingSite("northco.invalid").fetchDeps));
+  assert.ok(!(await notesOf(db, r2.runId)).some((n) => n.startsWith("searched again")));
+  assert.equal(withIt.requests.filter((x) => Array.isArray(x.tools)).length, 0, "no paid search");
 });

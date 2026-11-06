@@ -15,6 +15,7 @@ import type { Sql } from "../db/sql.ts";
 import { formatStamp } from "../db/stamp.ts";
 import { ensureSlots, reapExpiredLeases, WORKER_SLOTS } from "./ledger.ts";
 import { openBatchCount } from "./batch.ts";
+import { sweepUploads } from "../supply/sweep.ts";
 
 /** A week of ticks at one a minute is about ten thousand rows. Enough. */
 export const TICK_RETENTION_DAYS = 7;
@@ -76,6 +77,16 @@ export async function tick(
 
   await db.run("delete from cron_ticks where ticked_at < ?",
                formatStamp(now() - TICK_RETENTION_DAYS * 86_400_000));
+
+  // A supplied PDF too large for one request waits in pieces, as raw bytes,
+  // until its last piece arrives (src/lib/supply). One left past its hour --
+  // a closed tab -- goes here, so none outlives its hour by more than a
+  // minute. After the tick's own row: a failure here must not hide the tick.
+  try {
+    await sweepUploads(db, now());
+  } catch (err) {
+    console.error("sweeping unfinished document uploads failed", err);
+  }
 
   return { tickId: row.id, reapedLeases: reaped, pending, openBatches: batches,
            freeSlots, invokedWorker: invoked, note };

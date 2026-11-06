@@ -33,6 +33,13 @@ import { standingValueDecisions } from "../review/resolve.ts";
 export type DocumentRef = {
   url: string | null; title: string | null; docType: string | null;
   retrievedAt: string | null; contentHash: string | null;
+  /**
+   * The application did not fetch this document: an Analyst or Admin
+   * supplied it (src/lib/supply), on this day. Who is not said -- a Viewer
+   * sees that a person supplied it, not which. Absent from citations frozen
+   * before documents could be supplied, and from every fetched one.
+   */
+  supplied?: { at: string | null };
 };
 
 export type Citation =
@@ -159,6 +166,7 @@ type FindingRow = {
 type SourceRow = {
   finding_id: string; url: string; title: string | null; doc_type: string | null;
   retrieved_at: string | null; content_hash: string | null; source_tier: number;
+  supplied_at?: string | null;
 };
 
 /**
@@ -191,8 +199,10 @@ export async function citationsForPeriod(
       ...args) as FindingRow[]).map((f) => [String(f.id), f]));
   const sources = new Map<string, DocumentRef[]>();
   for (const s of await db.all(`select s.finding_id, s.url, s.title, s.doc_type, s.retrieved_at,
-         s.content_hash, s.source_tier
+         s.content_hash, s.source_tier, sd.supplied_at
        from finding_sources s
+       join enrichment_findings ef on ef.id = s.finding_id
+       left join supplied_documents sd on sd.id = ef.supplied_document_id
       where s.finding_id in (select d.finding_id from review_decisions d
                               where d.period_id = ?${one.replace("company_id", "d.company_id")} and d.finding_id is not null)
       order by s.source_tier, s.url`, ...args) as SourceRow[]) {
@@ -201,6 +211,7 @@ export async function citationsForPeriod(
     sources.get(id)!.push({
       url: safeHref(s.url), title: s.title ?? null, docType: s.doc_type ?? null,
       retrievedAt: s.retrieved_at ?? null, contentHash: s.content_hash ?? null,
+      ...(s.supplied_at ? { supplied: { at: String(s.supplied_at) } } : {}),
     });
   }
 
@@ -302,7 +313,10 @@ export function citationWords(c: Citation): { kind: string; title: string | null
   switch (c.kind) {
     case "document": {
       const d = c.documents[0];
-      return { kind: "Researched from a filing", title: d?.title ?? d?.docType ?? null, url: d?.url ?? null, retrieved: d?.retrievedAt ?? null };
+      return d?.supplied
+        ? { kind: "Researched from a document an analyst supplied", title: d.title ?? d.docType ?? null, url: d.url ?? null,
+            retrieved: d.supplied.at ?? d.retrievedAt ?? null }
+        : { kind: "Researched from a filing", title: d?.title ?? d?.docType ?? null, url: d?.url ?? null, retrieved: d?.retrievedAt ?? null };
     }
     case "searched": return { kind: "Researched: not disclosed", title: c.reason, url: null, retrieved: c.decidedAt };
     case "review": return { kind: "Entered in review", title: null, url: c.url, retrieved: c.decidedAt };

@@ -1,5 +1,13 @@
 # Handover — Market Assessment Tool
 
+> **5 November 2026: documents an analyst supplies.** For a company whose
+> website refuses the fetcher, an Analyst or Admin can supply its PDF
+> (`/companies/{id}/documents`); pass 2 reads it first, every value read from
+> it is labelled and never bulk-accepted (`docs/decisions/SUPPLIED-DOCUMENTS.md`,
+> RUNBOOK section 5). Migrations `0041` and `0042`, applied to production 6
+> November. Built for Cadillac Mines
+> and GR Silver, whose sites answer the fetcher with 403.
+
 > **Status at 3 November 2026.** **Q4-2026 is published as revision 6**
 > (1 November, 19:18 UTC). It is the first Q4 revision that meets every
 > publish floor, so it went out without overriding the gate.
@@ -31,7 +39,7 @@
 >   verdict, the facts and the argument.
 > - **Spend.** Recorded research spend is US$156.47 across fifteen runs in
 >   October and US$1.50 for one run in November.
-> - **Deployment.** Migrations are applied through `0040` (5 November: `enrichment_jobs.read_only_home_page`, set when pass 2 read only the company's home page, so the company is still offered as not yet researched; 0039 added `app_users.first_name` and `last_name`, required by a name gate; 0038's `display_name` is no longer read and can be dropped).
+> - **Deployment.** Migrations are applied through `0042` (6 November: 0041 and 0042, the supplied-document tables, locked to the server as `documents` is; 5 November: `enrichment_jobs.read_only_home_page`, set when pass 2 read only the company's home page, so the company is still offered as not yet researched; 0039 added `app_users.first_name` and `last_name`, required by a name gate; 0038's `display_name` is no longer read and can be dropped).
 >   **Everything on `main` is deployed; the code last changed at
 >   `1e6a6da`** (PR #6, squashed). Before it, `037d8d8` carried the five
 >   fixes above and this note, and the 320px reflow went out after it. A

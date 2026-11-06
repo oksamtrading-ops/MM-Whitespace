@@ -134,6 +134,27 @@ export async function passCoverage(db: Sql, periodId: string, pass: Pass): Promi
     from.add(String(v.from_label));
   }
 
+  // A document an analyst supplied reopens the company for pass 2 -- every
+  // group, whatever is already researched or settled -- until a pass 2 job
+  // has READ it (supplied_reads, written when the job's answer is saved). Not
+  // merely been created after it: a job already waiting on a batch when the
+  // document arrived never sees it. It also closes once a job created after
+  // the supply has finished without reading it -- the document had been
+  // emptied by retention, or the website changed (live.ts, readSupplied) --
+  // so an unreadable file is not paid for again in every run: supplying it
+  // again makes a new row, and reopens.
+  if (pass === "general") {
+    for (const r of await db.all(`select distinct s.company_id from supplied_documents s
+        where s.period_id = ? and s.withdrawn_at is null
+          and not exists (select 1 from supplied_reads sr where sr.supplied_id = s.id)
+          and not exists (select 1 from enrichment_jobs j join enrichment_runs r on r.id = j.run_id
+                           where r.period_id = s.period_id and j.company_id = s.company_id
+                             and j.field_group = 'general' and j.state = 'completed'
+                             and j.created_at >= s.supplied_at)`, periodId) as Array<{ company_id: string }>) {
+      covered.delete(String(r.company_id));
+    }
+  }
+
   return {
     companies: eligible.map((id) => ({ companyId: id, groups: covered.get(id) ?? new Map<string, Covered>() })),
     carriedFrom: [...from].sort(),

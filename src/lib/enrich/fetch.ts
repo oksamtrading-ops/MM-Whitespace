@@ -22,6 +22,7 @@
  */
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
+import { PdfRefused, type PdfLimits } from "./pdf.ts";
 
 export const MAX_BYTES = 25 * 1024 * 1024;
 export const MAX_PAGES = 400;
@@ -140,7 +141,7 @@ export type Extracted = {
 
 export type Extractors = {
   /** May be asynchronous: real PDF parsers are. */
-  pdf: (bytes: Uint8Array) => Extracted | Promise<Extracted>;
+  pdf: (bytes: Uint8Array, limits?: PdfLimits) => Extracted | Promise<Extracted>;
   html: (bytes: Uint8Array) => Extracted;
   text: (bytes: Uint8Array) => Extracted;
 };
@@ -249,6 +250,13 @@ export type FetchedDocument = {
    * hosts, and each of those is fetched under the same checks as any other.
    */
   links?: string[];
+  /**
+   * Set only on a document pass 2 read because an analyst supplied it: the
+   * supplied_documents row it was read through. Never stored with the text --
+   * the same bytes fetched by the tool are the same document -- but carried
+   * onto every finding read from it (live.ts, toFinding; worker.ts, persist).
+   */
+  suppliedId?: string;
 };
 
 /** Every href in an HTML page, resolved against the page's own address. */
@@ -332,36 +340,64 @@ export async function fetchDocument(
   }
   if (!response) throw new FetchRefused("no_response", current.href, "no terminal response");
 
-  if (response.body.byteLength > MAX_BYTES) {
+  const declared = response.headers["content-type"] ?? response.headers["Content-Type"] ?? null;
+  return documentFromBody(response.body, declared, {
+    url: rawUrl, finalUrl: current.href, retrievedAt: now().toISOString(),
+    sourceTier: classifyTier(current.hostname, allowlist),
+  }, deps.extractors ?? {});
+}
+
+/**
+ * Bytes in hand to a document: everything fetchDocument does after the
+ * request. A PDF an analyst supplied (src/lib/supply) goes through exactly
+ * this, so it is checked, read and keyed as a fetched copy of the same file
+ * would be -- the same caps, the same reader, the same hash -- and the two are
+ * one document.
+ */
+export async function documentFromBody(
+  body: Uint8Array,
+  declared: string | null,
+  where: { url: string; finalUrl: string; retrievedAt: string; sourceTier: SourceTier },
+  extractors: Partial<Extractors>,
+  /** How long the PDF reader may take. A fetch sets none; a supplied file does. */
+  limits: { timeoutMs?: number } = {},
+): Promise<FetchedDocument> {
+  const at = where.finalUrl;
+  if (body.byteLength > MAX_BYTES) {
     throw new FetchRefused(
-      "too_large", current.href,
-      `${response.body.byteLength} bytes exceeds ${MAX_BYTES}`);
+      "too_large", at,
+      `${body.byteLength} bytes exceeds ${MAX_BYTES}`);
   }
 
-  const declared = response.headers["content-type"] ?? response.headers["Content-Type"] ?? null;
-  const type = sniffType(response.body, declared);
+  const type = sniffType(body, declared);
   if (type === "unknown") {
     throw new FetchRefused(
-      "type_confusion", current.href,
+      "type_confusion", at,
       `declared ${declared ?? "nothing"} but the bytes are neither PDF, HTML nor text`);
   }
 
-  const extractors = deps.extractors ?? {};
   let extracted: Extracted;
   if (type === "pdf") {
     if (!extractors.pdf) {
-      throw new FetchRefused("no_pdf_extractor", current.href,
+      throw new FetchRefused("no_pdf_extractor", at,
         "a PDF extractor must be supplied; text is extracted server-side under a timeout");
     }
-    extracted = await extractors.pdf(response.body);
+    try {
+      // The reader is told the page cap, so a long file is refused once it is
+      // opened, before any page of it is read.
+      extracted = await extractors.pdf(body, { maxPages: MAX_PAGES, timeoutMs: limits.timeoutMs });
+    } catch (err) {
+      if (err instanceof PdfRefused) throw new FetchRefused(err.code, at, err.message);
+      throw err;
+    }
     if (extracted.pageCount > MAX_PAGES) {
-      throw new FetchRefused("too_many_pages", current.href,
+      throw new FetchRefused("too_many_pages", at,
         `${extracted.pageCount} pages exceeds ${MAX_PAGES}`);
     }
   } else if (type === "text") {
-    extracted = (extractors.text ?? defaultTextExtractor)(response.body);
+    extracted = (extractors.text ?? defaultTextExtractor)(body);
   } else {
-    extracted = (extractors.html ?? defaultHtmlExtractor)(response.body);
+    extracted = (extractors.html ?? defaultHtmlExtractor)(body);
   }
   // Postgres refuses a NUL anywhere in text, so one in a filing failed the
   // whole job (Triple Flag, 20 October 2026). A NUL is never part of a quote.
@@ -376,7 +412,7 @@ export async function fetchDocument(
   // again is a new document, and every earlier finding keeps the exact text it
   // was checked against rather than having it replaced underneath it.
   const contentHash = "sha256:" + createHash("sha256")
-    .update(response.body)
+    .update(body)
     .update(`\0${extracted.extractor}@${extracted.extractorVersion}`)
     .digest("hex");
   const pageCount = Math.max(1, extracted.pageCount);
@@ -384,9 +420,9 @@ export async function fetchDocument(
 
   return {
     contentHash,
-    url: rawUrl,
-    finalUrl: current.href,
-    retrievedAt: now().toISOString(),
+    url: where.url,
+    finalUrl: where.finalUrl,
+    retrievedAt: where.retrievedAt,
     extractor: extracted.extractor,
     extractorVersion: extracted.extractorVersion,
     normalizationVersion: "1.0.0",
@@ -394,13 +430,13 @@ export async function fetchDocument(
     charCount: extracted.text.length,
     pageCount,
     charsPerPage,
-    sourceTier: classifyTier(current.hostname, allowlist),
+    sourceTier: where.sourceTier,
     docType: type,
     // The chars-per-page gate runs BEFORE the document is sent anywhere, so a
     // scanned filing produces a distinct state rather than garbage findings.
     // A PDF is the only thing that can be scanned: a short web page is short,
     // not an image, and marking it textless would refuse every terse homepage.
     hasTextLayer: type !== "pdf" || charsPerPage >= 100,
-    ...(type === "html" ? { links: extractLinks(response.body, current.href) } : {}),
+    ...(type === "html" ? { links: extractLinks(body, where.finalUrl) } : {}),
   };
 }
