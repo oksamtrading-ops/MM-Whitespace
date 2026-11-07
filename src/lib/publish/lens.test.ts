@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   applyLens, bandLabel, bandOf, dayLabel, DELOITTE, delta, earliestDay, fees, firmLabel, firmParts, fmtCap, headline,
   headOfficeCounts, latestDay, league, lensIsEmpty, linksOf, matrix, matrixFirm, monthsBefore, moves, NO_LENS, pct, plural,
-  propertyCounts, signals, switchedSincePrior, tierKey, UNNAMED, yearEnds,
+  propertyCounts, signals, STAGE_GROUPS, stageGroup, countriesOf, countryOf, countryOfUnplaced, groundByStage,
+  switchedSincePrior, tierKey, UNNAMED, yearEnds,
   type Atlas, type AtlasCompany, type Lens, type Signal,
 } from "./lens.ts";
 
@@ -716,4 +717,25 @@ test("a date is written out by hand, so the server and the browser print the sam
   assert.equal(dayLabel("2025-13-01"), "2025", "a month that is not one leaves the year");
   assert.equal(dayLabel(null), "undated");
   assert.equal(dayLabel("sometime"), "sometime", "what is not a date is left as written");
+});
+
+/* ---------------------------------------------------------------- stages */
+
+test("a company's stage is its tier's: producing 1 to 3, royalty 4, development 5, exploration 6, and no tier its own", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, null].map((tier) => stageGroup({ tier })),
+    ["producing", "producing", "producing", "royalty", "development", "exploration", "unclassified"]);
+});
+
+test("ground by country folds provinces into Canada and states into the United States, once per company", () => {
+  assert.deepEqual(countriesOf({ places: ["CA:BC", "CA:ON", "US:NV", "Peru"], unplaced: ["AFRICA: Atlantis", "CANADA: Nowhere"] }),
+    ["Canada", "United States", "Peru", "Atlantis"]);
+  assert.equal(countryOf("CA:YT"), "Canada");
+  assert.equal(countryOf("US:AK"), "United States");
+  assert.equal(countryOfUnplaced("USA: Somewhere"), "United States");
+  assert.equal(countryOfUnplaced("OTHER: "), null);
+  const rows = groundByStage([
+    company({ tier: 1, places: ["CA:BC", "CA:ON"] }), company({ tier: 6, places: ["CA:BC"] }), company({ tier: null, places: ["Peru"] }),
+  ], countriesOf);
+  assert.deepEqual(rows.map((r) => [r.key, r.n, r.producing, r.exploration, r.unclassified]), [["Canada", 2, 1, 1, 0], ["Peru", 1, 0, 0, 1]]);
+  for (const r of rows) assert.equal(STAGE_GROUPS.reduce((n, g) => n + r[g], 0), r.n, "the stages sum to the row");
 });

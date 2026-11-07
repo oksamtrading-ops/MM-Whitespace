@@ -2351,7 +2351,7 @@ dialog.brief::backdrop { background: var(--ground); backdrop-filter: none; }
 dialog.brief .brief-in { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); grid-template-rows: minmax(0, 1fr) auto; height: 100%; }
 dialog.brief .brief-globe { display: flex; align-items: center; justify-content: center; min-height: 0; padding: 4vh 1vw 2vh 3vw; }
 dialog.brief .brief-globe .globe { width: min(100%, calc((100dvh - 140px) * 1000 / 620)); --lab: 15px; }
-dialog.brief .brief-text { align-self: center; min-width: 0; padding: 4vh 5vw 4vh 2vw; }
+dialog.brief .brief-text { align-self: center; min-width: 0; max-height: 100%; overflow-y: auto; padding: 4vh 5vw 4vh 2vw; }
 dialog.brief .brief-text .k { margin: 0 0 var(--space-4); }
 dialog.brief .brief-text .no { font-family: var(--font-figure); color: var(--ink); }
 dialog.brief .brief-text h2 { margin: 0 0 var(--space-4); font-size: clamp(26px, 1.6vw + 14px, 46px); font-weight: 300; line-height: 1.12; letter-spacing: -.02em; text-wrap: balance; }
@@ -2365,10 +2365,27 @@ dialog.brief .brief-rows tbody tr:hover > td { background: none; }
 dialog.brief .brief-in.twin { grid-template-columns: minmax(0, 1fr); }
 dialog.brief .brief-in.twin .brief-text { justify-self: center; width: min(100%, 980px); padding: 4vh 6vw; }
 dialog.brief .brief-rows.big { width: 100%; font-size: clamp(16px, .8vw + 10px, 24px); }
+/* A frame without a map is its table, centred like the twin; a table of many
+   figures takes half the screen beside its map. Either scrolls in place,
+   never the brief. */
+dialog.brief .brief-in.nomap { grid-template-columns: minmax(0, 1fr); }
+dialog.brief .brief-in.nomap .brief-text { justify-self: center; width: min(100%, 980px); padding: 4vh 6vw; }
+dialog.brief .brief-in.nomap .brief-rows { width: 100%; font-size: clamp(16px, .8vw + 10px, 24px); }
+@media (min-width: 901px) { dialog.brief .brief-in.wide:not(.twin):not(.nomap) { grid-template-columns: minmax(0, 1fr) minmax(420px, 1fr); } }
+dialog.brief .brief-scroll { position: relative; max-width: 100%; overflow-x: auto; }
+dialog.brief .brief-rows.headed { width: 100%; }
+dialog.brief .brief-rows.headed tbody th, dialog.brief .brief-rows.headed td { padding-top: 6px; padding-bottom: 6px; }
+dialog.brief .brief-rows.headed thead th { position: static; height: auto; background: none; padding: 0 0 var(--space-2) var(--space-3); text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--rule-raised); font-size: var(--fs-caption); font-weight: 400; line-height: 1.25; color: var(--ink-2); text-align: right; vertical-align: bottom; }
+dialog.brief .brief-rows.headed thead th:first-child { padding-left: 0; text-align: left; }
+dialog.brief .brief-rows.headed tbody th { padding-right: var(--space-4); }
+dialog.brief .brief-rows.headed td { padding-left: var(--space-3); }
+/* The place stays in view while a phone scrolls the figures past it. */
+dialog.brief .brief-rows.headed tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--ground); }
 dialog.brief .brief-in.black { background: var(--dtt-black); }
 dialog.brief .brief-in.black > * { visibility: hidden; }
 dialog.brief .brief-foot {
-  grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-6);
+  /* The last row, whatever comes before it: a frame without a map has one child fewer. */
+  grid-column: 1 / -1; grid-row: -2 / -1; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-6);
   font-size: var(--fs-caption); color: var(--ink-3); border-top: 1px solid var(--rule);
 }
 dialog.brief .brief-foot .basis { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

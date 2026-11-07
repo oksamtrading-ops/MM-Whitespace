@@ -318,6 +318,68 @@ export function headOfficeCounts(cs: readonly AtlasCompany[]): { rows: HeadOffic
   return { rows: rows.sort((a, b) => b.n - a.n || a.key.localeCompare(b.key)), unplaced };
 }
 
+/* --------------------------------------------------------------- stages */
+
+/**
+ * A company's stage as its tier says it: producing (Tiers 1 to 3),
+ * development (5), exploration (6), royalty and streaming (4), or no tier.
+ * Stage is published per company, not per property, so a producer is
+ * producing wherever it holds ground, including where it only explores.
+ */
+export type StageGroup = "producing" | "development" | "exploration" | "royalty" | "unclassified";
+export const STAGE_GROUPS: readonly StageGroup[] = ["producing", "development", "exploration", "royalty", "unclassified"];
+
+export function stageGroup(c: Pick<AtlasCompany, "tier">): StageGroup {
+  if (c.tier === null) return "unclassified";
+  if (c.tier <= 3) return "producing";
+  return c.tier === 4 ? "royalty" : c.tier === 5 ? "development" : "exploration";
+}
+
+export type StageCount = { key: string; n: number } & Record<StageGroup, number>;
+
+/** The country a jurisdiction is in: a province is Canada, a state the United States, a country itself. */
+export function countryOf(key: string): string {
+  return key.startsWith("CA:") ? "Canada" : key.startsWith("US:") ? "United States" : key;
+}
+
+/**
+ * The country of ground the globe cannot draw, from its words ("AFRICA:
+ * Atlantis" is Atlantis; "CANADA: Somewhere" is Canada), so a summary by
+ * country keeps it rather than dropping it.
+ */
+export function countryOfUnplaced(entry: string): string | null {
+  const at = entry.indexOf(":");
+  if (at < 0) return entry.trim() || null;
+  const group = entry.slice(0, at).trim().toUpperCase();
+  if (group === "CANADA") return "Canada";
+  if (group === "USA") return "United States";
+  return entry.slice(at + 1).trim() || null;
+}
+
+/**
+ * Companies with ground in each place, split by stage. `placesOf` says where
+ * a company counts; it counts once per place it names, so the places do not
+ * sum to the population, but in every row the stages sum to its companies.
+ */
+export function groundByStage(cs: readonly AtlasCompany[], placesOf: (c: AtlasCompany) => Iterable<string>): StageCount[] {
+  const out = new Map<string, StageCount>();
+  for (const c of cs) {
+    const g = stageGroup(c);
+    for (const key of new Set(placesOf(c))) {
+      const row = out.get(key) ?? { key, n: 0, producing: 0, development: 0, exploration: 0, royalty: 0, unclassified: 0 };
+      row.n++;
+      row[g]++;
+      out.set(key, row);
+    }
+  }
+  return [...out.values()].sort((a, b) => b.n - a.n || b.producing - a.producing || a.key.localeCompare(b.key));
+}
+
+/** Every country a company holds ground in, drawn or not. */
+export function countriesOf(c: Pick<AtlasCompany, "places" | "unplaced">): string[] {
+  return [...new Set([...c.places.map(countryOf), ...c.unplaced.map(countryOfUnplaced).filter((k): k is string => k !== null)])];
+}
+
 /**
  * The links a selected place draws on the globe: from a head office to every
  * place its companies hold ground, or from a place to every head office of

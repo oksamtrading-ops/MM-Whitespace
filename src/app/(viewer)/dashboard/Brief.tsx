@@ -1,27 +1,24 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { applyLens, NO_LENS, propertyCounts, type Atlas } from "../../../lib/publish/lens.ts";
+import type { Atlas } from "../../../lib/publish/lens.ts";
 import Globe, { CAMERAS } from "../../_ui/Globe.tsx";
 import Icon from "../../_ui/Icon.tsx";
-import { officesOf } from "./offices.ts";
-import { briefFrames, dayLabel, stepOf } from "./words.ts";
+import { briefFrames, dayLabel } from "./words.ts";
 
 /**
  * Brief me: the period in a fixed order of full-screen frames, for a partner
  * presenting from a laptop. The same published numbers as the page,
- * unfiltered, each frame a sentence and the globe turned to show it, with the
- * basis printed on every frame so a photograph of the screen still says what
- * it is.
+ * unfiltered, each frame a sentence and, where it has one, the globe turned
+ * to show it, with the basis printed on every frame so a photograph of the
+ * screen still says what it is. A frame without a map is its table.
  *
  * Keys: → or Page Down for the next frame, ← or Page Up for the last, Home
  * and End for the first and the final one, B for a black screen, T for the
  * frame's numbers as a table, Esc to leave.
  */
 export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; periodTitle: string; onClose: () => void }) {
-  const everyOffice = useMemo(() => officesOf(atlas.companies), [atlas]);
-  const frames = useMemo(() => briefFrames(atlas, periodTitle, everyOffice), [atlas, periodTitle, everyOffice]);
-  const discMax = Math.max(1, ...everyOffice.map((o) => o.n));
+  const frames = useMemo(() => briefFrames(atlas, periodTitle), [atlas, periodTitle]);
   const dialog = useRef<HTMLDialogElement | null>(null);
   const inner = useRef<HTMLDivElement | null>(null);
   const [i, setI] = useState(0);
@@ -40,12 +37,16 @@ export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; p
   }, [i, black, twin]);
   // On a phone a frame can be taller than the screen, and the brief scrolls:
   // each frame opens at its top, not where the last one was left.
-  useLayoutEffect(() => { inner.current?.scrollTo(0, 0); }, [i]);
+  // On a laptop the words scroll instead, and on a phone a wide table scrolls
+  // sideways: every scroller goes back to its start.
+  useLayoutEffect(() => {
+    inner.current?.scrollTo(0, 0);
+    inner.current?.querySelectorAll(".brief-text, .brief-scroll").forEach((e) => e.scrollTo(0, 0));
+  }, [i]);
 
   const f = frames[i];
-  const cs = useMemo(() => applyLens(atlas.companies, { ...NO_LENS, firm: f.firm }), [atlas, f.firm]);
-  const steps = f.mode === "ground" ? Object.fromEntries(propertyCounts(cs).map((p) => [p.key, stepOf(p.n)])) : {};
-  const discs = f.mode === "hq" ? officesOf(cs) : [];
+  // A table with a figure per column gets its heads; a frame of one figure a row reads without them.
+  const headed = f.head.length > 2;
   const basis = `${periodTitle} · revision ${atlas.publication.revision} · as of ${dayLabel(atlas.period.asOf)} · internal use`;
 
   // Every move lifts a black screen, and none goes past either end.
@@ -80,27 +81,39 @@ export default function Brief({ atlas, periodTitle, onClose }: { atlas: Atlas; p
 
   return (
     <dialog ref={dialog} className="brief" aria-label={`Brief: ${periodTitle}`} tabIndex={-1} onClose={onClose}>
-      <div ref={inner} className={`brief-in${black ? " black" : ""}${twin ? " twin" : ""}`}>
-        {!twin && (
+      <div ref={inner} className={`brief-in${black ? " black" : ""}${twin ? " twin" : ""}${f.map ? "" : " nomap"}${f.head.length > 3 ? " wide" : ""}`}>
+        {!twin && f.map && (
           <div className="brief-globe">
-            <Globe steps={steps} tone={f.firm === "whitespace" ? "grey" : "green"} selected={null} discs={discs} discMax={discMax}
-                   arcs={[]} labels={[]} camera={CAMERAS[f.camera]} onSelect={() => {}} title={`Globe: ${f.title}`} interactive={false} />
+            <Globe steps={f.map.steps} selected={null} discs={[]} discMax={1}
+                   arcs={[]} labels={[]} camera={CAMERAS[f.map.camera]} onSelect={() => {}} title={`Globe: ${f.title}`} interactive={false} />
           </div>
         )}
-        <div className="brief-text" aria-live="polite">
-          <p className="k"><span className="no">{String(i + 1).padStart(2, "0")}</span> / {frames.length} · {f.kicker}</p>
-          <h2>{f.title}</h2>
-          <p className="body">{f.body}</p>
-          <table className={`brief-rows${twin ? " big" : ""}`}>
-            <caption className="sr-only">{f.title}</caption>
-            <tbody>
-              {f.rows.map((r) => (
-                <tr key={r.label} className={r.ours ? "ours" : undefined}>
-                  <th scope="row">{r.label}</th><td>{r.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="brief-text">
+          {/* Only the words are announced on a move; the table is there to browse, not read out whole. */}
+          <div aria-live="polite">
+            <p className="k"><span className="no">{String(i + 1).padStart(2, "0")}</span> / {frames.length} · {f.kicker}</p>
+            <h2>{f.title}</h2>
+            <p className="body">{f.body}</p>
+          </div>
+          {/* A table wider than its column scrolls in place, so the brief never scrolls sideways. */}
+          <div className="brief-scroll">
+            <table className={`brief-rows${twin ? " big" : ""}${headed ? " headed" : ""}`}>
+              <caption className="sr-only">{f.title}</caption>
+              {headed && (
+                <thead>
+                  <tr>{f.head.map((h, j) => <th key={h || j} scope="col">{h}</th>)}</tr>
+                </thead>
+              )}
+              <tbody>
+                {f.rows.map((r) => (
+                  <tr key={r.label} className={r.ours ? "ours" : undefined}>
+                    <th scope="row">{r.label}</th>
+                    {r.cells.map((v, j) => <td key={j}>{v}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
         <footer className="brief-foot">
           <span className="basis">{basis}</span>
