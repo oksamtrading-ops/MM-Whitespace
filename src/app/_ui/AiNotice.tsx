@@ -7,9 +7,10 @@ import Icon from "./Icon.tsx";
  *
  * The dashboard's licence notices live in `.notices`, which is hidden on
  * screen and printed only -- so a notice the reader must SEE needs its own
- * component, and this is it. Two weights: the landing page states it as a
- * callout, once, where everybody arrives; the working screens carry one quiet
- * line, because a callout on every page is a notice nobody reads by the third.
+ * component, and this is it. Two weights: a callout, and the one quiet line
+ * the working screens carry, because a callout on every page is a notice
+ * nobody reads by the third. The landing page, where everybody arrives, says
+ * it in the practice's own cover-page words.
  *
  * The words are AI_NOTICE and nothing else, so the screen can never say more
  * or less than the exported workbook does.

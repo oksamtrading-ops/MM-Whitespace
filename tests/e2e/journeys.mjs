@@ -289,19 +289,33 @@ async function journeys(dbPath) {
   const viewer = await signIn("viewer@example.invalid");
   check("a Viewer can sign in", viewer.status === 200 && Boolean(viewer.cookie));
 
-  // The landing page: every sign-in ends at "/", so the AI notice is read by
-  // everybody, and "Continue" goes to the one place that will let them in.
-  const AI_LINE = "researched with the help of artificial intelligence";
+  // The landing page: every sign-in ends at "/", so how the information was
+  // produced is read by everybody, and "Continue" goes to the one place that
+  // will let them in.
+  const AI_LINE = "researched and compiled with the assistance of artificial intelligence";
+  // React separates adjacent text from an interpolation with an empty comment.
+  const text = (html) => html.replace(/<!-- -->/g, "");
   const landingAnon = await get("/");
   check("the landing page renders signed out", landingAnon.status === 200 &&
-        landingAnon.html.includes("Market Assessment Tool"), `status ${landingAnon.status}`);
-  check("it states the AI notice", landingAnon.html.includes(AI_LINE));
+        landingAnon.html.includes("Mining &amp; Metals Marketplace Assessment Tool"), `status ${landingAnon.status}`);
+  check("it states how the information was produced", landingAnon.html.includes(AI_LINE));
   check("signed out, its button is sign-in",
         /href="\/signin"[^>]*>Sign in</.test(landingAnon.html));
+  check("and a visitor is told what the tool is, not what is in it",
+        !landingAnon.html.includes("Approach and methodology") && !landingAnon.html.includes("Last updated"));
   const landingViewer = await get("/", viewer.cookie);
   check("a Viewer is offered the dashboard",
         /href="\/dashboard"[^>]*>Continue to the dashboard</.test(landingViewer.html));
-  check("and the landing page shows no data", !landingViewer.html.includes("Deloitte audits"));
+  check("and the landing page shows no company data", !landingViewer.html.includes("Deloitte audits"));
+  const approach = text(landingViewer.html);
+  check("signed in, it states the approach with the published period's figures",
+        /Last updated on \d{2}\.\d{4}\./.test(approach) &&
+        /As of \d{2}\.\d{4}, /.test(approach) &&
+        /with a market cap (of C\$[\d.]+[KMB]? or more|in excess of C\$[\d.]+[KMB]?)\./.test(approach) &&
+        /The tool analyzed [\d,]+ compan(y|ies) categorized in the following tiers/.test(approach) &&
+        ["Tier 1", "Tier 6", "Exploration only"].every((t) => approach.includes(t)) &&
+        !/XXXX|MM\.YYYY/.test(approach),
+        "a figure is missing or a placeholder is showing");
   const dash = await get("/dashboard", viewer.cookie);
   check("the dashboard renders published figures", dash.html.includes("Deloitte audits"));
   check("the override reason is printed on the header",
@@ -529,7 +543,7 @@ async function journeys(dbPath) {
   check("an Analyst downloads the period as a workbook",
         download.status === 200 &&
         /spreadsheetml/.test(download.headers.get("content-type") ?? "") &&
-        /attachment; filename="Market Assessment Tool .*\.xlsx"/.test(download.headers.get("content-disposition") ?? "") &&
+        /attachment; filename="Mining & Metals Marketplace Assessment Tool .*\.xlsx"/.test(download.headers.get("content-disposition") ?? "") &&
         workbook.subarray(0, 2).toString("latin1") === "PK" && workbook.byteLength > 5000,
         `status ${download.status}, ${workbook.byteLength} bytes`);
   const csvDownload = await fetch(`${BASE}/api/export?format=csv`, { headers: { cookie: analyst.cookie } });
@@ -823,7 +837,8 @@ async function journeys(dbPath) {
   const gatedLanding = await get("/", tempCookie);
   check("the landing page sends it to the password screen",
         /href="\/password"[^>]*>Set a new password to continue</.test(gatedLanding.html) &&
-        !/>Continue to the review board</.test(gatedLanding.html));
+        !/>Continue to the review board</.test(gatedLanding.html) &&
+        !gatedLanding.html.includes("Approach and methodology"));
 
   const gatedReview = await get("/review", tempCookie);
   check("but it reaches no review board", !gatedReview.html.includes("Your queue"),

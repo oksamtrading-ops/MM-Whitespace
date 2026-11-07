@@ -30,7 +30,7 @@ export default async function AccessReview() {
     return err instanceof Forbidden
       ? <Refusal title="Not permitted" body="The access review is for Admins."
                  action={{ href: "/dashboard", label: "Go to the dashboard" }} />
-      : <Refusal title="Sign in" body="The Market Assessment Tool is invite-only."
+      : <Refusal title="Sign in" body="The Mining & Metals Marketplace Assessment Tool is invite-only."
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 
@@ -53,7 +53,7 @@ export default async function AccessReview() {
     <Page title="Access review" count={users.length}>
     <div className="reading">
       <p className="sub rise">
-        The Market Assessment Tool sits outside Deloitte&rsquo;s own estate, so there is no leaver process
+        The Mining & Metals Marketplace Assessment Tool sits outside Deloitte&rsquo;s own estate, so there is no leaver process
         behind it. Deactivating an account here is the only thing that removes access.
       </p>
 

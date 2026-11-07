@@ -117,10 +117,10 @@ function displayOf(c: Column, v: unknown): string {
   return v === null || v === undefined ? "" : String(v);
 }
 
-/** "Q3-2026 (2026-05-31)" -> "Market Assessment Tool Q3-2026 companies.xlsx". */
+/** "Q3-2026 (2026-05-31)" -> "Mining & Metals Marketplace Assessment Tool Q3-2026 companies.xlsx". */
 export function tableFilename(label: string, format: "xlsx" | "csv"): string {
   const name = String(label).replace(/\s*\([^)]*\)\s*$/, "").trim() || "period";
-  return `Market Assessment Tool ${name.replace(/[^A-Za-z0-9 ._-]/g, "-")} companies.${format}`;
+  return `Mining & Metals Marketplace Assessment Tool ${name.replace(/[^A-Za-z0-9 ._-]/g, "-")} companies.${format}`;
 }
 
 /** Read, narrow, build. The route is only who may ask and the audit line. */

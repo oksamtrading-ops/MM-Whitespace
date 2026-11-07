@@ -84,7 +84,7 @@ test("a link is written only for a cited value, and only if it is http(s)", () =
 test("a draft says it is a draft", () => {
   const p = tablePayload({ rows: [], total: 0, filterWords: "x", basis: { label: "P", revision: null } });
   assert.match(p.period.basis, /^Draft of P — not published/);
-  assert.equal(tableFilename("Q3-2026 (2026-05-31)", "csv"), "Market Assessment Tool Q3-2026 companies.csv");
+  assert.equal(tableFilename("Q3-2026 (2026-05-31)", "csv"), "Mining & Metals Marketplace Assessment Tool Q3-2026 companies.csv");
 });
 
 test("the file holds exactly the rows the same URL shows on screen", { skip: !hasPython }, async () => {

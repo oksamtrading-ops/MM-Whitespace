@@ -510,7 +510,7 @@ def _cover(wb, data):
     ws.column_dimensions["B"].width = 34
     ws.column_dimensions["C"].width = 92
 
-    title = put(ws, 2, 2, "Market Assessment Tool")
+    title = put(ws, 2, 2, "Mining & Metals Marketplace Assessment Tool")
     title.font = Font(bold=True, size=16)
     for col in (2, 3):
         ws.cell(row=2, column=col).border = HEADER_BORDER
@@ -873,7 +873,7 @@ def _provenance(wb, data):
 UNRESEARCHED_FILL = PatternFill("solid", fgColor="FFF2A8")
 NOT_RECORDED_FILL = PatternFill("solid", fgColor="EDEDEB")
 STAGE_MARK = {"yes": "X", "blank": None, "unknown": "?", "not_researched": None, "not_recorded": None}
-TABLE_TITLE = "Market Assessment Tool \u2014 Companies"
+TABLE_TITLE = "Mining & Metals Marketplace Assessment Tool \u2014 Companies"
 
 
 def _table_columns(columns):

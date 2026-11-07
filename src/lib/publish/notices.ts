@@ -17,8 +17,9 @@ export const VENDOR_NOTICE =
 export const INTERNAL_USE = "INTERNAL USE ONLY - contains licensed third-party data.";
 
 /**
- * How the researched values were produced, shown on the landing page, the
- * company table and profile, the dashboard, and both exports.
+ * How the researched values were produced, shown on the company table and
+ * profile, the dashboard, and both exports. The landing page says it in the
+ * practice's own cover-page words instead (src/app/page.tsx).
  *
  * Deliberately generic. It names no AI tool or vendor, because more than one
  * may be used and the engine is under discussion; the test beside this file

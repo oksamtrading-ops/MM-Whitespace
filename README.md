@@ -1,4 +1,4 @@
-# Market Assessment Tool
+# Mining & Metals Marketplace Assessment Tool
 
 Formerly the Mining Whitespace Intelligence Tool. The product was renamed on 9
 October 2026; "whitespace" survives as the domain term for companies Deloitte

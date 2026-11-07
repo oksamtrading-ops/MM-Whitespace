@@ -115,9 +115,12 @@ test("next quarter's period is the last published one rolled forward from TSX's 
   assert.deepEqual(r.basedOn, { label: Q3, revision: 1 });
   assert.deepEqual(r.unmappedMarkets, ["Edgeco Metals Inc. (EDGE): Manitoba, Canada"]);
   const q3 = await periodId(db, Q3);
-  const q4 = await db.get("select id, source_kind, threshold_amount, status from periods where label = ?", Q4) as
-    { id: string; source_kind: string; threshold_amount: number; status: string };
+  const q4 = await db.get("select id, source_kind, threshold_amount, status, listed_issuers from periods where label = ?", Q4) as
+    { id: string; source_kind: string; threshold_amount: number; status: string; listed_issuers: number };
   assert.equal(q4.source_kind, "tsx_list");
+  assert.equal(Number(q4.listed_issuers), 8, "every issuer on the list, not only those above the line");
+  assert.equal((await db.get("select listed_issuers from periods where label = ?", Q3) as
+    { listed_issuers: number | null }).listed_issuers, null, "a workbook never held the whole list");
   assert.equal(Number(q4.threshold_amount), 200_000_000, "the Admin's threshold, copied onto the period");
   assert.equal(q4.status, "draft");
 
@@ -338,6 +341,8 @@ test("the same list at a lower threshold widens the published period instead of 
   assert.deepEqual([r.held, r.added], [6, 2]);
   assert.deepEqual(r.threshold, { from: 200_000_000, to: 100_000_000, currency: "CAD" });
   assert.equal((await db.get("select count(*) n from periods") as { n: number }).n, 2, "no new period");
+  assert.equal(Number((await db.get("select listed_issuers from periods where id = ?", q4) as
+    { listed_issuers: number }).listed_issuers), 8, "the same list, so the same count of issuers");
 
   // The companies between the lines join with TSX's fields and nothing researched.
   const cap = await valueOf(db, Q4, "Westco Gold Ltd.", "market_cap_cad");

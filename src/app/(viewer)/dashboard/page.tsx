@@ -42,7 +42,7 @@ export default async function Dashboard({ searchParams }: {
   } catch (err) {
     return err instanceof Forbidden
       ? <Refusal title="Not permitted" body="Your account does not have access to this view." />
-      : <Refusal title="Sign in" body="The Market Assessment Tool is invite-only. Sign in to see the published dashboard."
+      : <Refusal title="Sign in" body="The Mining & Metals Marketplace Assessment Tool is invite-only. Sign in to see the published dashboard."
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
   const canReview = ctx.user.role !== "viewer";

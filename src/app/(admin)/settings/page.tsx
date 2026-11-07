@@ -23,7 +23,7 @@ export default async function Settings() {
     return err instanceof Forbidden
       ? <Refusal title="Not permitted" body="Settings are for Admins."
                  action={{ href: "/dashboard", label: "Go to the dashboard" }} />
-      : <Refusal title="Sign in" body="The Market Assessment Tool is invite-only."
+      : <Refusal title="Sign in" body="The Mining & Metals Marketplace Assessment Tool is invite-only."
                  action={{ href: "/signin", label: "Sign in" }} />;
   }
 

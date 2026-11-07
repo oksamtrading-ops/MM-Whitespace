@@ -30,7 +30,7 @@ export default async function ProfilePage() {
   return (
     <div className="page"><div className="signin rise">
       <div className="lockup">
-        <h1 translate="no">Market Assessment Tool<span className="stop" aria-hidden="true" /></h1>
+        <h1 translate="no">Mining & Metals Marketplace Assessment Tool<span className="stop" aria-hidden="true" /></h1>
         <p className="firm">Deloitte</p>
       </div>
       <Orb />

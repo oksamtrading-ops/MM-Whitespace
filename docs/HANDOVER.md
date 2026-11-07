@@ -1,4 +1,4 @@
-# Handover — Market Assessment Tool
+# Handover — Mining & Metals Marketplace Assessment Tool
 
 > **5 November 2026: documents an analyst supplies.** For a company whose
 > website refuses the fetcher, an Analyst or Admin can supply its PDF
@@ -86,8 +86,8 @@
 > recorded research spend is US$95.12 across nine runs. Everything on `main`
 > is deployed; the code last changed at `119c84b`.
 >
-> **As at 20 October:** the product is the **Market Assessment
-> Tool** (formerly the Mining Whitespace Intelligence Tool), live at
+> **As at 20 October:** the product is the **Mining & Metals
+> Marketplace Assessment Tool** (formerly the Mining Whitespace Intelligence Tool), live at
 > https://mm-whitespace.vercel.app. Releases A, B and C, built for the
 > client's requests, have been deployed since 12 October. Since then, also
 > on `main` and deployed:
@@ -126,7 +126,7 @@
 
 ---
 
-I'm continuing work on the **Market Assessment Tool** (formerly the Mining
+I'm continuing work on the **Mining & Metals Marketplace Assessment Tool** (formerly the Mining
 Whitespace Intelligence Tool) for Deloitte Canada's Mining & Metals practice.
 It is built and running in production. Read this whole note before changing
 anything.
@@ -1698,7 +1698,7 @@ and the machinery is in git at `fc00769^`.
 |---|---|---|
 | `MM_DATABASE_URL` | Supabase **transaction pooler** string, port 6543 (since 11 September 2026) | **Sensitive**, unreadable. Host `aws-1-ca-central-1.pooler.supabase.com`, user `postgres.djepptfxdkvmcretnogy` |
 | `MM_AUTH` | `session` | Email and password since 14 September 2026 |
-| `MM_MAIL`, `MM_RESEND_KEY`, `MM_MAIL_FROM` | `resend`, key, `Whitespace <onboarding@resend.dev>` | **No longer used by sign-in.** Kept set; `mail.ts` has no caller until something needs to send. The sender name still says Whitespace — change it to Market Assessment Tool before anything sends |
+| `MM_MAIL`, `MM_RESEND_KEY`, `MM_MAIL_FROM` | `resend`, key, `Whitespace <onboarding@resend.dev>` | **No longer used by sign-in.** Kept set; `mail.ts` has no caller until something needs to send. The sender name still says Whitespace — change it to Mining & Metals Marketplace Assessment Tool before anything sends |
 | `MM_ALLOWED_DOMAINS` | `gmail.com` | **Only a fallback.** The `allowed_email_domains` setting wins once it exists, and it does: `gmail.com, deloitte.ca` |
 | `MM_PUBLIC_URL` | `https://mm-whitespace.vercel.app` | **How the tick reaches the worker** (`src/lib/enrich/kick.ts`). It used to be the origin in a sign-in link too; deleting it as dead magic-link config breaks enrichment |
 | `MM_PARSE_SECRET` | shared secret | The Node app and `api/parse.py` both read it |

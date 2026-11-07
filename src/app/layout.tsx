@@ -42,7 +42,7 @@ export async function generateViewport(): Promise<Viewport> {
 }
 
 export const metadata: Metadata = {
-  title: { default: "Market Assessment Tool", template: "%s · Market Assessment Tool" },
+  title: { default: "Mining & Metals Marketplace Assessment Tool", template: "%s · Mining & Metals Marketplace Assessment Tool" },
   description: "Deloitte Mining & Metals market assessment",
 };
 
@@ -109,7 +109,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {needsName && user
               ? <div className="page"><div className="signin rise">
                   <div className="lockup">
-                    <h1 translate="no">Market Assessment Tool<span className="stop" aria-hidden="true" /></h1>
+                    <h1 translate="no">Mining & Metals Marketplace Assessment Tool<span className="stop" aria-hidden="true" /></h1>
                     <p className="firm">Deloitte</p>
                   </div>
                   <NameForm first={user.firstName} last={user.lastName} required />

@@ -1288,10 +1288,10 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 /* ------------------------------------------------------------ sign-in */
 
 .signin { max-width: 640px; margin: 8vh auto 0; }
-/* "Market Assessment Tool" is three words where "Whitespace" was one, so the
-   lockup may now wrap: block rather than flex, so the full stop follows the
-   LAST line rather than aligning to the first, and balanced so a wrap never
-   strands one word. */
+/* "Mining & Metals Marketplace Assessment Tool" is six words where
+   "Whitespace" was one, so the lockup wraps: block rather than flex, so the
+   full stop follows the LAST line rather than aligning to the first, and
+   balanced so a wrap never strands one word. */
 .signin h1 { font-size: clamp(34px, 6vw, 48px); line-height: 1.05; font-weight: 700; letter-spacing: -.03em; text-wrap: balance; }
 .signin h1 .stop { display: inline-block; width: .22em; height: .22em; margin-left: .06em; }
 .signin .lede { font-size: 18px; color: var(--ink-2); margin: 10px 0 var(--space-8); max-width: 40ch; font-weight: 300; }
@@ -1361,10 +1361,20 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .credentials .help strong { color: var(--ink-2); font-weight: 600; }
 .credentials .btn { width: 100%; justify-content: center; }
 .credentials .callout { margin-bottom: var(--space-4); }
-/* The landing page wears the sign-in lockup; its controls sit under a
-   callout rather than a lede, so they need a gap rather than the pull-up. */
-.front .callout { max-width: 64ch; margin: 0 0 var(--space-5); }
+/* The landing page wears the sign-in lockup, then the practice's cover page:
+   when the figures were last published, what the tool is for, and the
+   approach behind it. Its controls sit under that rather than under a lede,
+   so they need a gap rather than the pull-up. */
 .front .actions { margin: 0 0 var(--space-5); }
+.front .updated { margin: var(--space-4) 0 0; font-size: var(--fs-body-sm); color: var(--ink-3); }
+.front .lede { max-width: 64ch; font-size: var(--fs-subtitle); line-height: 1.55; margin: var(--space-5) 0 var(--space-7); }
+.front .approach { border-top: 1px solid var(--rule); padding-top: var(--space-6); margin: 0 0 var(--space-7); }
+.front .approach h2 { margin: 0 0 var(--space-3); }
+.front .approach p { color: var(--ink-2); max-width: 64ch; margin: 0 0 var(--space-4); line-height: 1.55; }
+.front .approach p:last-child { margin-bottom: 0; }
+.front .tierlist { list-style: none; padding: 0; margin: 0 0 var(--space-5); max-width: 64ch; border-top: 1px solid var(--rule); }
+.front .tierlist li { padding: var(--space-2) 0; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+.front .tierlist .n { font-family: var(--font-figure); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
 /* Whose password is being changed, above the form. */
 .signin .who {
   font-size: var(--fs-body-sm); color: var(--ink-3); margin: 0 0 var(--space-4);

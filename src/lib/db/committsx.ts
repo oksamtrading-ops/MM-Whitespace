@@ -99,9 +99,11 @@ export async function commitTsxPeriod(
     // The Admin's threshold is copied onto the period, as commitPeriod does.
     const t = plan.threshold;
     await db.run(`insert into periods (label, market_cap_as_of, source_file_sha256, rule_set_version,
-                     threshold_amount, threshold_operator, threshold_currency, proximity_band_pct, source_kind)
-       values (?, ?, ?, ?, ?, ?, ?, ?, 'tsx_list')`,
-      label, asOf, opts.sourceSha256 ?? null, RULE_SET_VERSION, t.amount, t.operator, t.currency, t.bandPct);
+                     threshold_amount, threshold_operator, threshold_currency, proximity_band_pct, source_kind,
+                     listed_issuers)
+       values (?, ?, ?, ?, ?, ?, ?, ?, 'tsx_list', ?)`,
+      label, asOf, opts.sourceSha256 ?? null, RULE_SET_VERSION, t.amount, t.operator, t.currency, t.bandPct,
+      payload.companies.length);
     const periodId = String((await db.get("select id from periods where label = ?", label) as { id: string }).id);
 
     const w = await writeCompanies(db, periodId, asOf, base, plan.population);
@@ -159,8 +161,10 @@ export async function widenTsxPeriod(
 
     const w = await writeCompanies(db, base.periodId, base.asOf, base, plan.entrants);
     const t = plan.threshold;
+    // The list is for the period's own date, so its issuer count is the period's.
     await db.run(`update periods set threshold_amount = ?, threshold_operator = ?, threshold_currency = ?,
-                     proximity_band_pct = ? where id = ?`, t.amount, t.operator, t.currency, t.bandPct, base.periodId);
+                     proximity_band_pct = ?, listed_issuers = ? where id = ?`,
+      t.amount, t.operator, t.currency, t.bandPct, payload.companies.length, base.periodId);
 
     const { inherited: _inherited, fromList: _fromList, stages: _stages, ...counts } = w;
     result = {

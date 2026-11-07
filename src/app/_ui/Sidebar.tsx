@@ -73,10 +73,10 @@ export default function Sidebar({ items, collapsed: initial, theme, period, user
 
   return (
     <div className={`sidebar${collapsed ? " collapsed" : ""}`}>
-      <Link className="brand" href="/" prefetch={false} translate="no" aria-label="Market Assessment Tool, home">
+      <Link className="brand" href="/" prefetch={false} translate="no" aria-label="Mining & Metals Marketplace Assessment Tool, home">
         {collapsed
           ? <span className="stop" aria-hidden="true" />
-          : <><span className="name">Market Assessment Tool</span><span className="stop" aria-hidden="true" /></>}
+          : <><span className="name">Mining & Metals Marketplace Assessment Tool</span><span className="stop" aria-hidden="true" /></>}
       </Link>
 
       {GROUPS.map(([group, label]) => {
