@@ -107,6 +107,7 @@ export default function Popover({ label, summary, set, autoOpen = false, dataKey
           its first frame; the toggle event comes a frame late, and places it
           however else it opens. */}
       <summary className="picker-sum" aria-label={summary === undefined ? label : `${label}: ${summary}`}
+               title={summary === undefined ? undefined : `${label}: ${summary}`}
                onClick={(e) => {
                  const el = ref.current;
                  if (!el || el.open) return;

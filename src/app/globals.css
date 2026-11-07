@@ -1084,8 +1084,13 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 
 /* The filter bar: one MultiSelect per filter, then the count and the export. */
 .filterbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: 0 0 14px; }
-/* Beside the search on the companies toolbar, the toolbar spaces it. */
-.tools > .filterbar { margin: 0; min-width: 0; }
+/* Beside the search on the companies toolbar, the toolbar spaces it. It
+   claims 480px of the row and grows into the rest, so it stays beside the
+   search and wraps its own filters, rather than dropping under the search
+   whole once a few filters are set. */
+.tools > .filterbar { margin: 0; min-width: 0; flex: 1 1 480px; }
+/* When the filters wrap, the search and the buttons line up with their first row. */
+.tools:has(> .filterbar) { align-items: flex-start; }
 /* Columns, Excel and Save as report: one group at the row's end. */
 .cf-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-left: auto; }
 
@@ -1160,13 +1165,20 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .cf-n { color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: var(--fs-label); }
 .cf-remove { margin-top: var(--space-1); }
 .cf-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-width: 0; }
-/* On a phone "Stage of operations", a choice and the × are wider than 320px
-   leaves. The × never gives way; the label does, down to 5ch, and only then
-   the choice: the label's heavy shrink takes nearly all of it until it stops.
-   (A shrink under 1 would hand out only that fraction of the missing room.) */
+/* Every filter in the bar is one width, whatever is chosen (Samuel, 7
+   November), so choosing never pushes the others along. "More filters"
+   shows no choice and keeps its own. What does not fit ends in "…" (the
+   button's tooltip and the words under the bar say it whole): the name
+   gives way first, and the choice never takes so much that the name keeps
+   fewer than about four letters (its cap: the button's content less 4ch,
+   the chevron and two gaps). A floor on the name instead would pad a short
+   one ("Tier") with empty space. */
+.filterbar .picker:not([data-key="more-filters"]) > .picker-sum { width: 160px; }
+.filterbar .picker-sum svg { margin-left: auto; }
+.filterbar .picker-k { flex-shrink: 10000; min-width: 0; }
+.filterbar .picker-v { flex-shrink: 1; min-width: 0; max-width: calc(100% - 4ch - 13px - 14px); }
+/* A filter with its ×: on a phone the button gives way, never the ×. */
 .cf-chip > .picker { min-width: 0; }
-.cf-chip .picker-k { flex-shrink: 10000; min-width: 5ch; }
-.cf-chip .picker-v { flex-shrink: 1; min-width: 0; }
 .cf-chip > .cf-x { flex: 0 0 auto; }
 .cf-menu { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; overscroll-behavior: contain; }
 .cf-item {

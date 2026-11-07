@@ -595,6 +595,14 @@ Viewers must never see `dtt_market`.
     row's end, which moves to the next line as a whole when there is no
     room (one line from about 1,400px wide). An old `ws=1` link still
     narrows the table and shows a "Whitespace only ×" chip to remove it.
+  - Every filter button in the bar is 160px wide whatever is chosen
+    (Samuel, 7 November); "More filters" keeps its own width. What does not
+    fit ends in "…": the name gives way first, and the choice is capped so
+    the name keeps about four letters. The button's tooltip and the words
+    under the bar give it whole. The filter group claims 480px beside the
+    search (`flex: 1 1 480px`) and wraps its own buttons, so setting a few
+    filters never drops it under the search. On a phone each filter takes
+    its own row (two 160px buttons need more than 236px).
 - **A slimmer filter bar** (Samuel, 7 November).
   - Only Tier, Auditor and Commodities are always in the bar (`PICKERS` in
     `companies/Roster.tsx`). Stage of operations, Company HQ, Footprint and
