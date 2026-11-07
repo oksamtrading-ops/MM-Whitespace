@@ -703,33 +703,49 @@ async function journeys(dbPath) {
   const adList = text((await get("/reports", admin.cookie)).html);
   check("an Admin does not see a private report either", !adList.includes("big caps") && adList.includes("Royalty names"));
 
-  const privPage = await get(`/reports/${priv.id}`, viewer.cookie);
-  check("the owner opens it as the filtered table", countOf(privPage.html) === countOf(byCap.html) &&
-        text(privPage.html).includes("Vee&#x27;s big caps") && !/class="sort"[^>]*>Ticker/.test(text(privPage.html)),
-        `${countOf(privPage.html)} rows, against ${countOf(byCap.html)} on /companies`);
-  check("and may rename, update and delete it", ["Rename", "Delete", "Save changes"].every((w) => privPage.html.includes(w)));
+  // A report's page is read-only: its rows, its filters in words, the
+  // download, and for its owner or an Admin, Rename and Delete. No filter bar.
+  const privPage = text((await get(`/reports/${priv.id}`, viewer.cookie)).html);
+  check("the owner opens it as its rows, read-only", countOf(privPage) === countOf(byCap.html) &&
+        privPage.includes("Vee&#x27;s big caps") && !/>Ticker<\/(th|button)>/.test(privPage) &&
+        !privPage.includes("Add filter") && !privPage.includes('name="cols"') && !privPage.includes('class="sort"') &&
+        privPage.includes("Market cap: at least C$1B"),
+        `${countOf(privPage)} rows, against ${countOf(byCap.html)} on /companies`);
+  check("and may rename and delete it, but its filters change only in Companies",
+        privPage.includes(">Rename<") && privPage.includes(">Delete<") && !privPage.includes("Save changes") &&
+        privPage.includes(`from=${priv.id}`) && privPage.includes("Open in Companies"));
   const privForOthers = await get(`/reports/${priv.id}`, analyst.cookie);
   check("anybody else opening a private report is told there is no such report",
         privForOthers.html.includes("No such report") && !privForOthers.html.includes("big caps"));
-  const edited = await get(`/reports/${priv.id}?edit=1&tier=4`, viewer.cookie);
-  check("a changed view reloads as it was left (?edit=1)", countOf(edited.html) === countOf(narrowed.html) &&
-        edited.html.includes("Changed since saved"), `${countOf(edited.html)} against ${countOf(narrowed.html)}`);
+  const opened = text((await get(`/companies?cap_min=1000000000&hide=ticker&from=${priv.id}`, viewer.cookie)).html);
+  check("opened in Companies, its owner may replace its filters from there",
+        opened.includes("Filters from the report") && opened.includes("Replace “Vee&#x27;s big caps”") &&
+        opened.includes("Add filter") && countOf(opened) === countOf(byCap.html));
+  const peeked = text((await get(`/companies?tier=4&from=${priv.id}`, analyst.cookie)).html);
+  check("a private report's name never reaches anybody else's Companies page",
+        !peeked.includes("big caps") && !peeked.includes("Filters from the report"));
 
   const pubForAnalyst = text((await get(`/reports/${pub.id}`, analyst.cookie)).html);
-  check("someone else opens a public report, and may save it as their own but not change it",
-        countOf(pubForAnalyst) === countOf(narrowed.html) && pubForAnalyst.includes("Save as new") &&
-        !pubForAnalyst.includes(">Rename<") && !pubForAnalyst.includes(">Delete<") &&
-        !pubForAnalyst.includes("Save changes"));
+  check("someone else opens a public report, and may not rename or delete it",
+        countOf(pubForAnalyst) === countOf(narrowed.html) && pubForAnalyst.includes("Open in Companies") &&
+        !pubForAnalyst.includes(">Rename<") && !pubForAnalyst.includes(">Delete<"));
+  const pubInCompanies = text((await get(`/companies?tier=4&from=${pub.id}`, analyst.cookie)).html);
+  check("and in Companies may save it as their own, but not replace it",
+        pubInCompanies.includes("Filters from the report") && pubInCompanies.includes("Save as report") &&
+        !pubInCompanies.includes("Replace “"));
   const refusedRename = reportDirectly(dbPath, "analyst@example.invalid", "updateReport", pub.id, { name: "Mine now" });
   const refusedDelete = reportDirectly(dbPath, "analyst@example.invalid", "deleteReport", pub.id);
   check("and is refused if they try", !refusedRename.ok && !refusedDelete.ok);
   const pubForAdmin = text((await get(`/reports/${pub.id}`, admin.cookie)).html);
-  check("an Admin may rename, update and delete it", pubForAdmin.includes(">Rename<") && pubForAdmin.includes(">Delete<"));
+  check("an Admin may rename and delete it", pubForAdmin.includes(">Rename<") && pubForAdmin.includes(">Delete<"));
+  const adminInCompanies = text((await get(`/companies?tier=4&from=${pub.id}`, admin.cookie)).html);
+  check("and replace its filters from Companies", adminInCompanies.includes("Replace “Royalty names”"));
   const adminRename = reportDirectly(dbPath, "admin@example.invalid", "updateReport", pub.id,
     { name: "Royalty and streaming names", params: "tier=4&hide=marketCap" });
   const renamed = text((await get(`/reports/${pub.id}`, viewer.cookie)).html);
-  check("an Admin's rename and update reach the owner", adminRename.ok && renamed.includes("Royalty and streaming names") &&
-        !/class="sort"[^>]*>Market cap/.test(renamed));
+  check("an Admin's rename and replacement reach the owner", adminRename.ok &&
+        renamed.includes("Royalty and streaming names") && !/>Market cap<\/(th|button)>/.test(renamed) &&
+        renamed.includes("tier=4&amp;hide=marketCap&amp;format=xlsx&amp;report="));
 
   // The download: the same export the table uses, named for the report.
   const repCsv = await fetch(`${BASE}/api/companies/export?tier=4&hide=marketCap&format=csv&report=${pub.id}`,
@@ -1145,6 +1161,7 @@ async function journeys(dbPath) {
     ["/reports (viewer)", "/reports", viewer.cookie],
     ["/reports (analyst)", "/reports", analyst.cookie],
     [`/reports/{id} (viewer)`, `/reports/${pub.id}`, viewer.cookie],
+    [`/companies, opened from a report (owner)`, `/companies?tier=4&from=${pub.id}`, viewer.cookie],
     ["/runs (analyst)", "/runs", analyst.cookie],
     ["/runs (admin, after a run)", "/runs", admin.cookie],
     ["/settings (admin)", "/settings", admin.cookie],

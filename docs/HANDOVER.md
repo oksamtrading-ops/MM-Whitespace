@@ -531,8 +531,16 @@ Samuel's list for `/companies`, and his answers to the questions it raised:
   who can sign in may save one, Viewers too**; private is its owner's alone
   (Admins included); public is everybody's; **its owner or an Admin may
   rename it, change who sees it, update it and delete it**. "Reports" is in
-  the rail. `/reports/<id>` is the table with the report's filters; once
-  changed its address says `?edit=1` and carries them.
+  the rail.
+- **A report's page is read-only** (Samuel, 7 November: a report page that
+  repeats the Companies page is redundant). `/reports/<id>` shows the report's
+  filters in words, its rows with its columns and sort, Excel and CSV, and
+  for its owner or an Admin, Rename (name and who sees it) and Delete. No
+  filter bar. Filters change only in Companies: "Open in Companies" loads them
+  with `?from=<id>`, and whoever may edit the report is offered **Replace
+  “name”**, which keeps its name, link and visibility. Anyone else saves the
+  view as a report of their own. A `from=` report the caller may not see is
+  ignored, so its name never shows.
 - **No email.** Samuel, 7 November: "do not continue with the functionality
   to email the reports. Users can download and email the download version
   outside the tool." A report downloads through the companies export, named

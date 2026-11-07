@@ -10,11 +10,19 @@ export type ReportInfo = {
   id: string;
   name: string;
   visibility: "private" | "public";
-  /** The filters as saved, canonical: what the table's URL would say. */
-  params: string;
   ownerName: string;
   mine: boolean;
-  /** Its owner, or an Admin: may rename it, update it, delete it. */
+  /** Its owner, or an Admin: may rename it, change who sees it, delete it. */
+  canEdit: boolean;
+};
+
+/** A report opened on the Companies page, whose filters may be replaced from there. */
+export type FromReport = {
+  id: string;
+  name: string;
+  visibility: "private" | "public";
+  /** The filters as saved, canonical: what the table's URL would say. */
+  params: string;
   canEdit: boolean;
 };
 
@@ -118,51 +126,71 @@ export function SaveAsReport({ params, label = "Save as report", quiet = false }
 }
 
 /**
- * A report's own controls. Its owner, or an Admin, may save the filters as
- * they now stand, rename it or change who sees it, and delete it. Anybody
- * may save what they are looking at as a report of their own.
+ * "Replace": a report opened on the Companies page takes the filters as they
+ * now stand. Only its owner, or an Admin for a public one, is offered it. The
+ * report keeps its name, its link and who can see it.
  */
-export function ReportControls({ report, params, dirty }: { report: ReportInfo; params: string; dirty: boolean }) {
+export function ReplaceReport({ report, params, changed }: { report: FromReport; params: string; changed: boolean }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const ref = useDialog(open);
+  return (
+    <>
+      <button type="button" className="btn sm secondary rp-replace" disabled={!changed}
+              title={changed ? `Replace “${report.name}”` : "Change a filter first"}
+              onClick={() => { setError(null); setOpen(true); }}>
+        <Icon name="check" size={13} /><span>Replace “{report.name}”</span>
+      </button>
+      <dialog ref={ref} aria-labelledby="rd-rep-h" onClose={() => setOpen(false)}
+              onCancel={(e) => { e.preventDefault(); setOpen(false); }}>
+        <h2 id="rd-rep-h">Replace this report’s filters?</h2>
+        <p>
+          “{report.name}” will list the companies these filters find
+          {report.visibility === "public" ? ", for everyone who can see it" : ""}. Its name, its link and who
+          can see it stay the same.
+        </p>
+        {error && <p className="rd-error" role="alert">{error}</p>}
+        <div className="acts">
+          <button type="button" className="btn quiet" onClick={() => setOpen(false)}>Cancel</button>
+          <button type="button" className="btn primary" disabled={pending} onClick={() => start(async () => {
+            const got = await changeReport(report.id, { params });
+            if (!got.ok) { setError(got.message); return; }
+            setOpen(false);
+            router.push(`/reports/${report.id}` as Route);
+          })}>
+            {pending ? "Replacing…" : "Replace report"}
+          </button>
+        </div>
+      </dialog>
+    </>
+  );
+}
+
+/**
+ * A report's own controls, for its owner or an Admin: rename it or change who
+ * sees it, and delete it. Its filters change only from the Companies page.
+ */
+export function ReportControls({ report }: { report: ReportInfo }) {
   const router = useRouter();
   const [dialog, setDialog] = useState<"rename" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const del = useDialog(dialog === "delete");
 
-  const update = () => start(async () => {
-    const got = await changeReport(report.id, { params });
-    setError(got.ok ? null : got.message);
-    if (got.ok) router.refresh();
-  });
-
+  if (!report.canEdit) return null;
   return (
     <>
-      {dirty && <span className="rd-dirty" role="status">Changed since saved</span>}
-      {report.canEdit && (
-        <button type="button" className="btn sm primary" disabled={!dirty || pending} onClick={update}>
-          <Icon name="check" size={13} />{pending ? "Saving…" : "Save changes"}
-        </button>
-      )}
-      {dirty && (
-        <a className="btn sm quiet" href={`/reports/${report.id}`}>
-          <Icon name="undo-2" size={13} />Revert
-        </a>
-      )}
-      {(dirty || !report.canEdit) && <SaveAsReport params={params} label="Save as new" quiet />}
-      {report.canEdit && (
-        <>
-          <button type="button" className="btn sm quiet" onClick={() => setDialog("rename")}>
-            <Icon name="pencil" size={13} />Rename
-          </button>
-          <button type="button" className="btn sm quiet" onClick={() => { setError(null); setDialog("delete"); }}>
-            <Icon name="trash-2" size={13} />Delete
-          </button>
-        </>
-      )}
-      {error && !dialog && <span className="rd-error" role="alert">{error}</span>}
+      <button type="button" className="btn sm quiet" onClick={() => setDialog("rename")}>
+        <Icon name="pencil" size={13} />Rename
+      </button>
+      <button type="button" className="btn sm quiet" onClick={() => { setError(null); setDialog("delete"); }}>
+        <Icon name="trash-2" size={13} />Delete
+      </button>
 
       <NameDialog open={dialog === "rename"} title="Rename report" submitLabel="Save"
-                  lede="Its filters stay as they are saved."
+                  lede="Its filters stay as they are saved. To change them, open it in Companies."
                   initial={{ name: report.name, visibility: report.visibility }}
                   onClose={() => setDialog(null)}
                   onSubmit={async (v) => {

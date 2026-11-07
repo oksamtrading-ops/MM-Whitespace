@@ -1163,8 +1163,16 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .cf-on { font-size: var(--fs-label); color: var(--ink-2); font-weight: 600; }
 
 /* Saved reports (reports/ReportControls.tsx, reports/page.tsx). */
-.reportbar { margin-top: -6px; }
-.rd-dirty { font-size: var(--fs-body-sm); color: var(--warn); font-weight: 600; }
+/* A report opened in Companies: where its filters came from, and Replace. */
+.rp-from { margin-top: -6px; }
+.rp-from .meta a { color: var(--ink); font-weight: 600; }
+/* A long report name gives way before the page does, on a phone. */
+.rp-replace { max-width: 100%; min-width: 0; }
+.rp-replace svg { flex: 0 0 auto; }
+.rp-replace span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A report's filters, in words, above its read-only table. */
+.rp-words { margin: 0 0 var(--space-3); font-size: var(--fs-body-sm); color: var(--ink-2); line-height: 1.5; overflow-wrap: anywhere; }
+.rp-k { display: inline-block; margin-right: 8px; color: var(--ink); font-weight: 600; }
 .rd-error { color: var(--alert); font-size: var(--fs-body-sm); }
 .rd-field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 var(--space-4);
   font-size: var(--fs-body-sm); font-weight: 600; color: var(--ink-2); }

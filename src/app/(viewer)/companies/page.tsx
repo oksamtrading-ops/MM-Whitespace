@@ -4,7 +4,8 @@ import { requireRole } from "../../../lib/auth/context.ts";
 import { Forbidden, Unauthenticated } from "../../../lib/auth/session.ts";
 import { findDuplicateCandidates } from "../../../lib/identity/merge.ts";
 import { listCompanies } from "../../../lib/profile/company.ts";
-import { dropUnknown, facetOptions, parseRosterParams } from "../../../lib/profile/roster.ts";
+import { dropUnknown, facetOptions, parseRosterParams, toRosterParams } from "../../../lib/profile/roster.ts";
+import { canEdit, getReport } from "../../../lib/reports/reports.ts";
 import Refusal from "../../_ui/Refusal.tsx";
 import Roster from "./Roster.tsx";
 import Callout from "../../_ui/Callout.tsx";
@@ -36,6 +37,15 @@ export default async function Companies(
                     body="Nothing has been published. Company profiles read the frozen snapshot, so there is nothing to look up until a period is published." />;
   }
   const deloitteAudits = rows.filter((r) => r.auditor === "Deloitte").length;
+  const facets = facetOptions(rows);
+  // "Open in Companies" from a report: named here only if the caller may see
+  // it, and replaceable only by whoever may edit it. Otherwise ignored.
+  const fromId = typeof params.from === "string" ? params.from : null;
+  const report = fromId ? await getReport(ctx.db, ctx.user, fromId) : null;
+  const from = report ? {
+    id: report.id, name: report.name, visibility: report.visibility, canEdit: canEdit(report, ctx.user),
+    params: toRosterParams(dropUnknown(parseRosterParams(new URLSearchParams(report.params)), facets)).toString(),
+  } : undefined;
   // Surfaced where the companies are, rather than in a menu nobody opens.
   const duplicates = allowDraft
     ? (await findDuplicateCandidates(ctx.db, 200)).length
@@ -55,8 +65,8 @@ export default async function Companies(
       )}
       {/* The filter is parsed here from the same URL the export reads, so the
           page arrives already narrowed and a shared link means one thing. */}
-      <Roster rows={rows} deloitteAudits={deloitteAudits}
-              initial={dropUnknown(parseRosterParams(params), facetOptions(rows))} />
+      <Roster rows={rows} deloitteAudits={deloitteAudits} from={from}
+              initial={dropUnknown(parseRosterParams(params), facets)} />
     </div>
     </Page>
   );
