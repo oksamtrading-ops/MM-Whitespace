@@ -535,7 +535,7 @@ Samuel's list for `/companies`, and his answers to the questions it raised:
   the rail.
 - **A report's page is read-only** (Samuel, 7 November: a report page that
   repeats the Companies page is redundant). `/reports/<id>` shows the report's
-  filters in words, its rows with its columns and sort, Excel and CSV, and
+  filters in words, its rows with its columns and sort, Excel, and
   for its owner or an Admin, Rename (name and who sees it) and Delete. No
   filter bar. Filters change only in Companies: "Open in Companies" loads them
   with `?from=<id>`, and whoever may edit the report is offered **Replace
@@ -569,7 +569,8 @@ Viewers must never see `dtt_market`.
   - The rest are choices that include "Researched, not found" and
     "Not known".
 - **The Columns picker** has "Columns" and "More columns" groups, each
-  entry with its coverage in the current rows ("Total assets · 73 of 348").
+  entry just the column's name. It showed coverage ("Total assets · 73 of
+  348") until Samuel asked, 7 November, for names only.
 - **The URL now stores the columns shown (`cols=`), not those hidden.**
   - The default (the eleven original columns) is left out of the URL, and
     `cols=~` means Company only.
@@ -583,6 +584,12 @@ Viewers must never see `dtt_market`.
   as on screen; amounts are split into currency, amount and fiscal year. Every
   public value not picked still rides along at the end, as before.
 - **Ticker** drops its "· TSX" once the Exchange column is shown.
+- **Less above the table** (Samuel, 7 November: "not needed").
+  - The "N of M · Deloitte audits N" line is gone from the screen. A
+    visually hidden `role="status"` still says "N of M companies" when a
+    filter changes the rows, and e2e's `countOf()` reads it.
+  - Excel is the only download button, on Companies and on a report.
+    `/api/companies/export?format=csv` still works; e2e uses it.
 - **A slimmer filter bar** (Samuel, 7 November).
   - Only Tier, Auditor and Commodities are always in the bar (`PICKERS` in
     `companies/Roster.tsx`). Stage of operations, Company HQ, Footprint and

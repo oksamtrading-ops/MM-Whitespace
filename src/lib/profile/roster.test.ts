@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  amountText, cellWord, columnCoverage, COLUMN_FIELDS, DEFAULT_COLS, describeFilter, dropUnknown, EMPTY_FILTER,
+  amountText, cellWord, COLUMN_FIELDS, DEFAULT_COLS, describeFilter, dropUnknown, EMPTY_FILTER,
   facetOptions, filterRows, hqWord, isNarrowed, LEGACY_COLS, MORE_COLS, parseAmount, parseRosterParams,
   ROSTER_COLUMNS, sortRows, stageMark, tierToken, toRosterParams, type RosterRow,
 } from "./roster.ts";
@@ -399,12 +399,6 @@ test("each new column says what it holds, and the picker knows how many hold it"
   assert.equal(cellWord(a, "auditorSince"), "2025", "a year, not 2,025");
   assert.match(cellWord(a, "netIncome") ?? "", /^-?C?\$?.*4,000,000.*FY2025/);
   assert.equal(cellWord(b, "totalAssets"), null);
-  const cover = columnCoverage(MORE);
-  assert.equal(cover.website, 2);
-  assert.equal(cover.totalAssets, 1);
-  assert.equal(cover.netIncome, 2);
-  assert.equal(cover.exchange, 2);
-  assert.equal(cover.props, 1);
 });
 
 test("every new filter narrows by its column", () => {

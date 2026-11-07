@@ -1007,28 +1007,6 @@ export const COL_WORD: Record<ColKey, string> = {
   auditorChange: "Auditor change", auditRelatedFee: "Audit-related fees", otherFee: "Other fees",
 };
 
-/**
- * How many rows hold something in each column, so a column most companies
- * leave empty reads as sparse in the picker rather than broken on the page.
- */
-export function columnCoverage(rows: RosterRow[]): Record<ColKey, number> {
-  const has = (k: ColKey, r: RosterRow): boolean => {
-    switch (k) {
-      case "marketCap": return r.marketCap !== null;
-      case "ticker": return Boolean(r.ticker);
-      case "tier": case "stage": return r.tier !== null;
-      case "stages": return r.stageEvidence !== "none";
-      case "footprint": return Boolean(r.footprint);
-      case "commodities": return r.commodities.length > 0;
-      case "hq": return Boolean(r.hqRegion || r.hqCity);
-      case "auditor": return Boolean(r.auditor);
-      case "auditFee": case "taxFee": return moneyParts(fieldValue(r, RANGE_FIELD[k])) !== null;
-      default: return cellWord(r, k) !== null;
-    }
-  };
-  return Object.fromEntries(COL_KEYS.map((k) => [k, rows.filter((r) => has(k, r)).length])) as Record<ColKey, number>;
-}
-
 /** The table's columns, in order. The export writes the same ones first. */
 export const ROSTER_COLUMNS: Array<{ key: SortKey | Stage; label: string; numeric?: boolean; stage?: boolean }> = [
   { key: "name", label: "Company" },

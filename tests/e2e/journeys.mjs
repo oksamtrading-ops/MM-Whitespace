@@ -685,6 +685,11 @@ async function journeys(dbPath) {
         fromLink.includes('data-key="footprint"') && fromLink.includes("Remove the footprint filter") &&
         fromLink.includes("Clear filters"));
   check("Reports is in the rail for a Viewer", /href="\/reports"/.test(roster));
+  // Samuel, 7 November: no count line and no CSV button; Excel is enough.
+  // The count is still said aloud when a filter changes the rows.
+  check("no count line on screen, and Excel the only download",
+        /class="sr-only" role="status"[^>]*>.*companies<\/span>/.test(roster) && !roster.includes("Deloitte audits") &&
+        roster.includes("format=xlsx") && !/>CSV</.test(roster));
 
   const fullCount = Number(roster.match(/(\d+)<\/span> of <span class="fig-sm">(\d+)/)?.[2]);
   const countOf = (html) => Number(text(html).match(/(\d+)<\/span> of <span class="fig-sm">\d+/)?.[1]);
@@ -705,8 +710,9 @@ async function journeys(dbPath) {
   check("the new columns are hidden until picked",
         !sortHead(index.html, "Total assets") && !sortHead(index.html, "Website") && !sortHead(index.html, "Revenue") &&
         sortHead(index.html, "Audit fees"));
-  check("the Columns picker says how many companies each column holds",
-        /Total assets · \d+ of \d+/.test(roster) && /Exchange · \d+ of \d+/.test(roster) && roster.includes("More columns"));
+  check("the Columns picker names each column, with no count beside it",
+        roster.includes('value="totalAssets"') && roster.includes("More columns") &&
+        !/(Total assets|Exchange|Market cap) · \d+ of \d+/.test(roster));
   const picked = await get("/companies?cols=website&cols=exchange&cols=totalAssets&cols=revenue&cols=fye", viewer.cookie);
   check("picked, they are columns, and only they are",
         ["Website", "Exchange", "Total assets", "Revenue", "Fiscal year-end"].every((l) => sortHead(picked.html, l)) &&
@@ -752,6 +758,7 @@ async function journeys(dbPath) {
         !privPage.includes("More filters") && !privPage.includes('name="cols"') && !privPage.includes('class="sort"') &&
         privPage.includes("Market cap: at least C$1B"),
         `${countOf(privPage)} rows, against ${countOf(byCap.html)} on /companies`);
+  check("a report downloads as Excel only", privPage.includes("format=xlsx") && !/>CSV</.test(privPage));
   check("and may rename and delete it, but its filters change only in Companies",
         privPage.includes(">Rename<") && privPage.includes(">Delete<") && !privPage.includes("Save changes") &&
         privPage.includes(`from=${priv.id}`) && privPage.includes("Open in Companies"));

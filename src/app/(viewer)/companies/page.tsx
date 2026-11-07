@@ -36,7 +36,6 @@ export default async function Companies(
     return <Refusal title="No companies yet"
                     body="Nothing has been published. Company profiles read the frozen snapshot, so there is nothing to look up until a period is published." />;
   }
-  const deloitteAudits = rows.filter((r) => r.auditor === "Deloitte").length;
   const facets = facetOptions(rows);
   // "Open in Companies" from a report: named here only if the caller may see
   // it, and replaceable only by whoever may edit it. Otherwise ignored.
@@ -65,7 +64,7 @@ export default async function Companies(
       )}
       {/* The filter is parsed here from the same URL the export reads, so the
           page arrives already narrowed and a shared link means one thing. */}
-      <Roster rows={rows} deloitteAudits={deloitteAudits} from={from}
+      <Roster rows={rows} from={from}
               initial={dropUnknown(parseRosterParams(params), facets)} />
     </div>
     </Page>

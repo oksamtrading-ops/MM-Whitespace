@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  COL_KEYS, COL_WORD, columnCoverage, describeFilter, EMPTY_RANGE, FILTER_LABEL, facetOptions, filterRows,
+  COL_KEYS, COL_WORD, describeFilter, EMPTY_RANGE, FILTER_LABEL, facetOptions, filterRows,
   isNarrowed, LEGACY_COLS, MORE_COLS, RANGE_LABEL, rangeSet, sortRows, parseRosterParams, STAGE_LABEL,
   toRosterParams, EMPTY_FILTER, type ColKey, type Multi, type Presence, type RangeKey, type RosterFilter,
   type RosterRow, type SortKey,
@@ -109,8 +109,8 @@ const EXTRA_KEYS: readonly ExtraKey[] = ADDABLE.map((c) => c.key).filter((k): k 
  * A few hundred rows, so everything is local; nothing pages. The first column
  * and the header stay put while the rest scrolls.
  */
-export default function Roster({ rows, deloitteAudits, initial, from }: {
-  rows: RosterRow[]; deloitteAudits: number; initial: RosterFilter; from?: FromReport;
+export default function Roster({ rows, initial, from }: {
+  rows: RosterRow[]; initial: RosterFilter; from?: FromReport;
 }) {
   const [filter, setFilter] = useState<RosterFilter>(initial);
   // Filters brought into the bar by "More filters" or set by the URL, kept while they are being set.
@@ -151,13 +151,10 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
     sort: key, dir: filter.sort === key ? (filter.dir === 1 ? -1 : 1) : (key === "marketCap" ? -1 : 1),
   });
   const narrowed = isNarrowed(filter);
-  const exportHref = (format: "xlsx" | "csv") => {
-    const p = toRosterParams(filter);
-    p.set("format", format);
-    return `/api/companies/export?${p.toString()}`;
-  };
-
-  const coverage = useMemo(() => columnCoverage(rows), [rows]);
+  // Excel only (Samuel, 7 November); the export still answers ?format=csv.
+  const excelParams = toRosterParams(filter);
+  excelParams.set("format", "xlsx");
+  const excelHref = `/api/companies/export?${excelParams.toString()}`;
 
   const pick = (key: string) => {
     if ((EXTRA_KEYS as readonly string[]).includes(key)) {
@@ -220,9 +217,8 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
     }
   };
 
-  // Each column with how many companies hold something in it, so a sparse
-  // column reads as sparse here rather than as broken on the page.
-  const colOption = (k: ColKey) => ({ value: k, label: `${COL_WORD[k]} · ${coverage[k]} of ${rows.length}` });
+  // Just the column's name (Samuel, 7 November: a count here read oddly).
+  const colOption = (k: ColKey) => ({ value: k, label: COL_WORD[k] });
   const columnGroups = [
     { label: "Columns", options: LEGACY_COLS.map(colOption) },
     { label: "More columns", options: MORE_COLS.map(colOption) },
@@ -244,17 +240,17 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
           {filter.ws ? "Showing whitespace only" : "Whitespace only"}
         </button>
         <span className="spacer" />
-        <span className="meta" role="status" aria-live="polite">
-          <span className="fig-sm">{shown.length}</span> of <span className="fig-sm">{rows.length}</span>
-          {" · Deloitte audits "}<span className="fig-sm">{deloitteAudits}</span>
+        {/* Not shown (Samuel, 7 November: not needed), but still said aloud
+            when a filter changes the rows, so a screen reader hears it work. */}
+        <span className="sr-only" role="status" aria-live="polite">
+          <span className="fig-sm">{shown.length}</span> of <span className="fig-sm">{rows.length}</span> companies
         </span>
         <MultiSelect name="cols" label="Columns" groups={columnGroups} selected={filter.cols}
                      summary={`${filter.cols.length + 1} of ${COL_KEYS.length + 1}`}
                      onChange={(next) => set({ cols: COL_KEYS.filter((k) => next.includes(k)) })} />
-        <a className="btn sm secondary" href={exportHref("xlsx")} download>
+        <a className="btn sm secondary" href={excelHref} download>
           <Icon name="download" size={13} />Excel
         </a>
-        <a className="btn sm quiet" href={exportHref("csv")} download>CSV</a>
         <SaveAsReport params={params} />
       </div>
 

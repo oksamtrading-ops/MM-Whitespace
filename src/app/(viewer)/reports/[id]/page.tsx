@@ -59,12 +59,10 @@ export default async function ReportPage({ params }: Props) {
   const shown = sortRows(filterRows(rows, filter), filter.sort, filter.dir);
   const mine = report.ownerId === ctx.user.id;
   const deloitteAudits = shown.filter((s) => s.row.auditor === "Deloitte").length;
-  const exportHref = (format: "xlsx" | "csv") => {
-    const p = new URLSearchParams(saved);
-    p.set("format", format);
-    p.set("report", report.id);
-    return `/api/companies/export?${p.toString()}`;
-  };
+  const excelParams = new URLSearchParams(saved);
+  excelParams.set("format", "xlsx");
+  excelParams.set("report", report.id);
+  const excelHref = `/api/companies/export?${excelParams.toString()}`;
 
   return (
     <Page title={report.name} back={{ href: "/reports", label: "Reports" }}
@@ -85,10 +83,9 @@ export default async function ReportPage({ params }: Props) {
             {" companies · Deloitte audits "}<span className="fig-sm">{deloitteAudits}</span>
           </span>
           <span className="spacer" />
-          <a className="btn sm secondary" href={exportHref("xlsx")} download>
+          <a className="btn sm secondary" href={excelHref} download>
             <Icon name="download" size={13} />Excel
           </a>
-          <a className="btn sm quiet" href={exportHref("csv")} download>CSV</a>
           <Link className="btn sm quiet" prefetch={false}
                 href={`/companies?${[saved, `from=${report.id}`].filter(Boolean).join("&")}` as Route}>
             <Icon name="building-2" size={13} />Open in Companies
