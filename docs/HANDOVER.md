@@ -504,6 +504,46 @@ is client information.
 
 ## What exists, and what state it is in
 
+### Built on 7 November 2026 — the companies table: a filter on every column, saved reports
+
+Samuel's list for `/companies`, and his answers to the questions it raised:
+
+- **The header.** The lede is gone, and so is the count beside "Companies".
+  The AI notice runs the page's full width (`AiNotice full`, `.ainote-full`).
+- **No "?" in the stage columns.** A stage research has not settled is a
+  muted "—", read aloud as "Not known". The workbook writes "Not known" too.
+- **"Tax fees paid to audit firm"**, a column on screen and in both exports,
+  from the reviewed, published `tax_fee` with its currency and fiscal year.
+  Research already asks for it (pass 1's fields in `enrich/scope.ts`, the
+  prompt line in `enrich/live.ts`), so nothing changed there and no run was
+  started.
+- **A filter on every column**, all in the URL (`lib/profile/roster.ts`):
+  company and ticker contain (and ticker has / has none); exchange; the
+  deciding stage; each of the four stage columns (yes, no, not known, not
+  researched, not recorded); audit fees, tax fees and market cap as ranges,
+  the fees with currency, fiscal year and "researched, not found"; and
+  `hide=` for columns. "Add filter" lists every column. Amounts are typed as
+  people say them (250k, 1.5M, 2B). Fees compare as printed, each in its own
+  currency: there is no FX table, so the panel says so.
+- **Saved reports** (`lib/reports/reports.ts`, migrations `0045`, `0046`).
+  A report stores the table's query string and nothing else, so it always
+  shows the current published data. Samuel's answers, 7 November: **anyone
+  who can sign in may save one, Viewers too**; private is its owner's alone
+  (Admins included); public is everybody's; **its owner or an Admin may
+  rename it, change who sees it, update it and delete it**. "Reports" is in
+  the rail. `/reports/<id>` is the table with the report's filters; once
+  changed its address says `?edit=1` and carries them.
+- **No email.** Samuel, 7 November: "do not continue with the functionality
+  to email the reports. Users can download and email the download version
+  outside the tool." A report downloads through the companies export, named
+  for the report (`?report=<id>`; a report the caller may not see is not
+  named). Resend is still configured and unused.
+
+**Release order:** apply `0045` and `0046` to production (Supabase
+connector, each recorded in `schema_migrations`) BEFORE pushing. The rail
+links to `/reports` for everyone, and that page reads `saved_reports`.
+
+
 ### Done on 30 October – 3 November 2026 — Q4 at C$100M, revisions 5 and 6, the dashboard, one control height
 
 **Q4 widened to C$100M** (`f2c38bb`, 30 October; migration `0037`, applied

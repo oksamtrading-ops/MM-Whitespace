@@ -1053,7 +1053,7 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .roster .grouphead th.groupspan { text-align: center; border-bottom: 1px solid var(--rule); }
 .roster td.stagecell { text-align: center; width: 1%; }
 .roster td.stagecell .stage-yes { color: var(--ink); font-weight: 700; }
-.roster td.stagecell .stage-unknown { color: var(--ink-2); }
+.roster td.stagecell .stage-unknown { color: var(--ink-3); }
 .roster td.stage-none { text-align: center; color: var(--ink-3); font-size: var(--fs-body-sm); }
 .roster .matchhint { display: block; font-size: var(--fs-body-sm); font-weight: 400; color: var(--ink-3); margin-top: 1px;
   white-space: normal; max-width: 280px; }
@@ -1088,17 +1088,20 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 /* MultiSelect (_ui/MultiSelect.tsx). Every class here is the picker's own --
    a bare rule elsewhere would restyle it silently, which is how .filters,
    .tag and .role each went wrong. */
-.picker { position: relative; }
+.picker { position: relative; max-width: 100%; }
 .picker-sum {
   list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
   height: var(--control-h); padding: 0 11px 0 13px; border: 1px solid var(--rule-raised); border-radius: var(--radius-3);
   font: 600 var(--fs-body-sm)/1 var(--font-text); color: var(--ink); background: transparent; white-space: nowrap;
+  max-width: 100%;
 }
 .picker-sum::-webkit-details-marker { display: none; }
 .picker-sum:hover { background: var(--surface-2); border-color: var(--ink-3); }
 .picker-sum:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.picker-k { color: var(--ink-2); font-weight: 600; }
-.picker-v { color: var(--ink); font-weight: 700; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; }
+/* A long label ("Tax fees paid to audit firm") gives way before the bar does, on a phone. */
+.picker-k { color: var(--ink-2); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.picker-sum svg { flex: 0 0 auto; }
+.picker-v { color: var(--ink); font-weight: 700; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; }
 .picker-set .picker-sum { border-color: var(--ink-2); background: var(--surface-2); }
 .picker[open] .picker-sum svg { transform: rotate(180deg); }
 /* Hung from its button's left edge; MultiSelect moves it sideways as it opens,
@@ -1126,6 +1129,59 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .picker-list label span:first-of-type { flex: 1; }
 .picker-n { color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: var(--fs-label); }
 .picker-clear { margin-top: var(--space-2); }
+
+/* The companies table's column filters (companies/ColumnFilters.tsx): the
+   panels Popover hangs under a text, range or "Add filter" button. */
+.cf-amount { display: flex; flex-direction: column; gap: 4px; flex: 1 1 0; min-width: 0;
+  font-size: var(--fs-body-sm); color: var(--ink-2); font-weight: 600; margin: 0 0 var(--space-2); }
+.cf-amount input {
+  font: inherit; font-weight: 400; font-size: var(--fs-body-sm); width: 100%; min-height: var(--control-h); padding: 0 10px;
+  border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--ink);
+}
+.cf-amount input[aria-invalid="true"] { border-color: var(--alert-edge); }
+.cf-bad { color: var(--alert); font-weight: 400; }
+.cf-range { display: flex; gap: var(--space-2); }
+.cf-note { margin: 0 0 var(--space-2); font-size: var(--fs-caption); line-height: 1.4; color: var(--ink-2); max-width: 36ch; }
+.cf-set { border: 0; margin: 0 0 var(--space-2); padding: 0; min-width: 0; }
+.cf-set legend { font-size: var(--fs-body-sm); font-weight: 700; color: var(--ink-2); padding: 4px 0 2px; }
+.cf-check { display: flex; align-items: center; gap: 9px; min-height: 30px; padding: 0 4px;
+  font-size: var(--fs-body-sm); color: var(--ink); cursor: pointer; border-radius: 4px; }
+.cf-check:hover { background: var(--surface-2); }
+.cf-check input { accent-color: var(--focus); width: 15px; height: 15px; margin: 0; flex: 0 0 auto; }
+.cf-check span:first-of-type { flex: 1; }
+.cf-n { color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: var(--fs-label); }
+.cf-remove { margin-top: var(--space-1); }
+.cf-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-width: 0; }
+.cf-menu { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; overscroll-behavior: contain; }
+.cf-item {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%;
+  min-height: 32px; padding: 0 6px; border: 0; border-radius: 4px; background: transparent;
+  font: inherit; font-size: var(--fs-body-sm); color: var(--ink); text-align: left; cursor: pointer;
+}
+.cf-item:hover { background: var(--surface-2); }
+.cf-item:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.cf-on { font-size: var(--fs-label); color: var(--ink-2); font-weight: 600; }
+
+/* Saved reports (reports/ReportControls.tsx, reports/page.tsx). */
+.reportbar { margin-top: -6px; }
+.rd-dirty { font-size: var(--fs-body-sm); color: var(--warn); font-weight: 600; }
+.rd-error { color: var(--alert); font-size: var(--fs-body-sm); }
+.rd-field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 var(--space-4);
+  font-size: var(--fs-body-sm); font-weight: 600; color: var(--ink-2); }
+.rd-vis { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.rd-vis legend { font-size: var(--fs-body-sm); font-weight: 600; color: var(--ink-2); padding: 0 0 6px; }
+.rd-vis label { display: flex; align-items: center; gap: 10px; min-height: var(--control-h); font-size: 14px;
+  color: var(--ink-2); cursor: pointer; }
+.rd-vis label b { color: var(--ink); margin-right: 6px; }
+.rd-vis input { accent-color: var(--focus); width: 16px; height: 16px; margin: 0; flex: 0 0 auto; }
+.rp-h { font-size: var(--fs-title); margin: var(--space-6) 0 var(--space-3); }
+.rp-h:first-of-type { margin-top: 0; }
+.rp-filter { display: block; font-size: var(--fs-body-sm); font-weight: 400; color: var(--ink-2); margin-top: 2px;
+  white-space: normal; max-width: 72ch; }
+.rp-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
+table.reports th[scope="row"] { text-align: left; font-weight: 600; }
+table.reports th[scope="row"] a { color: var(--ink); text-decoration: none; }
+table.reports th[scope="row"] a:hover { text-decoration: underline; text-decoration-color: var(--green-mark); }
 
 /* pills and chips ------------------------------------------------------
    A pill is a state. It carries an icon and a word; the colour is the third
@@ -2632,6 +2688,7 @@ button.switch { background: none; border: 0; padding: 0; color: var(--ink); font
   margin: 0 0 var(--space-4); font-size: var(--fs-body-sm); line-height: 1.45; color: var(--ink-2);
 }
 .ainote svg { flex: 0 0 auto; margin-top: 2px; }
+.ainote-full { max-width: none; }
 
 /* --------------------------------------------------------------- print */
 

@@ -10,6 +10,11 @@
  * see a draft -- which a Viewer can already read row by row. Each download is
  * still recorded: a licensed extract leaving the application is the event the
  * audit log exists for, whoever takes it.
+ *
+ * A saved report downloads through here too (?report=<id>): the file is named
+ * for the report and its header says which, and nothing else changes. Reports
+ * are never emailed from the tool (Samuel, 7 November 2026): whoever downloads
+ * one sends it on themselves.
  */
 import { NextResponse } from "next/server";
 import { requireRole } from "../../../../lib/auth/context.ts";
@@ -18,6 +23,7 @@ import { ExportFailed } from "../../../../lib/export/period.ts";
 import { exportTable } from "../../../../lib/export/table.ts";
 import { toRosterParams } from "../../../../lib/profile/roster.ts";
 import { formatStamp } from "../../../../lib/db/stamp.ts";
+import { getReport } from "../../../../lib/reports/reports.ts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -33,16 +39,22 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const format = url.searchParams.get("format") === "csv" ? "csv" as const : "xlsx" as const;
   const allowDraft = ctx.user.role !== "viewer";
+  // ?report= names a saved report the file is a download of, for its name.
+  // The rows still come from the filter in the URL, which is what was on
+  // screen; a report this person may not see is simply not named.
+  const report = url.searchParams.has("report")
+    ? await getReport(ctx.db, ctx.user, url.searchParams.get("report"))
+    : null;
 
   try {
-    const file = await exportTable(ctx.db, { allowDraft, params: url.searchParams, format });
+    const file = await exportTable(ctx.db, { allowDraft, params: url.searchParams, format, report });
     await ctx.db.run(
       `insert into audit_log (event, actor_id, period_id, detail) values ('companies_exported', ?, ?, ?)`,
       ctx.user.id, file.periodId,
       JSON.stringify({
         format, filename: file.filename, bytes: file.bytes.byteLength,
         params: toRosterParams(file.filter).toString(), filter: file.filterWords,
-        rows: file.rows, total: file.total,
+        rows: file.rows, total: file.total, report: report?.id ?? null,
         basis: file.revision === null ? "draft" : `revision ${file.revision}`, at: formatStamp(),
       }));
     return new NextResponse(new Uint8Array(file.bytes), {

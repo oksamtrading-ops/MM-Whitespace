@@ -290,11 +290,11 @@ class TableExport(unittest.TestCase):
         self.assertEqual(amount.value, 1200000)
         self.assertEqual(amount.hyperlink.target, "https://northco.example/circular.pdf")
 
-    def test_stage_marks_are_x_and_question_and_the_unresearched_are_filled_not_blank_noes(self):
+    def test_stage_marks_are_x_and_not_known_and_the_unresearched_are_filled_not_blank_noes(self):
         ws = self.wb["Companies"]
         header = next(r for r in range(1, 30) if ws.cell(r, 2).value == "Company")
         self.assertEqual(ws.cell(header + 1, 3).value, "X")
-        self.assertEqual(ws.cell(header + 1, 4).value, "?")
+        self.assertEqual(ws.cell(header + 1, 4).value, "Not known")
         self.assertIsNone(ws.cell(header + 2, 3).value)
         self.assertEqual(ws.cell(header + 2, 3).fill.fgColor.rgb[-6:], "FFF2A8")
 

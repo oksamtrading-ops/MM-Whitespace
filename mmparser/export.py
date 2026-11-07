@@ -872,7 +872,7 @@ def _provenance(wb, data):
 #: Where the source workbook marks a stage nobody has researched: its own yellow.
 UNRESEARCHED_FILL = PatternFill("solid", fgColor="FFF2A8")
 NOT_RECORDED_FILL = PatternFill("solid", fgColor="EDEDEB")
-STAGE_MARK = {"yes": "X", "blank": None, "unknown": "?", "not_researched": None, "not_recorded": None}
+STAGE_MARK = {"yes": "X", "blank": None, "unknown": "Not known", "not_researched": None, "not_recorded": None}
 TABLE_TITLE = "Mining & Metals Marketplace Assessment Tool \u2014 Companies"
 
 
@@ -976,7 +976,7 @@ def build_table_workbook(data: Dict[str, Any]) -> Workbook:
     for i, (col, part, _) in enumerate(sheet_cols):
         if i == 0:
             continue
-        widths[2 + i] = 6 if col.get("kind") == "stage" else 14 if part else 18
+        widths[2 + i] = 10 if col.get("kind") == "stage" else 14 if part else 18
     finish_sheet(ws, header_row=header_row, first_data_row=header_row + 1, last_data_row=last_row,
                  last_column=last_col, widths=widths, freeze_column=3, tab_color="86BC25")
     for cell, fill in marked:

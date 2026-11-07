@@ -16,12 +16,19 @@ import { citationOf, listCompanies, rosterBasis } from "../profile/company.ts";
 import { citationsForPeriod, citationWords, citeKey } from "../profile/citations.ts";
 import {
   auditorWord, describeFilter, dropUnknown, facetOptions, filterRows, FOOTPRINT_WORD, hqWord,
-  parseRosterParams, sortRows, STAGE_LABEL, STAGE_OF_TIER, stageMark, TIER_WORD, type RosterRow,
+  parseRosterParams, sortRows, STAGE_LABEL, STAGE_OF_TIER, stageMark, TIER_WORD, type HideKey, type RosterRow,
 } from "../profile/roster.ts";
 import { STAGE_ORDER } from "../format/fields.ts";
 import { buildFile, contentTypeOf, ExportFailed } from "./period.ts";
 
 type Column = { key: string; label: string; kind: "text" | "fee" | "stage" | "money"; field?: string };
+
+/** The export's columns that each hideable column of the table stands for. */
+const HIDES: Record<HideKey, string[]> = {
+  ticker: ["ticker", "exchange"], tier: ["tier"], stage: ["stage"], stages: [...STAGE_ORDER],
+  footprint: ["footprint"], commodities: ["commodities"], hq: ["hq"], auditor: ["auditor"],
+  auditFee: ["audit_fee"], taxFee: ["tax_fee"], marketCap: ["market_cap"],
+};
 
 /** One citation the export can name: what was read, and the passage. */
 export type TableCitation = {
@@ -42,6 +49,7 @@ const BASE_COLUMNS: Column[] = [
   { key: "hq", label: "Company HQ", kind: "text", field: "head_office_region" },
   { key: "auditor", label: "Auditor", kind: "text", field: "auditor" },
   { key: "audit_fee", label: "Audit fees", kind: "fee", field: "audit_fee" },
+  { key: "tax_fee", label: "Tax fees paid to audit firm", kind: "fee", field: "tax_fee" },
   { key: "market_cap", label: "Market cap (CAD)", kind: "money" },
 ];
 
@@ -60,6 +68,7 @@ function cellsOf(r: RosterRow): Record<string, unknown> {
     hq: hqWord(r),
     auditor: r.auditor ? auditorWord(r.auditor) : null,
     audit_fee: r.auditFee ?? null,
+    tax_fee: r.taxFee ?? null,
     market_cap: r.marketCap,
   };
   for (const s of STAGE_ORDER) out[s] = stageMark(r, s);
@@ -72,11 +81,14 @@ export function tablePayload(opts: {
   rows: RosterRow[]; total: number; filterWords: string;
   basis: { label: string; revision: number | null };
   cite?: CitationLookup;
+  /** Columns taken off the table on screen; the file leaves them out too. */
+  hide?: HideKey[];
 }) {
   const metaColumns = new Map<string, string>();
   for (const r of opts.rows) for (const m of r.meta) if (!metaColumns.has(m.field)) metaColumns.set(m.field, m.label);
+  const hidden = new Set((opts.hide ?? []).flatMap((h) => HIDES[h]));
   const columns: Column[] = [
-    ...BASE_COLUMNS,
+    ...BASE_COLUMNS.filter((c) => !hidden.has(c.key)),
     ...[...metaColumns].sort((a, b) => a[1].localeCompare(b[1]))
       .map(([field, label]) => ({ key: `meta:${field}`, label, kind: "text" as const })),
   ];
@@ -123,9 +135,22 @@ export function tableFilename(label: string, format: "xlsx" | "csv"): string {
   return `Mining & Metals Marketplace Assessment Tool ${name.replace(/[^A-Za-z0-9 ._-]/g, "-")} companies.${format}`;
 }
 
+/** "Gold producers (Q4-2026).xlsx": a saved report's file is named for the report. */
+export function reportFilename(name: string, label: string, format: "xlsx" | "csv"): string {
+  const period = String(label).replace(/\s*\([^)]*\)\s*$/, "").trim() || "period";
+  // Accents fold to their letters (Québec -> Quebec); anything else with no
+  // ASCII form becomes a hyphen, and a name that is nothing but those is "Report".
+  const safe = (t: string) => t.normalize("NFKD").replace(/\p{M}/gu, "")
+    .replace(/[^A-Za-z0-9 ._-]/g, "-").replace(/-{2,}/g, "-").trim();
+  const base = safe(name).slice(0, 80).trim();
+  return `${/[A-Za-z0-9]/.test(base) ? base : "Report"} (${safe(period)}).${format}`;
+}
+
 /** Read, narrow, build. The route is only who may ask and the audit line. */
 export async function exportTable(db: Sql, opts: {
   allowDraft: boolean; params: URLSearchParams; format: "xlsx" | "csv"; cite?: CitationLookup;
+  /** The saved report this is a download of, already checked as one the caller may see. */
+  report?: { name: string } | null;
 }) {
   const basis = await rosterBasis(db, { allowDraft: opts.allowDraft });
   const all = await listCompanies(db, { allowDraft: opts.allowDraft });
@@ -133,12 +158,14 @@ export async function exportTable(db: Sql, opts: {
   const facets = facetOptions(all);
   const filter = dropUnknown(parseRosterParams(opts.params), facets);
   const shown = sortRows(filterRows(all, filter), filter.sort, filter.dir).map((s) => s.row);
-  const filterWords = describeFilter(filter, facets);
+  const words = describeFilter(filter, facets);
+  const filterWords = opts.report ? `Report “${opts.report.name}” · ${words}` : words;
   const cite = opts.cite ?? await citationLookup(db, basis);
-  const payload = tablePayload({ rows: shown, total: all.length, filterWords, basis, cite });
+  const payload = tablePayload({ rows: shown, total: all.length, filterWords, basis, cite, hide: filter.hide });
   const bytes = await buildFile(payload, { format: opts.format, kind: "table" });
   return {
-    filename: tableFilename(basis.label, opts.format), contentType: contentTypeOf(opts.format), bytes,
+    filename: opts.report ? reportFilename(opts.report.name, basis.label, opts.format) : tableFilename(basis.label, opts.format),
+    contentType: contentTypeOf(opts.format), bytes,
     periodId: basis.periodId, revision: basis.revision, rows: shown.length, total: all.length,
     filter, filterWords,
   };

@@ -97,6 +97,27 @@ function signInDirectly(dbPath, email, password) {
   }
 }
 
+/**
+ * A saved report, made, changed or deleted the way the report actions do it:
+ * through the library, as the named person. The suite does not drive server
+ * actions; the actions are three lines around these calls. Returns the result.
+ */
+function reportDirectly(dbPath, email, op, ...args) {
+  const out = execFileSync("node", ["--input-type=module", "-e", `
+    import { DatabaseSync } from "node:sqlite";
+    import { SqliteSql } from "./src/lib/db/sqlite.ts";
+    import * as reports from "./src/lib/reports/reports.ts";
+    const handle = new DatabaseSync(${JSON.stringify(dbPath)});
+    handle.exec("pragma foreign_keys = on");
+    const db = new SqliteSql(handle);
+    const u = await db.get("select id, role from app_users where email = ?", ${JSON.stringify(email)});
+    const got = await reports[${JSON.stringify(op)}](db, { id: String(u.id), role: u.role }, ...${JSON.stringify(args)});
+    process.stdout.write(JSON.stringify(got));
+    await db.close();
+  `], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+  return JSON.parse(out);
+}
+
 /** Replace a password the way the /password action does, through the library. */
 function changePasswordDirectly(dbPath, email, current, next) {
   execFileSync("node", ["--input-type=module", "-e", `
@@ -637,6 +658,116 @@ async function journeys(dbPath) {
   }
   const anonTable = await fetch(`${BASE}/api/companies/export?format=csv`);
   check("signed out, the table export is refused", anonTable.status === 401);
+  // The companies page, as Samuel asked for it on 7 November 2026: no lede, no
+  // count beside the heading, the AI notice across the page, a tax fee column,
+  // a filter for every column, and no "?" in the stage columns.
+  console.log("\n8b. the companies page: every column filters, and saved reports");
+  const roster = text(index.html);
+  check("the companies page has no lede and no count beside its heading",
+        !roster.includes("Every company in the published population") &&
+        !/<h1>Companies<\/h1><span class="count">/.test(roster));
+  check("the AI notice runs the page's full width", /class="ainote ainote-full"/.test(roster));
+  check("a Tax fees paid to audit firm column", /<button[^>]*class="sort"[^>]*>Tax fees paid to audit firm/.test(roster));
+  check("no stage cell says ?", !/class="stage-unknown"[^>]*>\?</.test(roster));
+  check("every column can be filtered: an Add filter menu, and Save as report",
+        roster.includes("Add filter") && roster.includes("Save as report") && roster.includes('name="cols"'));
+  check("Reports is in the rail for a Viewer", /href="\/reports"/.test(roster));
+
+  const fullCount = Number(roster.match(/(\d+)<\/span> of <span class="fig-sm">(\d+)/)?.[2]);
+  const countOf = (html) => Number(text(html).match(/(\d+)<\/span> of <span class="fig-sm">\d+/)?.[1]);
+  const byCap = await get("/companies?cap_min=1000000000&hide=ticker&hide=stages", viewer.cookie);
+  const byCapText = text(byCap.html);
+  check("a range filter in the URL narrows the page the server sends",
+        countOf(byCap.html) > 0 && countOf(byCap.html) < fullCount,
+        `${countOf(byCap.html)} of ${fullCount}`);
+  check("and hidden columns are not drawn", !/class="sort"[^>]*>Ticker/.test(byCapText) &&
+        !byCapText.includes(">Royalty / streaming</th>") && /class="sort"[^>]*>Market cap/.test(byCapText));
+  check("a filter's words say what it is", byCapText.includes("Market cap: at least C$1B"));
+  const byName = await get("/companies?name=zzzz-nobody", viewer.cookie);
+  check("a text filter that matches nothing says so", text(byName.html).includes("No company matches"));
+
+  // Saved reports, through the library as the actions call it, then read as
+  // each person would read them.
+  const priv = reportDirectly(dbPath, "viewer@example.invalid", "createReport",
+    { name: "Vee's big caps", visibility: "private", params: "cap_min=1000000000&hide=ticker" });
+  const pub = reportDirectly(dbPath, "viewer@example.invalid", "createReport",
+    { name: "Royalty names", visibility: "public", params: "tier=4" });
+  check("a Viewer saves a private and a public report", priv.ok && pub.ok);
+  const vList = text((await get("/reports", viewer.cookie)).html);
+  check("the Viewer's Reports page lists both", vList.includes("Vee&#x27;s big caps") && vList.includes("Royalty names") &&
+        vList.includes("Private") && vList.includes("Public"), vList.slice(vList.indexOf("<main"), vList.indexOf("<main") + 400));
+  const aList = text((await get("/reports", analyst.cookie)).html);
+  check("an Analyst sees the public one, saved by its owner, and not the private one",
+        aList.includes("Royalty names") && aList.includes("Shared by others") && aList.includes("Vee Ewer") &&
+        !aList.includes("big caps"));
+  const adList = text((await get("/reports", admin.cookie)).html);
+  check("an Admin does not see a private report either", !adList.includes("big caps") && adList.includes("Royalty names"));
+
+  const privPage = await get(`/reports/${priv.id}`, viewer.cookie);
+  check("the owner opens it as the filtered table", countOf(privPage.html) === countOf(byCap.html) &&
+        text(privPage.html).includes("Vee&#x27;s big caps") && !/class="sort"[^>]*>Ticker/.test(text(privPage.html)),
+        `${countOf(privPage.html)} rows, against ${countOf(byCap.html)} on /companies`);
+  check("and may rename, update and delete it", ["Rename", "Delete", "Save changes"].every((w) => privPage.html.includes(w)));
+  const privForOthers = await get(`/reports/${priv.id}`, analyst.cookie);
+  check("anybody else opening a private report is told there is no such report",
+        privForOthers.html.includes("No such report") && !privForOthers.html.includes("big caps"));
+  const edited = await get(`/reports/${priv.id}?edit=1&tier=4`, viewer.cookie);
+  check("a changed view reloads as it was left (?edit=1)", countOf(edited.html) === countOf(narrowed.html) &&
+        edited.html.includes("Changed since saved"), `${countOf(edited.html)} against ${countOf(narrowed.html)}`);
+
+  const pubForAnalyst = text((await get(`/reports/${pub.id}`, analyst.cookie)).html);
+  check("someone else opens a public report, and may save it as their own but not change it",
+        countOf(pubForAnalyst) === countOf(narrowed.html) && pubForAnalyst.includes("Save as new") &&
+        !pubForAnalyst.includes(">Rename<") && !pubForAnalyst.includes(">Delete<") &&
+        !pubForAnalyst.includes("Save changes"));
+  const refusedRename = reportDirectly(dbPath, "analyst@example.invalid", "updateReport", pub.id, { name: "Mine now" });
+  const refusedDelete = reportDirectly(dbPath, "analyst@example.invalid", "deleteReport", pub.id);
+  check("and is refused if they try", !refusedRename.ok && !refusedDelete.ok);
+  const pubForAdmin = text((await get(`/reports/${pub.id}`, admin.cookie)).html);
+  check("an Admin may rename, update and delete it", pubForAdmin.includes(">Rename<") && pubForAdmin.includes(">Delete<"));
+  const adminRename = reportDirectly(dbPath, "admin@example.invalid", "updateReport", pub.id,
+    { name: "Royalty and streaming names", params: "tier=4&hide=marketCap" });
+  const renamed = text((await get(`/reports/${pub.id}`, viewer.cookie)).html);
+  check("an Admin's rename and update reach the owner", adminRename.ok && renamed.includes("Royalty and streaming names") &&
+        !/class="sort"[^>]*>Market cap/.test(renamed));
+
+  // The download: the same export the table uses, named for the report.
+  const repCsv = await fetch(`${BASE}/api/companies/export?tier=4&hide=marketCap&format=csv&report=${pub.id}`,
+                             { headers: { cookie: analyst.cookie } });
+  const repText = await repCsv.text();
+  const repRows = repText.split("\n").filter((l) => l && !l.startsWith("#")).length - 1;
+  check("a report downloads, named for it, with its rows and without its hidden columns",
+        repCsv.status === 200 &&
+        /filename="Royalty and streaming names \(.+\)\.csv"/.test(repCsv.headers.get("content-disposition") ?? "") &&
+        repText.includes("# Filter: Report “Royalty and streaming names” · Tier: Tier 4") &&
+        repRows === countOf(narrowed.html) && !/^Company.*Market cap/m.test(repText),
+        `${repCsv.status} ${repCsv.headers.get("content-disposition")} ${repRows} rows`);
+  const repXlsx = await fetch(`${BASE}/api/companies/export?tier=4&format=xlsx&report=${pub.id}`,
+                              { headers: { cookie: viewer.cookie } });
+  const repBytes = Buffer.from(await repXlsx.arrayBuffer());
+  check("and as Excel", repXlsx.status === 200 && repBytes.subarray(0, 2).toString("latin1") === "PK" &&
+        /\.xlsx"$/.test(repXlsx.headers.get("content-disposition") ?? ""));
+  const leak = await fetch(`${BASE}/api/companies/export?format=csv&report=${priv.id}`, { headers: { cookie: analyst.cookie } });
+  check("a private report's name never reaches anyone else's download",
+        leak.status === 200 && !(leak.headers.get("content-disposition") ?? "").includes("big caps") &&
+        !(await leak.text()).includes("big caps"));
+  {
+    const { DatabaseSync } = await import("node:sqlite");
+    const handle = new DatabaseSync(dbPath);
+    const rows = handle.prepare(`select event, detail from audit_log where event like 'report_%' or
+        (event = 'companies_exported' and detail like ?) order by created_at`).all(`%${pub.id}%`);
+    handle.close();
+    const events = rows.map((r) => r.event);
+    check("saving, changing and downloading reports are in the audit log",
+          events.filter((e) => e === "report_created").length === 2 && events.includes("report_updated") &&
+          events.includes("companies_exported"), events.join(", "));
+  }
+  const deleted = reportDirectly(dbPath, "viewer@example.invalid", "deleteReport", priv.id);
+  check("the owner deletes their report, and it is gone",
+        deleted.ok && (await get(`/reports/${priv.id}`, viewer.cookie)).html.includes("No such report"));
+  const anonReports = await get("/reports");
+  check("signed out, Reports asks you to sign in", anonReports.html.includes("Sign in") && !anonReports.html.includes("Royalty"));
+
   const viewerDash = (await get("/dashboard", viewer.cookie)).html;
   check("a Viewer is not offered the period export that would refuse them",
         !viewerDash.includes('href="/api/export') && viewerDash.includes("Export from Companies"));
@@ -1008,6 +1139,12 @@ async function journeys(dbPath) {
     ["/publish (viewer, refused)", "/publish", viewer.cookie],
     ["/companies (viewer)", "/companies", viewer.cookie],
     ["/companies, filtered (viewer)", "/companies?tier=4&stage=royalty_streaming", viewer.cookie],
+    ["/companies, every kind of filter (viewer)",
+     "/companies?name=a&exchange=TSX&decides=royalty_streaming&exploration=no&audit_has=empty&cap_min=1&hide=ticker",
+     viewer.cookie],
+    ["/reports (viewer)", "/reports", viewer.cookie],
+    ["/reports (analyst)", "/reports", analyst.cookie],
+    [`/reports/{id} (viewer)`, `/reports/${pub.id}`, viewer.cookie],
     ["/runs (analyst)", "/runs", analyst.cookie],
     ["/runs (admin, after a run)", "/runs", admin.cookie],
     ["/settings (admin)", "/settings", admin.cookie],

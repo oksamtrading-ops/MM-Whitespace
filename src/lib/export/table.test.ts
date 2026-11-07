@@ -5,7 +5,7 @@ import { memorySql } from "../db/open.ts";
 import { commitPeriod, type ParsedCompany } from "../db/commit.ts";
 import { publishPeriod } from "../publish/snapshot.ts";
 import { listCompanies } from "../profile/company.ts";
-import { exportTable, safeUrl, tableFilename, tablePayload } from "./table.ts";
+import { exportTable, reportFilename, safeUrl, tableFilename, tablePayload } from "./table.ts";
 
 const hasPython = spawnSync("python3", ["-c", "import openpyxl"]).status === 0;
 
@@ -65,7 +65,8 @@ test("a link is written only for a cited value, and only if it is http(s)", () =
     companyId: "c1", name: "Northco", ticker: "N", exchange: "TSX", tier: 4, status: "classified", footprint: "none",
     auditor: "PwC", marketCap: 1, hqRegion: "Ontario, Canada", hqCity: null,
     commodities: ["Gold"],
-    auditFee: { amount: 10, currency: "CAD", fiscal_year: 2025 }, stages: [], stageEvidence: "complete" as const,
+    auditFee: { amount: 10, currency: "CAD", fiscal_year: 2025 }, taxFee: null,
+    stages: [], stageEvidence: "complete" as const,
     regions: {}, meta: [], sources: { audit_fee: "ai_accepted", auditor: "extract", head_office_region: "manual_override" },
   };
   const payload = tablePayload({
@@ -99,4 +100,50 @@ test("the file holds exactly the rows the same URL shows on screen", { skip: !ha
   assert.doesNotMatch(text, /Northco Royalties/);
   assert.match(text, /Royalty \/ streaming,.*X/, "the frozen stage rows reach the file");
   assert.doesNotMatch(text, /Ontario/, "and the Deloitte market does not");
+});
+
+test("the tax fee is a column of the file, and a column hidden on screen is left out of it", () => {
+  const row = {
+    companyId: "c1", name: "Northco", ticker: "N", exchange: "TSX", tier: 4, status: "classified", footprint: "none",
+    auditor: "PwC", marketCap: 1, hqRegion: "Ontario, Canada", hqCity: null, commodities: ["Gold"],
+    auditFee: { amount: 10, currency: "CAD", fiscal_year: 2025 }, taxFee: { amount: 3, currency: "CAD", fiscal_year: 2025 },
+    stages: [], stageEvidence: "complete" as const, regions: {}, meta: [], sources: {},
+  };
+  const all = tablePayload({ rows: [row], total: 1, filterWords: "x", basis: { label: "P", revision: 9 } });
+  const keys = all.columns.map((c) => c.key);
+  assert.ok(keys.includes("tax_fee"));
+  assert.equal(all.columns.find((c) => c.key === "tax_fee")?.label, "Tax fees paid to audit firm");
+  assert.deepEqual((all.rows[0] as Record<string, unknown>).tax_fee, { amount: 3, currency: "CAD", fiscal_year: 2025 });
+
+  const some = tablePayload({ rows: [row], total: 1, filterWords: "x", basis: { label: "P", revision: 9 },
+                              hide: ["ticker", "stages", "taxFee"] });
+  const left = some.columns.map((c) => c.key);
+  for (const gone of ["ticker", "exchange", "exploration", "development", "production", "royalty_streaming", "tax_fee"]) {
+    assert.ok(!left.includes(gone), `${gone} is still in the file`);
+  }
+  assert.ok(left.includes("name") && left.includes("audit_fee") && left.includes("market_cap"));
+});
+
+test("a report's file is named for the report, safely", () => {
+  assert.equal(reportFilename("Gold producers", "Q4-2026 (2026-08-29)", "xlsx"), "Gold producers (Q4-2026).xlsx");
+  assert.equal(reportFilename("Ont/Qué \"tier 2\"", "Q4-2026", "csv"), "Ont-Que -tier 2- (Q4-2026).csv");
+  assert.equal(reportFilename("Québec gold — Côte d’Ivoire", "Q4-2026", "csv"), "Quebec gold - Cote d-Ivoire (Q4-2026).csv");
+  assert.equal(reportFilename("金矿", "Q4-2026", "xlsx"), "Report (Q4-2026).xlsx");
+  assert.equal(reportFilename("   ", "Q4-2026", "xlsx"), "Report (Q4-2026).xlsx");
+});
+
+test("a saved report downloads as a file named for it, with its filter and hidden columns", { skip: !hasPython }, async () => {
+  const { db } = await published();
+  const file = await exportTable(db, {
+    allowDraft: false, format: "xlsx", report: { name: "Deloitte audits" },
+    params: new URLSearchParams("auditor=Deloitte&hide=ticker&report=00000000-0000-4000-8000-000000000000"),
+  });
+  assert.match(file.filename, /^Deloitte audits \(.+\)\.xlsx$/);
+  assert.equal(file.rows, 1);
+  assert.match(file.filterWords, /^Report “Deloitte audits” · Auditor: Deloitte$/);
+  assert.equal(file.bytes.subarray(0, 2).toString("latin1"), "PK", "a workbook");
+  const csv = await exportTable(db, { allowDraft: false, format: "csv", params: new URLSearchParams("hide=ticker&hide=taxFee") });
+  const header = csv.bytes.toString("utf8").split("\n").find((l) => l.startsWith("Company"));
+  assert.ok(header && !/Ticker|Exchange|Tax fees/.test(header), header ?? "no header");
+  assert.match(header ?? "", /Audit fees/);
 });

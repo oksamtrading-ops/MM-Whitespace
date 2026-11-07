@@ -410,6 +410,7 @@ export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Pro
       hqRegion: text("head_office_region"),
       hqCity: text("head_office_location"),
       auditFee: get("audit_fee"),
+      taxFee: get("tax_fee"),
       commodities: listOfText(get("commodities")),
       stages: stageRows === null ? null : stageRows.get(id) ?? [],
       stageEvidence: evidence === "partial" || evidence === "complete" ? evidence : "none",

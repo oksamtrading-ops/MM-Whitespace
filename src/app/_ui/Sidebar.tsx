@@ -26,10 +26,10 @@ const THEMES: Array<[Theme, string, IconName]> = [
 /**
  * The left rail.
  *
- * Ten destinations in three groups, because they are three things: the
+ * Eleven destinations in three groups, because they are three things: the
  * product a partner reads, the period an analyst builds, and the
  * administration behind both. A Viewer sees the first group and the rail is
- * two rows tall.
+ * three rows tall.
  *
  * Collapsed state is a cookie, not localStorage, so the server renders the
  * rail at the width the reader chose and it does not jump on first paint.

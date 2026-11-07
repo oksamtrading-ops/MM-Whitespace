@@ -74,6 +74,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   if (!held) {
     items.push({ href: "/dashboard", label: "Dashboard", icon: "layout-dashboard", group: "product" });
     items.push({ href: "/companies", label: "Companies", icon: "building-2", group: "product" });
+    items.push({ href: "/reports", label: "Reports", icon: "file-spreadsheet", group: "product" });
   }
   if (canReview) items.push({ href: "/upload", label: "Upload", icon: "upload", group: "period" });
   if (canReview) items.push({ href: "/runs", label: "Runs", icon: "play", group: "period" });

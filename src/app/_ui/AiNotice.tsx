@@ -15,10 +15,14 @@ import Icon from "./Icon.tsx";
  * The words are AI_NOTICE and nothing else, so the screen can never say more
  * or less than the exported workbook does.
  */
-export default function AiNotice({ compact = false }: { compact?: boolean }) {
+export default function AiNotice({ compact = false, full = false }: {
+  compact?: boolean;
+  /** Across the page's whole width, not a reading measure: the companies table is full width. */
+  full?: boolean;
+}) {
   if (compact) {
     return (
-      <p className="ainote">
+      <p className={`ainote${full ? " ainote-full" : ""}`}>
         <Icon name="info" size={13} />
         <span>{AI_NOTICE}</span>
       </p>

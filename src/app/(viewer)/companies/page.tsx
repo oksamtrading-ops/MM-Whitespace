@@ -35,20 +35,16 @@ export default async function Companies(
     return <Refusal title="No companies yet"
                     body="Nothing has been published. Company profiles read the frozen snapshot, so there is nothing to look up until a period is published." />;
   }
-  const deloitteAudits =rows.filter((r) => r.auditor === "Deloitte").length;
+  const deloitteAudits = rows.filter((r) => r.auditor === "Deloitte").length;
   // Surfaced where the companies are, rather than in a menu nobody opens.
   const duplicates = allowDraft
     ? (await findDuplicateCandidates(ctx.db, 200)).length
     : 0;
 
   return (
-    <Page title="Companies" count={rows.length}>
+    <Page title="Companies">
     <div className="reading wide rise">
-      <p className="sub">
-        Every company in the published population. Open one before a pursuit conversation:
-        its tier, the rule that produced it, and the evidence behind every researched value.
-      </p>
-      <AiNotice compact />
+      <AiNotice compact full />
       {duplicates > 0 && (
         <Callout tone="warn" title={`${duplicates} possible duplicate${duplicates === 1 ? "" : "s"}`}
                  icon="merge"

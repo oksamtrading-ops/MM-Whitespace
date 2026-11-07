@@ -14,7 +14,9 @@
  * "none" was not researched: it is not "no stages", and it never matches a
  * stage filter. It has its own option, "Not researched".
  */
-import { formatFee, formatFieldValue, STAGE_ORDER, type Money, type Stage } from "../format/fields.ts";
+import {
+  formatFee, formatFieldValue, formatInteger, formatMoney, STAGE_ORDER, type Money, type Stage,
+} from "../format/fields.ts";
 import { hqJurisdiction, provinceCode, provinceName, type HqGroup } from "../publish/jurisdictions.ts";
 
 /* ------------------------------------------------------------- the row */
@@ -39,6 +41,8 @@ export type RosterRow = {
   hqCity: string | null;
   /** As stored: a Money, or a bare number from before currencies were kept. */
   auditFee: unknown;
+  /** Tax fees billed by the audit firm (NI 52-110's "Tax fees"), stored as auditFee is. */
+  taxFee: unknown;
   /** What the company mines, as stored: TSX's list from the workbook, or research once accepted. */
   commodities: string[];
   /**
@@ -62,7 +66,7 @@ export type RosterRow = {
 /** The fields a column shows. Everything else public is searched through `meta`. */
 export const COLUMN_FIELDS = new Set([
   "company_name", "root_ticker", "exchange", "tier", "footprint", "auditor", "market_cap_cad",
-  "head_office_region", "head_office_location", "audit_fee", "commodities",
+  "head_office_region", "head_office_location", "audit_fee", "tax_fee", "commodities",
 ]);
 
 /** Never searched: derived, or carried by a column under another name. */
@@ -123,7 +127,7 @@ export function cited(row: RosterRow, field: string): boolean {
 
 export type SortKey =
   | "name" | "ticker" | "tier" | "stage" | "footprint" | "commodities" | "hq" | "auditor" | "auditFee"
-  | "marketCap";
+  | "taxFee" | "marketCap";
 
 export type RosterFilter = {
   q: string;
@@ -135,29 +139,89 @@ export type RosterFilter = {
   /** Any of these commodities: OR, as every other filter is within itself. */
   commodity: string[];
   prop: string[];
+  /** The Ticker column's exchange: TSX, TSXV ... or "unknown". */
+  exchange: string[];
+  /** The Stage column: the stage that decided the tier, or "none" for a company with no tier. */
+  decides: string[];
+  /** Each Stage of operations column: yes, no, unknown, not_researched, not_recorded. */
+  exploration: string[];
+  development: string[];
+  production: string[];
+  royalty_streaming: string[];
   /** Whitespace only: companies Deloitte does not audit, unknown auditors included. */
   ws: boolean;
+  /** Company column: the name contains this. */
+  name: string;
+  /** Ticker column: the ticker contains this. */
+  ticker: string;
+  /** Ticker column: has one, or has none. */
+  tickerHas: TextPresence;
+  auditFee: RangeFilter;
+  taxFee: RangeFilter;
+  marketCap: RangeFilter;
+  /** Columns taken off the table (and out of its export). Never the Company column. */
+  hide: HideKey[];
   sort: SortKey;
   dir: 1 | -1;
 };
+
+export type TextPresence = "" | "value" | "empty";
+/** "" any; "value" has one; "empty" has none; "not_found" researched and not found (fees only). */
+export type Presence = "" | "value" | "empty" | "not_found";
+
+/**
+ * A numeric column's filter. Amounts compare as stored, each in its own
+ * currency: there is no FX table, so a reader who wants like with like picks
+ * the currency too.
+ */
+export type RangeFilter = { min: number | null; max: number | null; cur: string[]; fy: string[]; has: Presence };
+
+export const EMPTY_RANGE: RangeFilter = { min: null, max: null, cur: [], fy: [], has: "" };
+
+/** The columns that can be taken off the table. The four stage columns go together. */
+export const HIDE_KEYS = [
+  "ticker", "tier", "stage", "stages", "footprint", "commodities", "hq", "auditor", "auditFee", "taxFee", "marketCap",
+] as const;
+export type HideKey = typeof HIDE_KEYS[number];
 
 /** Market cap, largest first: the names that matter on the first screen. */
 export const DEFAULT_SORT: { sort: SortKey; dir: 1 | -1 } = { sort: "marketCap", dir: -1 };
 
 export const EMPTY_FILTER: RosterFilter = {
-  q: "", tier: [], hq: [], stage: [], auditor: [], footprint: [], commodity: [], prop: [], ws: false,
+  q: "", tier: [], hq: [], stage: [], auditor: [], footprint: [], commodity: [], prop: [],
+  exchange: [], decides: [], exploration: [], development: [], production: [], royalty_streaming: [],
+  ws: false, name: "", ticker: "", tickerHas: "",
+  auditFee: EMPTY_RANGE, taxFee: EMPTY_RANGE, marketCap: EMPTY_RANGE, hide: [],
   ...DEFAULT_SORT,
 };
 
-const MULTI = ["tier", "hq", "stage", "auditor", "footprint", "commodity", "prop"] as const;
-type Multi = typeof MULTI[number];
+export const MULTI = [
+  "tier", "hq", "stage", "auditor", "footprint", "commodity", "prop",
+  "exchange", "decides", "exploration", "development", "production", "royalty_streaming",
+] as const;
+export type Multi = typeof MULTI[number];
+
+/** The numeric columns, and the URL prefix each one's filter is written under. */
+export const RANGES = { auditFee: "audit", taxFee: "tax", marketCap: "cap" } as const;
+export type RangeKey = keyof typeof RANGES;
 
 const SORT_KEYS: readonly SortKey[] =
   ["name", "ticker", "tier", "stage", "footprint", "commodities", "hq", "auditor", "auditFee",
-   "marketCap"];
+   "taxFee", "marketCap"];
+
+/** One stage column's cell, as a filter token. */
+export const MARK_TOKENS = ["yes", "no", "unknown", "not_researched", "not_recorded"] as const;
+export const MARK_WORD: Record<string, string> = {
+  yes: "Yes", no: "No", unknown: "Not known", not_researched: "Not researched", not_recorded: "Not recorded",
+};
+/** "Commodities: none recorded", as a token no commodity can be. */
+export const NO_COMMODITY = "~none";
+/** A fee stored before currencies were kept. */
+export const NO_CURRENCY = "~";
 
 export const TIER_TOKENS = ["1", "2", "3", "4", "5", "6", "no_stage", "no_property", "conflicting", "unclassified"];
 const STAGE_TOKENS = [...STAGE_ORDER, "none"];
+const DECIDES_TOKENS = [...STAGE_ORDER, "none"];
 const FOOTPRINT_TOKENS = Object.keys(FOOTPRINT_WORD);
 
 /** A tier, or the reason there is none, as one filter token. */
@@ -201,6 +265,24 @@ function auditorTokenOf(row: Pick<RosterRow, "auditor">): string {
   return row.auditor ?? "unknown";
 }
 
+function exchangeTokenOf(row: Pick<RosterRow, "exchange">): string {
+  return row.exchange ?? "unknown";
+}
+
+function decidesTokenOf(row: Pick<RosterRow, "tier">): string {
+  return row.tier === null ? "none" : STAGE_OF_TIER[row.tier] ?? "none";
+}
+
+function commodityTokensOf(row: Pick<RosterRow, "commodities">): string[] {
+  return row.commodities.length ? row.commodities : [NO_COMMODITY];
+}
+
+/** stageMark as a filter token: "blank" is a no. */
+function markTokenOf(row: RosterRow, stage: Stage): string {
+  const m = stageMark(row, stage);
+  return m === "blank" ? "no" : m;
+}
+
 /** Any token, capped: a URL is typed by people and pasted into emails. */
 const clean = (v: string) => v.trim().slice(0, 80);
 
@@ -237,6 +319,27 @@ export function parseRosterParams(params: Params): RosterFilter {
     const code = provinceCode(clean(p));
     if (code) prop.push(propToken("CANADA", code));
   }
+  const range = (key: RangeKey): RangeFilter => {
+    const pre = RANGES[key];
+    const num = (k: string) => {
+      const raw = all(params, `${pre}_${k}`)[0];
+      if (raw === undefined || raw.trim() === "") return null;
+      const n = Number(raw);
+      return Number.isFinite(n) && Math.abs(n) < 1e15 ? n : null;
+    };
+    const many = (k: string, ok: (v: string) => boolean) =>
+      [...new Set(all(params, `${pre}_${k}`).map(clean).filter((v) => v && ok(v)))];
+    const hasRaw = all(params, `${pre}_has`)[0] ?? "";
+    const presences: Presence[] = key === "marketCap" ? ["value", "empty"] : ["value", "empty", "not_found"];
+    return {
+      min: num("min"), max: num("max"),
+      cur: key === "marketCap" ? [] : many("cur", (v) => v === NO_CURRENCY || /^[A-Z]{3}$/.test(v)),
+      fy: key === "marketCap" ? [] : many("fy", (v) => /^(19|20)\d\d$/.test(v) || v === NO_CURRENCY),
+      has: (presences as string[]).includes(hasRaw) ? hasRaw as Presence : "",
+    };
+  };
+  const tickerHas = all(params, "ticker_has")[0] ?? "";
+  const hide = new Set(all(params, "hide").filter((v): v is HideKey => (HIDE_KEYS as readonly string[]).includes(v)));
   const sortRaw = all(params, "sort")[0];
   const sort = SORT_KEYS.includes(sortRaw as SortKey) ? sortRaw as SortKey : DEFAULT_SORT.sort;
   const dirRaw = all(params, "dir")[0];
@@ -251,7 +354,19 @@ export function parseRosterParams(params: Params): RosterFilter {
     footprint: pick("footprint", FOOTPRINT_TOKENS),
     commodity: pick("commodity"),
     prop: [...new Set(prop)],
+    exchange: pick("exchange"),
+    decides: pick("decides", DECIDES_TOKENS),
+    exploration: pick("exploration", MARK_TOKENS),
+    development: pick("development", MARK_TOKENS),
+    production: pick("production", MARK_TOKENS),
+    royalty_streaming: pick("royalty_streaming", MARK_TOKENS),
     ws: ["1", "true", "yes"].includes(all(params, "ws")[0] ?? ""),
+    name: clean(all(params, "name")[0] ?? ""),
+    ticker: clean(all(params, "ticker")[0] ?? ""),
+    tickerHas: tickerHas === "value" || tickerHas === "empty" ? tickerHas : "",
+    auditFee: range("auditFee"), taxFee: range("taxFee"), marketCap: range("marketCap"),
+    // In the table's order, so the URL is the same however it was built.
+    hide: HIDE_KEYS.filter((k) => hide.has(k)),
     sort, dir,
   };
 }
@@ -262,6 +377,18 @@ export function toRosterParams(f: RosterFilter): URLSearchParams {
   if (f.q) out.set("q", f.q);
   for (const key of MULTI) for (const v of f[key]) out.append(key, v);
   if (f.ws) out.set("ws", "1");
+  if (f.name) out.set("name", f.name);
+  if (f.ticker) out.set("ticker", f.ticker);
+  if (f.tickerHas) out.set("ticker_has", f.tickerHas);
+  for (const key of Object.keys(RANGES) as RangeKey[]) {
+    const r = f[key]; const pre = RANGES[key];
+    if (r.min !== null) out.set(`${pre}_min`, String(r.min));
+    if (r.max !== null) out.set(`${pre}_max`, String(r.max));
+    for (const c of r.cur) out.append(`${pre}_cur`, c);
+    for (const y of r.fy) out.append(`${pre}_fy`, y);
+    if (r.has) out.set(`${pre}_has`, r.has);
+  }
+  for (const h of f.hide) out.append("hide", h);
   if (f.sort !== DEFAULT_SORT.sort || f.dir !== DEFAULT_SORT.dir) {
     out.set("sort", f.sort);
     out.set("dir", f.dir === 1 ? "asc" : "desc");
@@ -269,8 +396,41 @@ export function toRosterParams(f: RosterFilter): URLSearchParams {
   return out;
 }
 
+export function rangeSet(r: RangeFilter): boolean {
+  return r.min !== null || r.max !== null || r.cur.length > 0 || r.fy.length > 0 || r.has !== "";
+}
+
+/** Whether a filter keeps fewer than every row. Hidden columns narrow nothing. */
 export function isNarrowed(f: RosterFilter): boolean {
-  return Boolean(f.q) || f.ws || MULTI.some((k) => f[k].length > 0);
+  return Boolean(f.q) || f.ws || MULTI.some((k) => f[k].length > 0) ||
+    Boolean(f.name) || Boolean(f.ticker) || f.tickerHas !== "" ||
+    (Object.keys(RANGES) as RangeKey[]).some((k) => rangeSet(f[k]));
+}
+
+/**
+ * "250k", "1.5M", "C$2,000,000", "3 bn" -> a number; "" -> null; anything else
+ * -> undefined, which the field says is not an amount rather than guessing.
+ */
+export function parseAmount(text: string): number | null | undefined {
+  const t = text.trim().toLowerCase().replace(/[\s,_]/g, "").replace(/^(c|ca|us|a|au)?\$/, "");
+  if (!t) return null;
+  const m = t.match(/^(-?\d+(?:\.\d+)?|-?\.\d+)(k|m|mm|bn|b)?$/);
+  if (!m) return undefined;
+  const scale = { k: 1e3, m: 1e6, mm: 1e6, b: 1e9, bn: 1e9 }[m[2] ?? ""] ?? 1;
+  const n = Number(m[1]) * scale;
+  // The URL keeps nothing this large (parseRosterParams), so neither does the box.
+  return Number.isFinite(n) && Math.abs(n) < 1e15 ? Math.round(n * 100) / 100 : undefined;
+}
+
+/** A number as a reader would type it back: 250000 -> "250k", 1500000 -> "1.5M". */
+export function amountText(n: number | null): string {
+  if (n === null) return "";
+  const abs = Math.abs(n);
+  const fit = (v: number, s: string) => `${Number(v.toFixed(3))}${s}`;
+  if (abs >= 1e9 && abs % 1e7 === 0) return fit(n / 1e9, "B");
+  if (abs >= 1e6 && abs % 1e4 === 0) return fit(n / 1e6, "M");
+  if (abs >= 1e3 && abs % 10 === 0) return fit(n / 1e3, "k");
+  return String(n);
 }
 
 /* ------------------------------------------------------------ narrowing */
@@ -290,12 +450,18 @@ function matchesStage(row: RosterRow, wanted: string[]): boolean {
     : stagesKnown(row).includes(w as Stage));
 }
 
-/** What the visible cells say, so a search for something on screen needs no hint. */
-function visibleText(row: RosterRow): string {
-  return [row.name, row.ticker, row.exchange, hqWord(row), row.hqRegion, auditorWord(row.auditor),
-          row.commodities.join(" "),
-          row.auditFee === null || row.auditFee === undefined ? null : formatFee(row.auditFee)]
-    .filter(Boolean).join(" ").toLowerCase();
+/** What each searchable cell says, with the column that can hide it. */
+function cellTexts(row: RosterRow): Array<{ hide: HideKey | null; field: string; label: string; text: string }> {
+  const fee = (v: unknown) => (v === null || v === undefined ? "" : formatFee(v));
+  return [
+    { hide: null, field: "name", label: "Company", text: row.name },
+    { hide: "ticker", field: "ticker", label: "Ticker", text: [row.ticker, row.exchange].filter(Boolean).join(" ") },
+    { hide: "hq", field: "hq", label: "HQ", text: [hqWord(row), row.hqRegion].filter(Boolean).join(" ") },
+    { hide: "auditor", field: "auditor", label: "Auditor", text: auditorWord(row.auditor) },
+    { hide: "commodities", field: "commodities", label: "Commodities", text: row.commodities.join(", ") },
+    { hide: "auditFee", field: "audit_fee", label: "Audit fees", text: fee(row.auditFee) },
+    { hide: "taxFee", field: "tax_fee", label: "Tax fees paid to audit firm", text: fee(row.taxFee) },
+  ];
 }
 
 export type Shown = { row: RosterRow; matched: MetaEntry | null };
@@ -311,21 +477,67 @@ export function filterRows(rows: RosterRow[], f: RosterFilter): Shown[] {
     if (f.stage.length && !matchesStage(row, f.stage)) continue;
     if (f.auditor.length && !f.auditor.includes(auditorTokenOf(row))) continue;
     if (f.footprint.length && !f.footprint.includes(row.footprint)) continue;
-    if (f.commodity.length && !f.commodity.some((c) => row.commodities.includes(c))) continue;
+    if (f.commodity.length && !f.commodity.some((c) => commodityTokensOf(row).includes(c))) continue;
+    if (f.exchange.length && !f.exchange.includes(exchangeTokenOf(row))) continue;
+    if (f.decides.length && !f.decides.includes(decidesTokenOf(row))) continue;
+    if (STAGE_ORDER.some((s) => f[s].length > 0 && !f[s].includes(markTokenOf(row, s)))) continue;
+    if (f.name && !row.name.toLowerCase().includes(f.name.trim().toLowerCase())) continue;
+    if (f.ticker && !(row.ticker ?? "").toLowerCase().includes(f.ticker.trim().toLowerCase())) continue;
+    if (f.tickerHas === "value" && !row.ticker) continue;
+    if (f.tickerHas === "empty" && row.ticker) continue;
+    if (!inRange(row, "auditFee", f.auditFee) || !inRange(row, "taxFee", f.taxFee) ||
+        !inRange(row, "marketCap", f.marketCap)) continue;
     if (f.prop.length) {
       const held = propTokensOf(row);
       if (!f.prop.some((p) => held.includes(p))) continue;
     }
     let matched: MetaEntry | null = null;
     if (q) {
-      if (!visibleText(row).includes(q)) {
-        matched = row.meta.find((m) => m.text.toLowerCase().includes(q)) ?? null;
+      // A match in a column the table hides is explained like any hidden value.
+      const cells = cellTexts(row).filter((c) => c.text);
+      const seen = cells.filter((c) => !c.hide || !f.hide.includes(c.hide));
+      if (!seen.some((c) => c.text.toLowerCase().includes(q))) {
+        const tucked = cells.find((c) => c.hide && f.hide.includes(c.hide) && c.text.toLowerCase().includes(q));
+        matched = tucked ? { field: tucked.field, label: tucked.label, text: tucked.text }
+          : row.meta.find((m) => m.text.toLowerCase().includes(q)) ?? null;
         if (!matched) continue;
       }
     }
     out.push({ row, matched });
   }
   return out;
+}
+
+/** A fee's parts, whichever shape it was stored in; null when there is no amount. */
+export function moneyParts(v: unknown): { amount: number; currency: string; fy: string } | null {
+  if (v && typeof v === "object" && typeof (v as Money).amount === "number") {
+    const m = v as Money;
+    return { amount: m.amount, currency: m.currency ?? NO_CURRENCY,
+             fy: m.fiscal_year ? String(m.fiscal_year) : NO_CURRENCY };
+  }
+  if (typeof v === "number") return { amount: v, currency: NO_CURRENCY, fy: NO_CURRENCY };
+  return null;
+}
+
+const RANGE_FIELD: Record<RangeKey, string> = { auditFee: "audit_fee", taxFee: "tax_fee", marketCap: "market_cap_cad" };
+
+function inRange(row: RosterRow, key: RangeKey, r: RangeFilter): boolean {
+  if (!rangeSet(r)) return true;
+  const raw = key === "marketCap" ? row.marketCap : row[key];
+  const m = key === "marketCap"
+    ? (typeof raw === "number" ? { amount: raw, currency: "CAD", fy: NO_CURRENCY } : null)
+    : moneyParts(raw);
+  if (r.has === "value" && !m) return false;
+  if (r.has === "empty" && m) return false;
+  if (r.has === "not_found" && (m || !notFound(row, RANGE_FIELD[key], null))) return false;
+  const wantsValue = r.min !== null || r.max !== null || r.cur.length > 0 || r.fy.length > 0;
+  if (!wantsValue) return true;
+  if (!m) return false;
+  if (r.min !== null && m.amount < r.min) return false;
+  if (r.max !== null && m.amount > r.max) return false;
+  if (r.cur.length && !r.cur.includes(m.currency)) return false;
+  if (r.fy.length && !r.fy.includes(m.fy)) return false;
+  return true;
 }
 
 /**
@@ -356,6 +568,7 @@ export function sortRows(list: Shown[], sort: SortKey, dir: 1 | -1): Shown[] {
       case "hq": return hqWord(r);
       case "auditor": return r.auditor ? auditorWord(r.auditor) : null;
       case "auditFee": return feeKey(r.auditFee);
+      case "taxFee": return feeKey(r.taxFee);
       case "marketCap": return r.marketCap;
     }
   };
@@ -377,9 +590,12 @@ export function sortRows(list: Shown[], sort: SortKey, dir: 1 | -1): Shown[] {
 
 export type FacetOption = { value: string; label: string; count: number };
 export type FacetGroup = { label: string; options: FacetOption[] };
-export type Facets = Record<Multi, FacetGroup[]>;
+export type Facets = Record<Multi, FacetGroup[]> & {
+  /** Each fee's currencies and fiscal years, for its range filter. */
+  auditFeeCur: FacetGroup[]; auditFeeFy: FacetGroup[]; taxFeeCur: FacetGroup[]; taxFeeFy: FacetGroup[];
+};
 
-function tally(rows: RosterRow[], tokensOf: (r: RosterRow) => string[]): Map<string, number> {
+function tally<T>(rows: T[], tokensOf: (r: T) => string[]): Map<string, number> {
   const out = new Map<string, number>();
   for (const r of rows) for (const t of new Set(tokensOf(r))) out.set(t, (out.get(t) ?? 0) + 1);
   return out;
@@ -401,8 +617,34 @@ export function facetOptions(rows: RosterRow[]): Facets {
   const tiers = tally(rows, (r) => [tierToken(r)]);
   const stages = tally(rows, (r) => r.stageEvidence === "none" ? ["none"] : stagesKnown(r));
   const footprints = tally(rows, (r) => [r.footprint]);
-  const commodities = tally(rows, (r) => r.commodities);
-  const commodityOrder = [...commodities.keys()].sort((a, b) => a.localeCompare(b, "en-CA"));
+  const commodities = tally(rows, commodityTokensOf);
+  const commodityOrder = [...commodities.keys()].filter((c) => c !== NO_COMMODITY)
+    .sort((a, b) => a.localeCompare(b, "en-CA"));
+  if (commodities.has(NO_COMMODITY)) commodityOrder.push(NO_COMMODITY);
+
+  const exchanges = tally(rows, (r) => [exchangeTokenOf(r)]);
+  const exchangeOrder = [...exchanges.keys()].filter((k) => k !== "unknown").sort();
+  if (exchanges.has("unknown")) exchangeOrder.push("unknown");
+  const decides = tally(rows, (r) => [decidesTokenOf(r)]);
+  const marks = (s: Stage) => one(STAGE_LABEL[s], tally(rows, (r) => [markTokenOf(r, s)]), [...MARK_TOKENS],
+                                  (v) => MARK_WORD[v]);
+  const feeFacets = (key: "auditFee" | "taxFee") => {
+    const parts = rows.map((r) => moneyParts(r[key])).filter((m): m is NonNullable<typeof m> => m !== null);
+    const cur = tally(parts, (m) => [m.currency]);
+    const fy = tally(parts, (m) => [m.fy]);
+    const order = (counts: Map<string, number>, desc: boolean) => {
+      const keys = [...counts.keys()].filter((k) => k !== NO_CURRENCY).sort();
+      if (desc) keys.reverse();
+      if (counts.has(NO_CURRENCY)) keys.push(NO_CURRENCY);
+      return keys;
+    };
+    return {
+      cur: one("Currency", cur, order(cur, false), (v) => v === NO_CURRENCY ? "Not recorded" : v),
+      fy: one("Fiscal year", fy, order(fy, true), (v) => v === NO_CURRENCY ? "Not recorded" : `FY${v}`),
+    };
+  };
+  const auditFees = feeFacets("auditFee");
+  const taxFees = feeFacets("taxFee");
 
   const auditors = tally(rows, (r) => [auditorTokenOf(r)]);
   const firmOrder = [...auditors.keys()].filter((k) => k !== "unknown")
@@ -442,8 +684,13 @@ export function facetOptions(rows: RosterRow[]): Facets {
                (v) => v === "none" ? "Not researched" : STAGE_LABEL[v as Stage]),
     auditor: one("Auditor", auditors, firmOrder, (v) => v === "unknown" ? "Not known" : auditorWord(v)),
     footprint: one("Footprint", footprints, FOOTPRINT_TOKENS, (v) => FOOTPRINT_WORD[v]),
-    commodity: one("Commodity", commodities, commodityOrder, (v) => v),
+    commodity: one("Commodity", commodities, commodityOrder, (v) => v === NO_COMMODITY ? "None recorded" : v),
     prop,
+    exchange: one("Exchange", exchanges, exchangeOrder, (v) => v === "unknown" ? "Not known" : v),
+    decides: one("Stage", decides, DECIDES_TOKENS, (v) => v === "none" ? "No tier" : STAGE_LABEL[v as Stage]),
+    exploration: marks("exploration"), development: marks("development"),
+    production: marks("production"), royalty_streaming: marks("royalty_streaming"),
+    auditFeeCur: auditFees.cur, auditFeeFy: auditFees.fy, taxFeeCur: taxFees.cur, taxFeeFy: taxFees.fy,
   };
 }
 
@@ -455,13 +702,47 @@ export function facetOptions(rows: RosterRow[]): Facets {
 export function dropUnknown(f: RosterFilter, facets: Facets): RosterFilter {
   const known = (key: Multi) => new Set(facets[key].flatMap((g) => g.options.map((o) => o.value)));
   const keep = (key: Multi) => f[key].filter((v) => known(key).has(v));
-  return { ...f, hq: keep("hq"), auditor: keep("auditor"), commodity: keep("commodity"), prop: keep("prop") };
+  const keepIn = (list: string[], groups: FacetGroup[]) => {
+    const held = new Set(groups.flatMap((g) => g.options.map((o) => o.value)));
+    return list.filter((v) => held.has(v));
+  };
+  return { ...f, hq: keep("hq"), auditor: keep("auditor"), commodity: keep("commodity"), prop: keep("prop"),
+           exchange: keep("exchange"),
+           // A currency or year no fee holds any more would narrow to nothing,
+           // with no box left to untick.
+           auditFee: { ...f.auditFee, cur: keepIn(f.auditFee.cur, facets.auditFeeCur), fy: keepIn(f.auditFee.fy, facets.auditFeeFy) },
+           taxFee: { ...f.taxFee, cur: keepIn(f.taxFee.cur, facets.taxFeeCur), fy: keepIn(f.taxFee.fy, facets.taxFeeFy) } };
 }
 
 export const FILTER_LABEL: Record<Multi, string> = {
   tier: "Tier", hq: "Company HQ", stage: "Stage of operations", auditor: "Auditor",
   footprint: "Footprint", commodity: "Commodity", prop: "Properties in",
+  exchange: "Exchange", decides: "Stage (deciding the tier)",
+  exploration: "Exploration", development: "Development", production: "Production",
+  royalty_streaming: "Royalty / streaming",
 };
+
+export const RANGE_LABEL: Record<RangeKey, string> = {
+  auditFee: "Audit fees", taxFee: "Tax fees paid to audit firm", marketCap: "Market cap",
+};
+
+const PRESENCE_WORD: Record<string, string> = {
+  value: "has a value", empty: "no value", not_found: "researched, not found",
+};
+
+/** "C$100,000 to C$500,000", "at least 250,000" -- a range in words, in its currency when it has one. */
+function rangeWords(key: RangeKey, r: RangeFilter): string {
+  const cur = key === "marketCap" ? "CAD" : r.cur.length === 1 && r.cur[0] !== NO_CURRENCY ? r.cur[0] : null;
+  const amt = (n: number) => !cur ? formatInteger(n) : formatMoney(n, cur, { compact: key === "marketCap" });
+  const parts: string[] = [];
+  if (r.min !== null && r.max !== null) parts.push(`${amt(r.min)} to ${amt(r.max)}`);
+  else if (r.min !== null) parts.push(`at least ${amt(r.min)}`);
+  else if (r.max !== null) parts.push(`at most ${amt(r.max)}`);
+  if (r.cur.length) parts.push(`in ${r.cur.map((c) => c === NO_CURRENCY ? "no recorded currency" : c).join(" or ")}`);
+  if (r.fy.length) parts.push(r.fy.map((y) => y === NO_CURRENCY ? "year not recorded" : `FY${y}`).join(" or "));
+  if (r.has) parts.push(PRESENCE_WORD[r.has]);
+  return parts.join(", ");
+}
 
 /** The filter in words, for the export's header and the screen's status line. */
 export function describeFilter(f: RosterFilter, facets: Facets): string {
@@ -471,12 +752,31 @@ export function describeFilter(f: RosterFilter, facets: Facets): string {
   for (const key of MULTI) {
     if (f[key].length) parts.push(`${FILTER_LABEL[key]}: ${f[key].map((v) => word(key, v)).join(" or ")}`);
   }
+  if (f.name) parts.push(`Company contains “${f.name}”`);
+  if (f.ticker) parts.push(`Ticker contains “${f.ticker}”`);
+  if (f.tickerHas) parts.push(f.tickerHas === "value" ? "Has a ticker" : "No ticker");
+  for (const key of Object.keys(RANGES) as RangeKey[]) {
+    if (rangeSet(f[key])) parts.push(`${RANGE_LABEL[key]}: ${rangeWords(key, f[key])}`);
+  }
   if (f.ws) parts.push("Not audited by Deloitte");
   if (f.q) parts.push(`Matching “${f.q}”`);
   return parts.length ? parts.join(" · ") : "Every company in the period";
 }
 
 /* -------------------------------------------------------------- columns */
+
+/** Which hideable unit a column belongs to; null for Company, which always shows. */
+export function hideKeyOf(key: SortKey | Stage): HideKey | null {
+  if (key === "name") return null;
+  if ((STAGE_ORDER as readonly string[]).includes(key)) return "stages";
+  return key as HideKey;
+}
+
+export const HIDE_WORD: Record<HideKey, string> = {
+  ticker: "Ticker", tier: "Tier", stage: "Stage", stages: "Stage of operations (four columns)",
+  footprint: "Footprint", commodities: "Commodities", hq: "Company HQ", auditor: "Auditor",
+  auditFee: "Audit fees", taxFee: "Tax fees paid to audit firm", marketCap: "Market cap",
+};
 
 /** The table's columns, in order. The export writes the same ones first. */
 export const ROSTER_COLUMNS: Array<{ key: SortKey | Stage; label: string; numeric?: boolean; stage?: boolean }> = [
@@ -490,6 +790,7 @@ export const ROSTER_COLUMNS: Array<{ key: SortKey | Stage; label: string; numeri
   { key: "hq", label: "Company HQ" },
   { key: "auditor", label: "Auditor" },
   { key: "auditFee", label: "Audit fees" },
+  { key: "taxFee", label: "Tax fees paid to audit firm" },
   { key: "marketCap", label: "Market cap", numeric: true },
 ];
 
