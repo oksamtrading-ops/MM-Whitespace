@@ -199,7 +199,7 @@ test("every new column filter survives the trip through its URL", () => {
     auditFee: { min: 100_000, max: 500_000, cur: ["CAD", "~"], fy: ["2025"], has: "" as const },
     taxFee: { min: null, max: 50_000, cur: [], fy: [], has: "not_found" as const },
     marketCap: { min: 1e8, max: null, cur: [], fy: [], has: "value" as const },
-    hide: ["ticker" as const, "stages" as const, "marketCap" as const],
+    hide: ["marketCap" as const, "ticker" as const, "stages" as const],
   };
   assert.deepEqual(parseRosterParams(toRosterParams(f)), f);
   assert.equal(isNarrowed({ ...EMPTY_FILTER, hide: ["ticker"] }), false, "hiding a column narrows nothing");

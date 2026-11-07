@@ -39,6 +39,7 @@ export type CitationLookup = (companyId: string, field: string) => TableCitation
 
 const BASE_COLUMNS: Column[] = [
   { key: "name", label: "Company", kind: "text" },
+  { key: "market_cap", label: "Market cap (CAD)", kind: "money" },
   { key: "ticker", label: "Ticker", kind: "text" },
   { key: "exchange", label: "Exchange", kind: "text" },
   { key: "tier", label: "Tier", kind: "text" },
@@ -50,7 +51,6 @@ const BASE_COLUMNS: Column[] = [
   { key: "auditor", label: "Auditor", kind: "text", field: "auditor" },
   { key: "audit_fee", label: "Audit fees", kind: "fee", field: "audit_fee" },
   { key: "tax_fee", label: "Tax fees paid to audit firm", kind: "fee", field: "tax_fee" },
-  { key: "market_cap", label: "Market cap (CAD)", kind: "money" },
 ];
 
 /** Only links that are links: a stored value that is not http(s) is never written as one. */

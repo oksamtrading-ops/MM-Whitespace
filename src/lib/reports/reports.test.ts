@@ -186,7 +186,7 @@ test("the rules, on their own", () => {
   assert.deepEqual([canSee(pub, owner), canSee(pub, admin), canSee(pub, analyst)], [true, true, true]);
   assert.deepEqual([canEdit(priv, owner), canEdit(priv, admin), canEdit(priv, analyst)], [true, false, false]);
   assert.deepEqual([canEdit(pub, owner), canEdit(pub, admin), canEdit(pub, analyst)], [true, true, false]);
-  assert.equal(canonicalParams("?hide=marketCap&hide=ticker"), "hide=ticker&hide=marketCap", "in the table's order");
+  assert.equal(canonicalParams("?hide=ticker&hide=marketCap"), "hide=marketCap&hide=ticker", "in the table's order");
   assert.equal(canonicalParams(5), null);
 });
 

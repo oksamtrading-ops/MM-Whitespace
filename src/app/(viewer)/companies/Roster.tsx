@@ -28,6 +28,7 @@ type ExtraKey = typeof EXTRA_LIST[number] | typeof EXTRA_TEXT[number] | typeof E
 /** Every column, in the table's order, and the filter that narrows it. */
 const ADDABLE: Array<{ key: ExtraKey | typeof PICKERS[number]; label: string }> = [
   { key: "name", label: "Company" },
+  { key: "marketCap", label: "Market cap" },
   { key: "ticker", label: "Ticker" },
   { key: "exchange", label: "Exchange" },
   { key: "tier", label: "Tier" },
@@ -41,7 +42,6 @@ const ADDABLE: Array<{ key: ExtraKey | typeof PICKERS[number]; label: string }> 
   { key: "auditor", label: "Auditor" },
   { key: "auditFee", label: "Audit fees" },
   { key: "taxFee", label: "Tax fees paid to audit firm" },
-  { key: "marketCap", label: "Market cap" },
 ];
 
 const FEE_PRESENCE: Array<[Presence, string]> = [
@@ -285,6 +285,9 @@ export default function Roster({ rows, deloitteAudits, initial, report }: {
                       <Link href={`/companies/${r.companyId}` as Route} prefetch={false}>{r.name}</Link>
                       {matched && <MatchHint entry={matched} q={filter.q} />}
                     </th>
+                    {show("marketCap") && (
+                      <td className="n fig-sm">{r.marketCap === null ? "—" : formatMoney(r.marketCap, "CAD", { compact: true })}</td>
+                    )}
                     {show("ticker") && (
                       <td className="fig-sm">
                         {r.ticker ?? "—"}
@@ -327,9 +330,6 @@ export default function Roster({ rows, deloitteAudits, initial, report }: {
                         <Cite row={r} field="tax_fee"
                               value={r.taxFee === null || r.taxFee === undefined ? null : formatFee(r.taxFee)} />
                       </td>
-                    )}
-                    {show("marketCap") && (
-                      <td className="n fig-sm">{r.marketCap === null ? "—" : formatMoney(r.marketCap, "CAD", { compact: true })}</td>
                     )}
                   </tr>
                 ))}

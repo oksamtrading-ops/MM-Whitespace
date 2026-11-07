@@ -180,7 +180,7 @@ export const EMPTY_RANGE: RangeFilter = { min: null, max: null, cur: [], fy: [],
 
 /** The columns that can be taken off the table. The four stage columns go together. */
 export const HIDE_KEYS = [
-  "ticker", "tier", "stage", "stages", "footprint", "commodities", "hq", "auditor", "auditFee", "taxFee", "marketCap",
+  "marketCap", "ticker", "tier", "stage", "stages", "footprint", "commodities", "hq", "auditor", "auditFee", "taxFee",
 ] as const;
 export type HideKey = typeof HIDE_KEYS[number];
 
@@ -781,6 +781,7 @@ export const HIDE_WORD: Record<HideKey, string> = {
 /** The table's columns, in order. The export writes the same ones first. */
 export const ROSTER_COLUMNS: Array<{ key: SortKey | Stage; label: string; numeric?: boolean; stage?: boolean }> = [
   { key: "name", label: "Company" },
+  { key: "marketCap", label: "Market cap", numeric: true },
   { key: "ticker", label: "Ticker" },
   { key: "tier", label: "Tier" },
   { key: "stage", label: "Stage" },
@@ -791,7 +792,6 @@ export const ROSTER_COLUMNS: Array<{ key: SortKey | Stage; label: string; numeri
   { key: "auditor", label: "Auditor" },
   { key: "auditFee", label: "Audit fees" },
   { key: "taxFee", label: "Tax fees paid to audit firm" },
-  { key: "marketCap", label: "Market cap", numeric: true },
 ];
 
 /**
