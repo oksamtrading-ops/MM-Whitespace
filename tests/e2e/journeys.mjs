@@ -687,12 +687,21 @@ async function journeys(dbPath) {
   check("Reports is in the rail for a Viewer", /href="\/reports"/.test(roster));
   // Samuel, 7 November: no count line and no CSV button; Excel is enough.
   // The count is still said aloud when a filter changes the rows.
+  // Samuel, 7 November: no Whitespace only button; the filters sit beside the
+  // search. An old link that sets ws=1 still shows it, as a filter to remove.
+  check("no Whitespace only button, and the filters share the search's row",
+        !roster.includes(">Whitespace only<") &&
+        /class="tools">[\s\S]*?class="find"[\s\S]*?class="filterbar"[\s\S]*?class="cf-actions"/.test(roster));
   check("no count line on screen, and Excel the only download",
         /class="sr-only" role="status"[^>]*>.*companies<\/span>/.test(roster) && !roster.includes("Deloitte audits") &&
         roster.includes("format=xlsx") && !/>CSV</.test(roster));
 
   const fullCount = Number(roster.match(/(\d+)<\/span> of <span class="fig-sm">(\d+)/)?.[2]);
   const countOf = (html) => Number(text(html).match(/(\d+)<\/span> of <span class="fig-sm">\d+/)?.[1]);
+  const wsLink = text((await get("/companies?ws=1", viewer.cookie)).html);
+  check("an old ws=1 link narrows the table and shows a way to remove it",
+        wsLink.includes('aria-label="Remove the whitespace only filter"') && wsLink.includes("Not audited by Deloitte") &&
+        countOf(wsLink) <= fullCount);
   const byCap = await get("/companies?cap_min=1000000000&hide=ticker&hide=stages", viewer.cookie);
   const byCapText = text(byCap.html);
   check("a range filter in the URL narrows the page the server sends",

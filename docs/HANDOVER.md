@@ -590,6 +590,11 @@ Viewers must never see `dtt_market`.
     filter changes the rows, and e2e's `countOf()` reads it.
   - Excel is the only download button, on Companies and on a report.
     `/api/companies/export?format=csv` still works; e2e uses it.
+  - No Whitespace only button. The filters sit in the search's row, and
+    Columns, Excel and Save as report form one group (`.cf-actions`) at the
+    row's end, which moves to the next line as a whole when there is no
+    room (one line from about 1,400px wide). An old `ws=1` link still
+    narrows the table and shows a "Whitespace only ×" chip to remove it.
 - **A slimmer filter bar** (Samuel, 7 November).
   - Only Tier, Auditor and Commodities are always in the bar (`PICKERS` in
     `companies/Roster.tsx`). Stage of operations, Company HQ, Footprint and

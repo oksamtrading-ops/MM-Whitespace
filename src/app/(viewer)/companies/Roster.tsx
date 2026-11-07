@@ -226,6 +226,8 @@ export default function Roster({ rows, initial, from }: {
 
   return (
     <>
+      {/* One row: the search, then the filters beside it (Samuel, 7 November),
+          then the columns and the downloads. */}
       <div className="tools">
         <div className="find">
           <input ref={findRef} type="search" name="q" placeholder="Find a company or detail…"
@@ -234,24 +236,51 @@ export default function Roster({ rows, initial, from }: {
                  value={filter.q} onChange={(e) => set({ q: e.target.value })} />
           {!filter.q && <kbd aria-hidden="true">/</kbd>}
         </div>
-        <button type="button" className={`btn secondary${filter.ws ? " on" : ""}`} aria-pressed={filter.ws}
-                onClick={() => set({ ws: !filter.ws })}>
-          <Icon name={filter.ws ? "check" : "landmark"} size={15} />
-          {filter.ws ? "Showing whitespace only" : "Whitespace only"}
-        </button>
-        <span className="spacer" />
+        <div ref={barRef} className="filterbar" role="group" aria-label="Filters">
+          {/* No Whitespace only button any more (Samuel, 7 November); an old
+              link that sets it still shows it here, so it can be taken off. */}
+          {filter.ws && (
+            <button type="button" className="btn secondary on" onClick={() => set({ ws: false })}
+                    aria-label="Remove the whitespace only filter" title="Remove filter">
+              <Icon name="check" size={13} />Whitespace only<Icon name="x" size={13} />
+            </button>
+          )}
+          {PICKERS.map((key) => (
+            <MultiSelect key={key} name={key} label={FILTER_LABEL[key]} groups={facets[key]}
+                         selected={filter[key]} onChange={(next) => set({ [key]: next })} />
+          ))}
+          {added.map(extra)}
+          <AddFilter columns={ADDABLE.map((c) => ({
+                       key: c.key, label: c.label,
+                       active: (EXTRA_KEYS as readonly string[]).includes(c.key)
+                         ? extraActive(filter, c.key as ExtraKey) : filter[c.key as Multi].length > 0,
+                     }))}
+                     onPick={pick} />
+          {narrowed && (
+            <button type="button" className="btn sm quiet" onClick={() => {
+              setFilter({ ...EMPTY_FILTER, sort: filter.sort, dir: filter.dir, cols: filter.cols });
+              setAdded([]);
+            }}>
+              <Icon name="x" size={13} />Clear filters
+            </button>
+          )}
+        </div>
         {/* Not shown (Samuel, 7 November: not needed), but still said aloud
             when a filter changes the rows, so a screen reader hears it work. */}
         <span className="sr-only" role="status" aria-live="polite">
           <span className="fig-sm">{shown.length}</span> of <span className="fig-sm">{rows.length}</span> companies
         </span>
-        <MultiSelect name="cols" label="Columns" groups={columnGroups} selected={filter.cols}
-                     summary={`${filter.cols.length + 1} of ${COL_KEYS.length + 1}`}
-                     onChange={(next) => set({ cols: COL_KEYS.filter((k) => next.includes(k)) })} />
-        <a className="btn sm secondary" href={excelHref} download>
-          <Icon name="download" size={13} />Excel
-        </a>
-        <SaveAsReport params={params} />
+        {/* Kept together, so they move to the next line as one when the
+            search and filters take the row, never one button on its own. */}
+        <div className="cf-actions">
+          <MultiSelect name="cols" label="Columns" groups={columnGroups} selected={filter.cols}
+                       summary={`${filter.cols.length + 1} of ${COL_KEYS.length + 1}`}
+                       onChange={(next) => set({ cols: COL_KEYS.filter((k) => next.includes(k)) })} />
+          <a className="btn sm secondary" href={excelHref} download>
+            <Icon name="download" size={13} />Excel
+          </a>
+          <SaveAsReport params={params} />
+        </div>
       </div>
 
       {from && (
@@ -264,28 +293,6 @@ export default function Roster({ rows, initial, from }: {
           {from.canEdit && <ReplaceReport report={from} params={params} changed={changed} />}
         </div>
       )}
-
-      <div ref={barRef} className="filterbar" role="group" aria-label="Filters">
-        {PICKERS.map((key) => (
-          <MultiSelect key={key} name={key} label={FILTER_LABEL[key]} groups={facets[key]}
-                       selected={filter[key]} onChange={(next) => set({ [key]: next })} />
-        ))}
-        {added.map(extra)}
-        <AddFilter columns={ADDABLE.map((c) => ({
-                     key: c.key, label: c.label,
-                     active: (EXTRA_KEYS as readonly string[]).includes(c.key)
-                       ? extraActive(filter, c.key as ExtraKey) : filter[c.key as Multi].length > 0,
-                   }))}
-                   onPick={pick} />
-        {narrowed && (
-          <button type="button" className="btn sm quiet" onClick={() => {
-            setFilter({ ...EMPTY_FILTER, sort: filter.sort, dir: filter.dir, cols: filter.cols });
-            setAdded([]);
-          }}>
-            <Icon name="x" size={13} />Clear filters
-          </button>
-        )}
-      </div>
       {narrowed && <p className="meta" style={{ margin: "0 0 10px" }}>{describeFilter(filter, facets)}</p>}
 
       {shown.length === 0

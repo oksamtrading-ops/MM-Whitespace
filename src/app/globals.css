@@ -1084,6 +1084,10 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 
 /* The filter bar: one MultiSelect per filter, then the count and the export. */
 .filterbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: 0 0 14px; }
+/* Beside the search on the companies toolbar, the toolbar spaces it. */
+.tools > .filterbar { margin: 0; min-width: 0; }
+/* Columns, Excel and Save as report: one group at the row's end. */
+.cf-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-left: auto; }
 
 /* MultiSelect (_ui/MultiSelect.tsx). Every class here is the picker's own --
    a bare rule elsewhere would restyle it silently, which is how .filters,
