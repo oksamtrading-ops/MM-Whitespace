@@ -590,11 +590,21 @@ Viewers must never see `dtt_market`.
     filter changes the rows, and e2e's `countOf()` reads it.
   - Excel is the only download button, on Companies and on a report.
     `/api/companies/export?format=csv` still works; e2e uses it.
-  - No Whitespace only button. The filters sit in the search's row, and
-    Columns, Excel and Save as report form one group (`.cf-actions`) at the
-    row's end, which moves to the next line as a whole when there is no
-    room (one line from about 1,400px wide). An old `ws=1` link still
-    narrows the table and shows a "Whitespace only ×" chip to remove it.
+  - No Whitespace only button. The filters sit in the search's row, with
+    Columns (`.cf-actions`) at its end. An old `ws=1` link still narrows the
+    table and shows a "Whitespace only ×" chip to remove it.
+  - Excel and Save as report are in the page header, at its right (Samuel,
+    7 November), so the row keeps its room for filters.
+    `companies/HeaderActions.tsx` reads the filters from the address, which
+    the table keeps current (`replaceState`, which `useSearchParams`
+    follows). On a phone they show as icons, as every header action does.
+    On Companies the search box is 200px rather than 220px, so at 1280px the
+    search, Tier, Auditor, Commodity, More filters and Columns share one
+    line. Clear filters still wraps there once a filter is set.
+  - A report's page keeps Excel, Open in Companies, Rename and Delete in its
+    body row. It has no filters to make room for, and four buttons in a
+    phone's header leave no room for the report's name. The header's 60px
+    is fixed: sticky tables and scroll offsets depend on it.
   - Every filter button in the bar is 160px wide whatever is chosen
     (Samuel, 7 November); "More filters" keeps its own width. What does not
     fit ends in "…": the name gives way first, and the choice is capped so

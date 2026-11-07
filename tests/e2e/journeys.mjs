@@ -695,6 +695,11 @@ async function journeys(dbPath) {
   check("no count line on screen, and Excel the only download",
         /class="sr-only" role="status"[^>]*>.*companies<\/span>/.test(roster) && !roster.includes("Deloitte audits") &&
         roster.includes("format=xlsx") && !/>CSV</.test(roster));
+  // Samuel, 7 November: Excel and Save as report sit in the page header, at
+  // its right, so the filter row keeps its room for filters.
+  check("Excel and Save as report are in the header, not the filter row",
+        /class="pagehead"[\s\S]*?class="rt">[\s\S]*?format=xlsx[\s\S]*?Save as report[\s\S]*?class="tools">/.test(roster) &&
+        !/class="tools">[\s\S]*format=xlsx/.test(roster));
 
   const fullCount = Number(roster.match(/(\d+)<\/span> of <span class="fig-sm">(\d+)/)?.[2]);
   const countOf = (html) => Number(text(html).match(/(\d+)<\/span> of <span class="fig-sm">\d+/)?.[1]);

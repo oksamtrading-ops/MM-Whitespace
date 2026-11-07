@@ -8,6 +8,7 @@ import { dropUnknown, facetOptions, parseRosterParams, toRosterParams } from "..
 import { canEdit, getReport } from "../../../lib/reports/reports.ts";
 import Refusal from "../../_ui/Refusal.tsx";
 import Roster from "./Roster.tsx";
+import HeaderActions from "./HeaderActions.tsx";
 import Callout from "../../_ui/Callout.tsx";
 import Icon from "../../_ui/Icon.tsx";
 import Page from "../../_ui/Page.tsx";
@@ -51,7 +52,7 @@ export default async function Companies(
     : 0;
 
   return (
-    <Page title="Companies">
+    <Page title="Companies" actions={<HeaderActions />}>
     <div className="reading wide rise">
       <AiNotice compact full />
       {duplicates > 0 && (

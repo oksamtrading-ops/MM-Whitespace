@@ -108,7 +108,7 @@ export function SaveAsReport({ params, label = "Save as report", quiet = false }
   return (
     <>
       <button type="button" className={`btn sm ${quiet ? "quiet" : "secondary"}`} onClick={() => setOpen(true)}>
-        <Icon name="bookmark" size={13} />{label}
+        <Icon name="bookmark" size={13} /><span className="lbl">{label}</span>
       </button>
       <NameDialog open={open} title="Save as report" submitLabel="Save report"
                   lede="Saves these filters, the sort and the columns shown. The report always shows the current published data."

@@ -15,7 +15,7 @@ import MultiSelect from "../../_ui/MultiSelect.tsx";
 import { openPopover } from "../../_ui/Popover.tsx";
 import { AddFilter, filterWord, RangeFilter, TextFilter } from "./ColumnFilters.tsx";
 import RosterTable, { RosterLegend } from "./RosterTable.tsx";
-import { ReplaceReport, SaveAsReport, type FromReport } from "../reports/ReportControls.tsx";
+import { ReplaceReport, type FromReport } from "../reports/ReportControls.tsx";
 
 /**
  * The pickers always in the bar (Samuel, 7 November: three, so a phone reaches
@@ -151,10 +151,6 @@ export default function Roster({ rows, initial, from }: {
     sort: key, dir: filter.sort === key ? (filter.dir === 1 ? -1 : 1) : (key === "marketCap" ? -1 : 1),
   });
   const narrowed = isNarrowed(filter);
-  // Excel only (Samuel, 7 November); the export still answers ?format=csv.
-  const excelParams = toRosterParams(filter);
-  excelParams.set("format", "xlsx");
-  const excelHref = `/api/companies/export?${excelParams.toString()}`;
 
   const pick = (key: string) => {
     if ((EXTRA_KEYS as readonly string[]).includes(key)) {
@@ -270,16 +266,12 @@ export default function Roster({ rows, initial, from }: {
         <span className="sr-only" role="status" aria-live="polite">
           <span className="fig-sm">{shown.length}</span> of <span className="fig-sm">{rows.length}</span> companies
         </span>
-        {/* Kept together, so they move to the next line as one when the
-            search and filters take the row, never one button on its own. */}
+        {/* Excel and Save as report are in the page header (HeaderActions);
+            Columns changes the table, so it stays with the table's controls. */}
         <div className="cf-actions">
           <MultiSelect name="cols" label="Columns" groups={columnGroups} selected={filter.cols}
                        summary={`${filter.cols.length + 1} of ${COL_KEYS.length + 1}`}
                        onChange={(next) => set({ cols: COL_KEYS.filter((k) => next.includes(k)) })} />
-          <a className="btn sm secondary" href={excelHref} download>
-            <Icon name="download" size={13} />Excel
-          </a>
-          <SaveAsReport params={params} />
         </div>
       </div>
 
