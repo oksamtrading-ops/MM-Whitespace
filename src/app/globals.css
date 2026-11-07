@@ -1113,6 +1113,10 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
   padding: var(--space-3); background: var(--surface-3); border: 1px solid var(--rule-raised);
   border-radius: var(--radius); box-shadow: var(--shadow-3);
 }
+/* A closed list takes no room. Chrome still lays out a closed <details>'s
+   contents, and a phone sizes its viewport from that layout at load: with
+   Auditor second on its row, its closed list made a 320px page 342px wide. */
+.picker:not([open]) > .picker-pop { display: none; }
 .picker-head { margin: 0 0 var(--space-2); font-size: var(--fs-label); letter-spacing: var(--track-label);
   text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
 .picker-find {
@@ -1131,7 +1135,7 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .picker-clear { margin-top: var(--space-2); }
 
 /* The companies table's column filters (companies/ColumnFilters.tsx): the
-   panels Popover hangs under a text, range or "Add filter" button. */
+   panels Popover hangs under a text, range or "More filters" button. */
 .cf-amount { display: flex; flex-direction: column; gap: 4px; flex: 1 1 0; min-width: 0;
   font-size: var(--fs-body-sm); color: var(--ink-2); font-weight: 600; margin: 0 0 var(--space-2); }
 .cf-amount input {
@@ -1152,6 +1156,14 @@ table caption { caption-side: bottom; text-align: left; font-size: var(--fs-body
 .cf-n { color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: var(--fs-label); }
 .cf-remove { margin-top: var(--space-1); }
 .cf-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-width: 0; }
+/* On a phone "Stage of operations", a choice and the × are wider than 320px
+   leaves. The × never gives way; the label does, down to 5ch, and only then
+   the choice: the label's heavy shrink takes nearly all of it until it stops.
+   (A shrink under 1 would hand out only that fraction of the missing room.) */
+.cf-chip > .picker { min-width: 0; }
+.cf-chip .picker-k { flex-shrink: 10000; min-width: 5ch; }
+.cf-chip .picker-v { flex-shrink: 1; min-width: 0; }
+.cf-chip > .cf-x { flex: 0 0 auto; }
 .cf-menu { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; overscroll-behavior: contain; }
 .cf-item {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%;

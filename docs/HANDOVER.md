@@ -522,7 +522,8 @@ Samuel's list for `/companies`, and his answers to the questions it raised:
   deciding stage; each of the four stage columns (yes, no, not known, not
   researched, not recorded); audit fees, tax fees and market cap as ranges,
   the fees with currency, fiscal year and "researched, not found"; and
-  `hide=` for columns. "Add filter" lists every column. Amounts are typed as
+  the columns shown (`cols=`; it was `hide=`, see below). "More filters"
+  (it was "Add filter") lists every column. Amounts are typed as
   people say them (250k, 1.5M, 2B). Fees compare as printed, each in its own
   currency: there is no FX table, so the panel says so.
 - **Saved reports** (`lib/reports/reports.ts`, migrations `0045`, `0046`).
@@ -550,6 +551,56 @@ Samuel's list for `/companies`, and his answers to the questions it raised:
 **Release order:** apply `0045` and `0046` to production (Supabase
 connector, each recorded in `schema_migrations`) BEFORE pushing. The rail
 links to `/reports` for everyone, and that page reads `saved_reports`.
+
+**Fourteen more columns, hidden until picked** (Samuel, 7 November: "Yes,
+add them"). These are Exchange, Website (a link), Properties in, Venture
+graduate, SEC registrant, Fiscal year-end, Reporting currency, Revenue
+(`total_revenue`), Net income, Total assets, Auditor since, Auditor change,
+Audit-related fees and Other fees. All are published values only
+(`RosterRow.more`, filled from `MORE_FIELDS` in `profile/company.ts`).
+`dtt_market`, `incumbent_erp` and `erp_change` are left out on purpose:
+Viewers must never see `dtt_market`.
+
+- **Filters.** Every new column has a filter under "Add filter".
+  - Amounts work like the fee filters: range, currency, fiscal year,
+    "researched, not found", and the "compare as printed" note.
+  - Auditor since is a plain year range.
+  - Website takes text, plus has / has none.
+  - The rest are choices that include "Researched, not found" and
+    "Not known".
+- **The Columns picker** has "Columns" and "More columns" groups, each
+  entry with its coverage in the current rows ("Total assets · 73 of 348").
+- **The URL now stores the columns shown (`cols=`), not those hidden.**
+  - The default (the eleven original columns) is left out of the URL, and
+    `cols=~` means Company only.
+  - An old `hide=` link or saved report is read against `LEGACY_COLS`, the
+    column set `hide` was written against, which is frozen. It opens exactly
+    as saved, with no new column. `cols` wins over `hide`.
+  - `saved_reports.params` is plain text parsed in JS, so both databases
+    behave the same and nothing needed migrating. Production had no saved
+    reports on 7 November. Replace rewrites a report in the new spelling.
+- **Exports.** A picked column is written once, in its place, the same way
+  as on screen; amounts are split into currency, amount and fiscal year. Every
+  public value not picked still rides along at the end, as before.
+- **Ticker** drops its "· TSX" once the Exchange column is shown.
+- **A slimmer filter bar** (Samuel, 7 November).
+  - Only Tier, Auditor and Commodities are always in the bar (`PICKERS` in
+    `companies/Roster.tsx`). Stage of operations, Company HQ, Footprint and
+    Properties in moved to the menu, renamed "More filters", which lists
+    every column in the table's order.
+  - A filter in use is always in the bar, however it was set: by hand, a
+    shared link, or a report opened in Companies. Each has its ×, and Clear
+    filters takes them away.
+  - At 320px the bar went from 8 rows to 3 before the table (840px down
+    the page to 620px).
+  - Two phone fixes came with it:
+    - A closed list takes no room (`.picker:not([open]) > .picker-pop`).
+      Chrome lays out a closed `<details>`, and with Auditor second on its
+      row that made a 320px page 342px wide at load.
+    - A chip's label gives way before its value, and never its ×.
+- **At 320px**, all 26 columns scroll sideways under the sticky Company
+  column. The phone rule (60cqi) makes Properties in rows tall; that was
+  accepted.
 
 
 ### Done on 30 October – 3 November 2026 — Q4 at C$100M, revisions 5 and 6, the dashboard, one control height

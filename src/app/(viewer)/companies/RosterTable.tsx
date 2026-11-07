@@ -2,8 +2,9 @@ import Link from "next/link";
 import type { Route } from "next";
 import type { ReactNode } from "react";
 import {
-  auditorWord, cited, FOOTPRINT_WORD, hideKeyOf, hqWord, notFound, ROSTER_COLUMNS, STAGE_LABEL, STAGE_OF_TIER,
-  stageMark, TIER_WORD, type HideKey, type MetaEntry, type RosterFilter, type RosterRow, type Shown, type SortKey,
+  auditorWord, cellWord, cited, colKeyOf, fieldValue, FOOTPRINT_WORD, hqWord, MORE_FIELD, notFound, ROSTER_COLUMNS,
+  siteOf, STAGE_LABEL, STAGE_OF_TIER, stageMark, TIER_WORD, type MetaEntry, type MoreColKey, type RosterFilter,
+  type RosterRow, type Shown, type SortKey,
 } from "../../../lib/profile/roster.ts";
 import { formatFee, formatMoney, STAGE_ORDER, type Stage } from "../../../lib/format/fields.ts";
 import Icon from "../../_ui/Icon.tsx";
@@ -16,10 +17,8 @@ import Icon from "../../_ui/Icon.tsx";
 export default function RosterTable({ shown, filter, onSort }: {
   shown: Shown[]; filter: RosterFilter; onSort?: (key: SortKey) => void;
 }) {
-  const hidden = new Set<HideKey>(filter.hide);
-  const columns = ROSTER_COLUMNS.filter((c) => { const h = hideKeyOf(c.key); return !h || !hidden.has(h); });
-  const show = (h: HideKey) => !hidden.has(h);
-  const stagesShown = show("stages");
+  const shownCols = new Set(filter.cols);
+  const columns = ROSTER_COLUMNS.filter((c) => { const k = colKeyOf(c.key); return !k || shownCols.has(k); });
 
   return (
     <div className="roster">
@@ -54,57 +53,90 @@ export default function RosterTable({ shown, filter, onSort }: {
                 <Link href={`/companies/${r.companyId}` as Route} prefetch={false}>{r.name}</Link>
                 {matched && <MatchHint entry={matched} q={filter.q} />}
               </th>
-              {show("marketCap") && (
-                <td className="n fig-sm">{r.marketCap === null ? "—" : formatMoney(r.marketCap, "CAD", { compact: true })}</td>
-              )}
-              {show("ticker") && (
-                <td className="fig-sm">
-                  {r.ticker ?? "—"}
-                  {r.exchange && <span className="dim">{` · ${r.exchange}`}</span>}
-                </td>
-              )}
-              {show("tier") && (
-                <td>
-                  {r.tier === null
-                    ? <span className="pill quiet">{TIER_WORD[r.status] ?? "Unclassified"}</span>
-                    : <span className="fig-sm">{`Tier ${r.tier}`}</span>}
-                </td>
-              )}
-              {show("stage") && (
-                <td>{r.tier === null ? <span className="meta">—</span> : STAGE_LABEL[STAGE_OF_TIER[r.tier]]}</td>
-              )}
-              {stagesShown && <StageCells row={r} />}
-              {show("footprint") && <td>{FOOTPRINT_WORD[r.footprint] ?? r.footprint}</td>}
-              {show("commodities") && (
-                <td className="wrap">
-                  <Cite row={r} field="commodities" value={r.commodities.length ? r.commodities.join(", ") : null} />
-                </td>
-              )}
-              {show("hq") && <td><Cite row={r} field="head_office_region" value={hqWord(r)} /></td>}
-              {show("auditor") && (
-                <td>
-                  {r.auditor === "Deloitte"
-                    ? <span className="pill ok"><Icon name="landmark" size={12} />Deloitte</span>
-                    : <Cite row={r} field="auditor" value={r.auditor ? auditorWord(r.auditor) : null} empty="not known" />}
-                </td>
-              )}
-              {show("auditFee") && (
-                <td className="fig-sm">
-                  <Cite row={r} field="audit_fee"
-                        value={r.auditFee === null || r.auditFee === undefined ? null : formatFee(r.auditFee)} />
-                </td>
-              )}
-              {show("taxFee") && (
-                <td className="fig-sm">
-                  <Cite row={r} field="tax_fee"
-                        value={r.taxFee === null || r.taxFee === undefined ? null : formatFee(r.taxFee)} />
-                </td>
-              )}
+              {columns.map((c) => c.key === "name" ? null
+                : c.stage ? (c.key === STAGE_ORDER[0] && <StageCells key="stages" row={r} />)
+                : <Cell key={c.key} row={r} col={c.key as Exclude<SortKey, "name">} exchangeCol={shownCols.has("exchange")} />)}
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** One cell, by column. The ticker names its exchange unless the Exchange column already does. */
+function Cell({ row: r, col, exchangeCol }: { row: RosterRow; col: Exclude<SortKey, "name">; exchangeCol: boolean }) {
+  switch (col) {
+    case "marketCap":
+      return <td className="n fig-sm">{r.marketCap === null ? "—" : formatMoney(r.marketCap, "CAD", { compact: true })}</td>;
+    case "ticker":
+      return (
+        <td className="fig-sm">
+          {r.ticker ?? "—"}
+          {r.exchange && !exchangeCol && <span className="dim">{` · ${r.exchange}`}</span>}
+        </td>
+      );
+    case "tier":
+      return (
+        <td>
+          {r.tier === null
+            ? <span className="pill quiet">{TIER_WORD[r.status] ?? "Unclassified"}</span>
+            : <span className="fig-sm">{`Tier ${r.tier}`}</span>}
+        </td>
+      );
+    case "stage":
+      return <td>{r.tier === null ? <span className="meta">—</span> : STAGE_LABEL[STAGE_OF_TIER[r.tier]]}</td>;
+    case "footprint": return <td>{FOOTPRINT_WORD[r.footprint] ?? r.footprint}</td>;
+    case "commodities":
+      return (
+        <td className="wrap">
+          <Cite row={r} field="commodities" value={r.commodities.length ? r.commodities.join(", ") : null} />
+        </td>
+      );
+    case "hq": return <td><Cite row={r} field="head_office_region" value={hqWord(r)} /></td>;
+    case "auditor":
+      return (
+        <td>
+          {r.auditor === "Deloitte"
+            ? <span className="pill ok"><Icon name="landmark" size={12} />Deloitte</span>
+            : <Cite row={r} field="auditor" value={r.auditor ? auditorWord(r.auditor) : null} empty="not known" />}
+        </td>
+      );
+    case "auditFee":
+      return (
+        <td className="fig-sm">
+          <Cite row={r} field="audit_fee" value={r.auditFee === null || r.auditFee === undefined ? null : formatFee(r.auditFee)} />
+        </td>
+      );
+    case "taxFee":
+      return (
+        <td className="fig-sm">
+          <Cite row={r} field="tax_fee" value={r.taxFee === null || r.taxFee === undefined ? null : formatFee(r.taxFee)} />
+        </td>
+      );
+    case "website": {
+      const site = siteOf(fieldValue(r, "website"));
+      return (
+        <td>
+          {site
+            ? <a className="citelink" href={site.href} target="_blank" rel="noopener noreferrer">{site.host}</a>
+            : <span className="meta">—</span>}
+        </td>
+      );
+    }
+    default: return <MoreCell row={r} col={col} />;
+  }
+}
+
+/** A "More columns" cell: what it says, linked to its source when researched. */
+function MoreCell({ row, col }: { row: RosterRow; col: MoreColKey }) {
+  const wide = col === "props" || col === "auditorChange";
+  const figure = col === "revenue" || col === "netIncome" || col === "totalAssets" || col === "auditRelatedFee" ||
+    col === "otherFee" || col === "auditorSince";
+  return (
+    <td className={wide ? "wrap" : figure ? "fig-sm" : undefined}>
+      <Cite row={row} field={MORE_FIELD[col]} value={cellWord(row, col)} />
+    </td>
   );
 }
 
@@ -114,8 +146,8 @@ export function RosterLegend() {
     <p className="roster-legend">
       ✓ the company operates at this stage · — not known: research has not settled it, or no published
       value · <em>Not researched</em> no stage research yet · <em>Not found</em> researched, and its filings
-      do not say. A researched value links to its source on the company page. Fees are as the company
-      printed them, in its reporting currency, for the fiscal year shown.
+      do not say. A researched value links to its source on the company page. Fees and other amounts
+      are as the company printed them, in its reporting currency, for the fiscal year shown.
     </p>
   );
 }

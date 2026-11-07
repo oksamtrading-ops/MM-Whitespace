@@ -35,7 +35,7 @@ export function place(el: HTMLDetailsElement) {
 /**
  * Open a popover now, placed before its first frame. `focus` moves the
  * keyboard into it, for an opening that did not come from its own button
- * (the "Add filter" menu), so Escape still finds it.
+ * (the "More filters" menu), so Escape still finds it.
  */
 export function openPopover(el: HTMLDetailsElement | null, opts: { focus?: boolean } = {}) {
   if (!el) return;
@@ -61,13 +61,13 @@ export function openPopover(el: HTMLDetailsElement | null, opts: { focus?: boole
 export default function Popover({ label, summary, set, autoOpen = false, dataKey, children }: {
   /** What the control is: "Tier", "Audit fees". */
   label: string;
-  /** What it is set to: "Any", "Tier 2", "3 selected". None for a menu ("Add filter"). */
+  /** What it is set to: "Any", "Tier 2", "3 selected". None for a menu ("More filters"). */
   summary?: string;
   /** Whether it is narrowing anything, which the button shows. */
   set: boolean;
-  /** Open on first render: a filter just added from "Add filter". */
+  /** Open on first render: a filter just added from "More filters". */
   autoOpen?: boolean;
-  /** Lets "Add filter" find a picker already in the bar and open it. */
+  /** Lets "More filters" find a picker already in the bar and open it. */
   dataKey?: string;
   children: ReactNode;
 }) {

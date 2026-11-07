@@ -7,6 +7,7 @@ import {
   canEdit, canonicalParams, canSee, checkReportName, createReport, deleteReport, getReport, isReportId,
   listReports, REPORT_NAME_MAX, REPORT_PARAMS_MAX, updateReport, type Actor,
 } from "./reports.ts";
+import { LEGACY_COLS, MORE_COLS, parseRosterParams, toRosterParams } from "../profile/roster.ts";
 
 async function person(db: Sql, email: string, role: Role, first: string, last: string): Promise<Actor> {
   const u = await db.get(
@@ -47,8 +48,9 @@ test("a Viewer saves a report; it stores the table's own spelling of the filter,
   assert.ok(isReportId(got.id));
   const r = await getReport(db, viewer, got.id);
   assert.equal(r?.name, "Gold producers", "spaces folded");
-  assert.equal(r?.params, "tier=3&tier=2&audit_min=250000&hide=ticker",
-               "unknown keys dropped, default sort omitted: what toRosterParams writes");
+  assert.equal(r?.params, "tier=3&tier=2&audit_min=250000&cols=marketCap&cols=tier&cols=stage&cols=stages" +
+               "&cols=footprint&cols=commodities&cols=hq&cols=auditor&cols=auditFee&cols=taxFee",
+               "unknown keys dropped, default sort omitted, hide= written as the columns it leaves: what toRosterParams writes");
   assert.equal(r?.ownerName, "Vera Viewer");
   const [created] = await events(db, "report_created");
   assert.equal(created.actor, viewer.id);
@@ -186,7 +188,10 @@ test("the rules, on their own", () => {
   assert.deepEqual([canSee(pub, owner), canSee(pub, admin), canSee(pub, analyst)], [true, true, true]);
   assert.deepEqual([canEdit(priv, owner), canEdit(priv, admin), canEdit(priv, analyst)], [true, false, false]);
   assert.deepEqual([canEdit(pub, owner), canEdit(pub, admin), canEdit(pub, analyst)], [true, true, false]);
-  assert.equal(canonicalParams("?hide=ticker&hide=marketCap"), "hide=marketCap&hide=ticker", "in the table's order");
+  assert.equal(canonicalParams("?cols=totalAssets&cols=ticker"), "cols=ticker&cols=totalAssets", "in the table's order");
+  assert.equal(canonicalParams("?hide=ticker&hide=marketCap"),
+               "cols=tier&cols=stage&cols=stages&cols=footprint&cols=commodities&cols=hq&cols=auditor&cols=auditFee&cols=taxFee",
+               "an old hide= is the old table less what it hid");
   assert.equal(canonicalParams(5), null);
 });
 
@@ -216,4 +221,20 @@ test("malformed input is a refusal, not a crash", async () => {
   const id = await made(db, viewer, "Sturdy", "private");
   assert.equal((await createReport(db, viewer, null)).ok, false);
   assert.deepEqual(await updateReport(db, viewer, id, null), { ok: true }, "nothing to change");
+});
+
+test("a report saved before columns could be picked opens with exactly the columns it was saved with", async () => {
+  const { db, viewer } = await cast();
+  // Stored as it was written then: hide=, against the eleven columns of the time.
+  const id = await made(db, viewer, "Old style", "public");
+  await db.run("update saved_reports set params = ? where id = ?", "tier=4&hide=ticker&hide=stages", id);
+  const r = await getReport(db, viewer, id);
+  const f = parseRosterParams(new URLSearchParams(r?.params ?? ""));
+  assert.deepEqual(f.cols, LEGACY_COLS.filter((k) => k !== "ticker" && k !== "stages"));
+  for (const k of MORE_COLS) assert.ok(!(f.cols as string[]).includes(k), `${k} appeared in an old report`);
+  assert.deepEqual(f.tier, ["4"]);
+  // And replacing its filters writes the new spelling, which means the same.
+  assert.deepEqual(await updateReport(db, viewer, id, { params: toRosterParams(f).toString() }), { ok: true });
+  const again = parseRosterParams(new URLSearchParams((await getReport(db, viewer, id))?.params ?? ""));
+  assert.deepEqual(again.cols, f.cols);
 });

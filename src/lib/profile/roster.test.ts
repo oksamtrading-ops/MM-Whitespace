@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  amountText, COLUMN_FIELDS, describeFilter, dropUnknown, EMPTY_FILTER, facetOptions, filterRows, hqWord, isNarrowed,
-  parseAmount, parseRosterParams, ROSTER_COLUMNS, sortRows, stageMark, tierToken, toRosterParams, type RosterRow,
+  amountText, cellWord, columnCoverage, COLUMN_FIELDS, DEFAULT_COLS, describeFilter, dropUnknown, EMPTY_FILTER,
+  facetOptions, filterRows, hqWord, isNarrowed, LEGACY_COLS, MORE_COLS, parseAmount, parseRosterParams,
+  ROSTER_COLUMNS, sortRows, stageMark, tierToken, toRosterParams, type RosterRow,
 } from "./roster.ts";
 
 function row(over: Partial<RosterRow> & { name: string }): RosterRow {
@@ -199,10 +200,10 @@ test("every new column filter survives the trip through its URL", () => {
     auditFee: { min: 100_000, max: 500_000, cur: ["CAD", "~"], fy: ["2025"], has: "" as const },
     taxFee: { min: null, max: 50_000, cur: [], fy: [], has: "not_found" as const },
     marketCap: { min: 1e8, max: null, cur: [], fy: [], has: "value" as const },
-    hide: ["marketCap" as const, "ticker" as const, "stages" as const],
+    cols: ["tier" as const, "footprint" as const, "totalAssets" as const],
   };
   assert.deepEqual(parseRosterParams(toRosterParams(f)), f);
-  assert.equal(isNarrowed({ ...EMPTY_FILTER, hide: ["ticker"] }), false, "hiding a column narrows nothing");
+  assert.equal(isNarrowed({ ...EMPTY_FILTER, cols: ["tier"] }), false, "which columns show narrows nothing");
 });
 
 test("junk in the new keys is dropped, not guessed at", () => {
@@ -215,7 +216,8 @@ test("junk in the new keys is dropped, not guessed at", () => {
   assert.equal(f.taxFee.has, "");
   assert.deepEqual(f.marketCap, { min: null, max: null, cur: [], fy: [], has: "" },
                    "market cap has no currency choice and no not-found");
-  assert.deepEqual(f.hide, ["taxFee"], "Company can never be hidden");
+  assert.ok(!f.cols.includes("taxFee") && f.cols.includes("ticker"), "an unknown column hides nothing");
+  assert.equal(f.cols.length, LEGACY_COLS.length - 1, "Company was never a column that could hide");
   assert.equal(f.tickerHas, "");
 });
 
@@ -310,10 +312,10 @@ test("amounts are typed as people say them", () => {
 test("a search that hits a hidden column keeps the row and says which column matched", () => {
   const shown = filterRows(FEES, { ...EMPTY_FILTER, q: "80,000" });
   assert.equal(shown[0]?.matched, null, "on screen, no hint");
-  const hidden = filterRows(FEES, { ...EMPTY_FILTER, q: "80,000", hide: ["taxFee"] });
+  const hidden = filterRows(FEES, { ...EMPTY_FILTER, q: "80,000", cols: DEFAULT_COLS.filter((k) => k !== "taxFee") });
   assert.deepEqual(names(hidden), ["Delta Royalty"]);
   assert.equal(hidden[0].matched?.label, "Tax fees paid to audit firm");
-  const ticker = filterRows(FEES, { ...EMPTY_FILTER, q: "agx", hide: ["ticker"] });
+  const ticker = filterRows(FEES, { ...EMPTY_FILTER, q: "agx", cols: DEFAULT_COLS.filter((k) => k !== "ticker") });
   assert.equal(ticker[0].matched?.label, "Ticker");
 });
 
@@ -333,4 +335,149 @@ test("the URL's own spelling is stable, and an amount the URL would drop is not 
   assert.equal(toRosterParams(parseRosterParams(new URLSearchParams(once))).toString(), once);
   assert.equal(parseAmount("2,000,000 bn"), undefined);
   assert.equal(parseAmount("900,000 bn"), 900e12);
+});
+
+/* ------------------------------------------- the columns picked from "More columns" */
+
+const money = (amount: number, currency: string, fy: number) => ({ amount, currency, fiscal_year: fy });
+
+const MORE: RosterRow[] = [
+  row({ name: "Alpha Gold", ticker: "AGX", exchange: "TSX", marketCap: 900e6,
+        regions: { CANADA: ["ON", "QC"], USA: [] },
+        sources: { total_assets: "ai_accepted", sec_registrant: "ai_accepted" },
+        more: { website: "https://www.alphagold.example/about", venture_graduate: true, fiscal_year_end: "12-31",
+                reporting_currency: "CAD", sec_registrant: { registrant: true, form: "40-F", cik: "1" },
+                auditor_change: { changed: true, date: "2025-06", previous_auditor: "Grant Thornton" },
+                auditor_since: 2025, total_revenue: money(250e6, "CAD", 2025), net_income: money(-4e6, "CAD", 2025),
+                total_assets: money(1.2e9, "CAD", 2025), audit_related_fee: money(40_000, "CAD", 2025),
+                other_fee: money(5_000, "CAD", 2025) } }),
+  row({ name: "Beta Copper", ticker: "BCU", exchange: "TSXV", marketCap: 150e6,
+        sources: { total_assets: "ai_accepted", sec_registrant: "ai_accepted", auditor_change: "ai_accepted" },
+        more: { website: "http://betacopper.example", venture_graduate: false, fiscal_year_end: "06-30",
+                reporting_currency: "USD", sec_registrant: { registrant: false, form: null, cik: null },
+                auditor_since: 2009, total_revenue: money(30e6, "USD", 2024), total_assets: null } }),
+  row({ name: "Gamma Silver", ticker: null, exchange: null,
+        more: { website: "javascript:alert(1)", auditor_change: { changed: false, date: null, previous_auditor: null },
+                net_income: money(2e6, "AUD", 2025) } }),
+];
+
+test("new columns are hidden until picked, and old URLs and saved reports open as they were saved", () => {
+  const none = parseRosterParams(new URLSearchParams(""));
+  assert.deepEqual(none.cols, [...LEGACY_COLS], "no cols, no hide: the table as it always was");
+  for (const k of MORE_COLS) assert.ok(!(none.cols as string[]).includes(k), `${k} shows by default`);
+  assert.equal(toRosterParams(none).toString(), "", "the default is left out of the URL");
+
+  // ?hide= listed what was taken off the table as it was then.
+  const old = parseRosterParams(new URLSearchParams("tier=2&hide=ticker&hide=stages&hide=marketCap"));
+  assert.deepEqual(old.cols, LEGACY_COLS.filter((k) => !["ticker", "stages", "marketCap"].includes(k)));
+  assert.ok(MORE_COLS.every((k) => !old.cols.includes(k)), "an old link never grows the new columns");
+  const rewritten = toRosterParams(old).toString();
+  assert.match(rewritten, /^tier=2&cols=tier&cols=stage&cols=footprint/);
+  assert.deepEqual(parseRosterParams(new URLSearchParams(rewritten)).cols, old.cols, "and it round-trips");
+
+  const picked = parseRosterParams(new URLSearchParams("cols=totalAssets&cols=ticker&cols=bogus"));
+  assert.deepEqual(picked.cols, ["ticker", "totalAssets"], "in the table's order, unknown keys dropped");
+  assert.deepEqual(parseRosterParams(new URLSearchParams("cols=~")).cols, [], "Company alone");
+  assert.equal(toRosterParams({ ...EMPTY_FILTER, cols: [] }).toString(), "cols=%7E");
+  assert.deepEqual(parseRosterParams(new URLSearchParams("cols=bogus")).cols, [...DEFAULT_COLS],
+                   "nothing a column: the default, not an empty table");
+  assert.deepEqual(parseRosterParams(new URLSearchParams("cols=tier&hide=tier")).cols, ["tier"], "cols wins");
+});
+
+test("each new column says what it holds, and the picker knows how many hold it", () => {
+  const [a, b, c] = MORE;
+  assert.equal(cellWord(a, "website"), "alphagold.example");
+  assert.equal(cellWord(c, "website"), null, "only http(s) is a link");
+  assert.equal(cellWord(a, "props"), "Canada: ON, QC");
+  assert.equal(cellWord(a, "venture"), "Yes");
+  assert.equal(cellWord(b, "venture"), "No");
+  assert.equal(cellWord(a, "fye"), "31 December");
+  assert.equal(cellWord(a, "sec"), "Yes · 40-F");
+  assert.equal(cellWord(b, "sec"), "No");
+  assert.equal(cellWord(a, "auditorChange"), "Changed 2025-06 from Grant Thornton");
+  assert.equal(cellWord(c, "auditorChange"), "No change");
+  assert.equal(cellWord(a, "auditorSince"), "2025", "a year, not 2,025");
+  assert.match(cellWord(a, "netIncome") ?? "", /^-?C?\$?.*4,000,000.*FY2025/);
+  assert.equal(cellWord(b, "totalAssets"), null);
+  const cover = columnCoverage(MORE);
+  assert.equal(cover.website, 2);
+  assert.equal(cover.totalAssets, 1);
+  assert.equal(cover.netIncome, 2);
+  assert.equal(cover.exchange, 2);
+  assert.equal(cover.props, 1);
+});
+
+test("every new filter narrows by its column", () => {
+  const n = (f: Partial<typeof EMPTY_FILTER>) => names(filterRows(MORE, { ...EMPTY_FILTER, ...f }));
+  assert.deepEqual(n({ website: "betacopper" }), ["Beta Copper"]);
+  assert.deepEqual(n({ websiteHas: "empty" }), ["Gamma Silver"], "an address that is not a link is no website");
+  assert.deepEqual(n({ venture: ["yes"] }), ["Alpha Gold"]);
+  assert.deepEqual(n({ venture: ["unknown"] }), ["Gamma Silver"]);
+  assert.deepEqual(n({ sec: ["no"] }), ["Beta Copper"]);
+  assert.deepEqual(n({ sec: ["unknown"] }), ["Gamma Silver"]);
+  assert.deepEqual(n({ audchg: ["changed"] }), ["Alpha Gold"]);
+  assert.deepEqual(n({ audchg: ["not_found"] }), ["Beta Copper"], "researched, and the filing does not say");
+  assert.deepEqual(n({ fye: ["06-30"] }), ["Beta Copper"]);
+  assert.deepEqual(n({ repcur: ["CAD", "unknown"] }), ["Alpha Gold", "Gamma Silver"]);
+  const range = (over: object) => ({ ...EMPTY_FILTER.revenue, ...over });
+  assert.deepEqual(n({ revenue: range({ min: 100e6 }) }), ["Alpha Gold"]);
+  assert.deepEqual(n({ revenue: range({ cur: ["USD"] }) }), ["Beta Copper"]);
+  assert.deepEqual(n({ revenue: range({ fy: ["2024"] }) }), ["Beta Copper"]);
+  assert.deepEqual(n({ netIncome: range({ max: 0 }) }), ["Alpha Gold"], "a loss is a negative amount");
+  assert.deepEqual(n({ totalAssets: range({ has: "not_found" }) }), ["Beta Copper"]);
+  assert.deepEqual(n({ totalAssets: range({ has: "empty" }) }), ["Beta Copper", "Gamma Silver"]);
+  assert.deepEqual(n({ auditRelatedFee: range({ min: 10_000 }) }), ["Alpha Gold"]);
+  assert.deepEqual(n({ otherFee: range({ has: "value" }) }), ["Alpha Gold"]);
+  assert.deepEqual(n({ auditorSince: range({ max: 2010 }) }), ["Beta Copper"]);
+  assert.deepEqual(n({ exchange: ["TSXV"] }), ["Beta Copper"]);
+
+  // Each survives its URL.
+  const f = {
+    ...EMPTY_FILTER, website: "copper", websiteHas: "value" as const, venture: ["yes", "not_found"], sec: ["no"],
+    audchg: ["no_change"], fye: ["12-31"], repcur: ["USD"],
+    revenue: range({ min: 1e6, cur: ["USD"], fy: ["2025"] }), netIncome: range({ max: -1 }),
+    totalAssets: range({ has: "not_found" as const }), auditRelatedFee: range({ min: 1 }), otherFee: range({ max: 9 }),
+    auditorSince: range({ min: 2000, max: 2020 }),
+  };
+  assert.deepEqual(parseRosterParams(toRosterParams(f)), f);
+  const junk = parseRosterParams(new URLSearchParams("venture=maybe&audchg=yes&since_cur=CAD&since_fy=2025"));
+  assert.deepEqual([junk.venture, junk.audchg, junk.auditorSince.cur, junk.auditorSince.fy], [[], [], [], []],
+                   "a year has no currency and no fiscal year");
+});
+
+test("the new filters' options, words, sort and search", () => {
+  const facets = facetOptions(MORE);
+  const opts = (k: "venture" | "fye" | "repcur" | "audchg") => facets[k][0].options.map((o) => `${o.label} ${o.count}`);
+  assert.deepEqual(opts("venture"), ["Yes 1", "No 1", "Not known 1"]);
+  assert.deepEqual(opts("fye"), ["30 June 1", "31 December 1", "Not known 1"]);
+  assert.deepEqual(opts("audchg"), ["Changed 1", "No change 1", "Researched, not found 1"]);
+  assert.deepEqual(facets.revenueCur[0].options.map((o) => o.value), ["CAD", "USD"]);
+  assert.deepEqual(facets.netIncomeFy[0].options.map((o) => o.value), ["2025"]);
+  assert.deepEqual(dropUnknown({ ...EMPTY_FILTER, fye: ["12-31", "01-31"], repcur: ["GBP"] }, facets).fye, ["12-31"]);
+
+  const words = describeFilter({
+    ...EMPTY_FILTER, venture: ["yes"], website: "alpha",
+    auditorSince: { ...EMPTY_FILTER.auditorSince, min: 2010 },
+    totalAssets: { ...EMPTY_FILTER.totalAssets, min: 1e9, cur: ["CAD"], fy: ["2025"] },
+  }, facets);
+  assert.match(words, /Venture graduate: Yes/);
+  assert.match(words, /Website contains “alpha”/);
+  assert.match(words, /Auditor since: at least 2010/);
+  assert.match(words, /Total assets: at least C\$1,000,000,000, in CAD, FY2025/);
+
+  assert.deepEqual(names(sortRows(filterRows(MORE, EMPTY_FILTER), "auditorSince", 1)),
+                   ["Beta Copper", "Alpha Gold", "Gamma Silver"], "earliest first, none last");
+  assert.deepEqual(names(sortRows(filterRows(MORE, EMPTY_FILTER), "website", 1)),
+                   ["Alpha Gold", "Beta Copper", "Gamma Silver"]);
+
+  const hidden = filterRows(MORE, { ...EMPTY_FILTER, q: "grant thornton" });
+  assert.equal(hidden[0].matched?.label, "Auditor change", "a hidden column's match says where it is");
+  const shown = filterRows(MORE, { ...EMPTY_FILTER, q: "grant thornton", cols: [...DEFAULT_COLS, "auditorChange"] });
+  assert.equal(shown[0].matched, null, "and on screen needs no hint");
+});
+
+test("every new column is in the table's order, and none of them is the Deloitte market", () => {
+  const keys = ROSTER_COLUMNS.map((c) => c.key);
+  for (const k of MORE_COLS) assert.ok(keys.includes(k), `${k} has no column`);
+  assert.ok(!JSON.stringify(ROSTER_COLUMNS).includes("dtt"), "dtt_market is never a column");
 });

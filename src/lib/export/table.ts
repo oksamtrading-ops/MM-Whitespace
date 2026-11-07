@@ -15,19 +15,30 @@ import type { Sql } from "../db/sql.ts";
 import { citationOf, listCompanies, rosterBasis } from "../profile/company.ts";
 import { citationsForPeriod, citationWords, citeKey } from "../profile/citations.ts";
 import {
-  auditorWord, describeFilter, dropUnknown, facetOptions, filterRows, FOOTPRINT_WORD, hqWord,
-  parseRosterParams, sortRows, STAGE_LABEL, STAGE_OF_TIER, stageMark, TIER_WORD, type HideKey, type RosterRow,
+  auditorWord, cellWord, DEFAULT_COLS, describeFilter, dropUnknown, facetOptions, fieldValue, filterRows,
+  FOOTPRINT_WORD, hqWord, MORE_COLS, MORE_FIELD, parseRosterParams, RANGE_FIELD, sortRows, STAGE_LABEL,
+  STAGE_OF_TIER, stageMark, TIER_WORD, type ColKey, type MoneyKey, type RosterRow,
 } from "../profile/roster.ts";
 import { STAGE_ORDER } from "../format/fields.ts";
 import { buildFile, contentTypeOf, ExportFailed } from "./period.ts";
 
 type Column = { key: string; label: string; kind: "text" | "fee" | "stage" | "money"; field?: string };
 
-/** The export's columns that each hideable column of the table stands for. */
-const HIDES: Record<HideKey, string[]> = {
+/**
+ * The export's columns that each column of the table stands for. Exchange is
+ * in two: the Ticker column has always carried it, and it has its own now.
+ */
+const COLUMNS_OF: Record<ColKey, string[]> = {
   ticker: ["ticker", "exchange"], tier: ["tier"], stage: ["stage"], stages: [...STAGE_ORDER],
   footprint: ["footprint"], commodities: ["commodities"], hq: ["hq"], auditor: ["auditor"],
   auditFee: ["audit_fee"], taxFee: ["tax_fee"], marketCap: ["market_cap"],
+  ...Object.fromEntries(MORE_COLS.map((k) => [k, [MORE_FIELD[k]]])) as Record<typeof MORE_COLS[number], string[]>,
+};
+
+/** The amounts of "More columns", written as the fee columns are: amount, currency, fiscal year. */
+const MORE_MONEY: Partial<Record<typeof MORE_COLS[number], MoneyKey>> = {
+  revenue: "revenue", netIncome: "netIncome", totalAssets: "totalAssets",
+  auditRelatedFee: "auditRelatedFee", otherFee: "otherFee",
 };
 
 /** One citation the export can name: what was read, and the passage. */
@@ -42,15 +53,28 @@ const BASE_COLUMNS: Column[] = [
   { key: "market_cap", label: "Market cap (CAD)", kind: "money" },
   { key: "ticker", label: "Ticker", kind: "text" },
   { key: "exchange", label: "Exchange", kind: "text" },
+  { key: "website", label: "Website", kind: "text", field: "website" },
   { key: "tier", label: "Tier", kind: "text" },
   { key: "stage", label: "Stage (deciding the tier)", kind: "text" },
   ...STAGE_ORDER.map((s) => ({ key: s, label: STAGE_LABEL[s], kind: "stage" as const })),
   { key: "footprint", label: "Footprint", kind: "text" },
+  { key: "property_regions", label: "Properties in", kind: "text", field: "property_regions" },
   { key: "commodities", label: "Commodities", kind: "text", field: "commodities" },
   { key: "hq", label: "Company HQ", kind: "text", field: "head_office_region" },
+  { key: "venture_graduate", label: "Venture graduate", kind: "text", field: "venture_graduate" },
+  { key: "sec_registrant", label: "SEC registrant", kind: "text", field: "sec_registrant" },
+  { key: "fiscal_year_end", label: "Fiscal year-end", kind: "text", field: "fiscal_year_end" },
+  { key: "reporting_currency", label: "Reporting currency", kind: "text", field: "reporting_currency" },
+  { key: "total_revenue", label: "Revenue", kind: "fee", field: "total_revenue" },
+  { key: "net_income", label: "Net income", kind: "fee", field: "net_income" },
+  { key: "total_assets", label: "Total assets", kind: "fee", field: "total_assets" },
   { key: "auditor", label: "Auditor", kind: "text", field: "auditor" },
+  { key: "auditor_since", label: "Auditor since", kind: "text", field: "auditor_since" },
+  { key: "auditor_change", label: "Auditor change", kind: "text", field: "auditor_change" },
   { key: "audit_fee", label: "Audit fees", kind: "fee", field: "audit_fee" },
+  { key: "audit_related_fee", label: "Audit-related fees", kind: "fee", field: "audit_related_fee" },
   { key: "tax_fee", label: "Tax fees paid to audit firm", kind: "fee", field: "tax_fee" },
+  { key: "other_fee", label: "Other fees", kind: "fee", field: "other_fee" },
 ];
 
 /** Only links that are links: a stored value that is not http(s) is never written as one. */
@@ -71,6 +95,14 @@ function cellsOf(r: RosterRow): Record<string, unknown> {
     tax_fee: r.taxFee ?? null,
     market_cap: r.marketCap,
   };
+  for (const k of MORE_COLS) {
+    if (k === "exchange") continue;
+    const money = MORE_MONEY[k];
+    // The address itself, not its host: a file is read away from the page.
+    out[MORE_FIELD[k]] = money ? fieldValue(r, RANGE_FIELD[money])
+      : k === "website" ? (safeUrl(fieldValue(r, "website") as string | null) ?? null)
+      : cellWord(r, k);
+  }
   for (const s of STAGE_ORDER) out[s] = stageMark(r, s);
   for (const m of r.meta) out[`meta:${m.field}`] = m.text;
   return out;
@@ -81,14 +113,20 @@ export function tablePayload(opts: {
   rows: RosterRow[]; total: number; filterWords: string;
   basis: { label: string; revision: number | null };
   cite?: CitationLookup;
-  /** Columns taken off the table on screen; the file leaves them out too. */
-  hide?: HideKey[];
+  /** The columns shown on screen; the file carries the same ones. */
+  cols?: readonly ColKey[];
 }) {
+  const kept = new Set((opts.cols ?? DEFAULT_COLS).flatMap((k) => COLUMNS_OF[k]));
+  const base = BASE_COLUMNS.filter((c) => c.key === "name" || kept.has(c.key));
+  // Every other public value still rides along at the end, as it always has;
+  // one with a column of its own is written there, once.
+  const inBase = new Set(base.map((c) => c.field).filter(Boolean));
   const metaColumns = new Map<string, string>();
-  for (const r of opts.rows) for (const m of r.meta) if (!metaColumns.has(m.field)) metaColumns.set(m.field, m.label);
-  const hidden = new Set((opts.hide ?? []).flatMap((h) => HIDES[h]));
+  for (const r of opts.rows) {
+    for (const m of r.meta) if (!metaColumns.has(m.field) && !inBase.has(m.field)) metaColumns.set(m.field, m.label);
+  }
   const columns: Column[] = [
-    ...BASE_COLUMNS.filter((c) => !hidden.has(c.key)),
+    ...base,
     ...[...metaColumns].sort((a, b) => a[1].localeCompare(b[1]))
       .map(([field, label]) => ({ key: `meta:${field}`, label, kind: "text" as const })),
   ];
@@ -161,7 +199,7 @@ export async function exportTable(db: Sql, opts: {
   const words = describeFilter(filter, facets);
   const filterWords = opts.report ? `Report “${opts.report.name}” · ${words}` : words;
   const cite = opts.cite ?? await citationLookup(db, basis);
-  const payload = tablePayload({ rows: shown, total: all.length, filterWords, basis, cite, hide: filter.hide });
+  const payload = tablePayload({ rows: shown, total: all.length, filterWords, basis, cite, cols: filter.cols });
   const bytes = await buildFile(payload, { format: opts.format, kind: "table" });
   return {
     filename: opts.report ? reportFilename(opts.report.name, basis.label, opts.format) : tableFilename(basis.label, opts.format),

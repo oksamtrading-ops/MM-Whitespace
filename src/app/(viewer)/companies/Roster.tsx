@@ -4,25 +4,35 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  describeFilter, EMPTY_RANGE, FILTER_LABEL, facetOptions, filterRows, HIDE_KEYS, HIDE_WORD, isNarrowed,
-  RANGE_LABEL, rangeSet, sortRows, parseRosterParams, STAGE_LABEL, toRosterParams, EMPTY_FILTER,
-  type HideKey, type Multi, type Presence, type RangeKey, type RosterFilter, type RosterRow, type SortKey,
+  COL_KEYS, COL_WORD, columnCoverage, describeFilter, EMPTY_RANGE, FILTER_LABEL, facetOptions, filterRows,
+  isNarrowed, LEGACY_COLS, MORE_COLS, RANGE_LABEL, rangeSet, sortRows, parseRosterParams, STAGE_LABEL,
+  toRosterParams, EMPTY_FILTER, type ColKey, type Multi, type Presence, type RangeKey, type RosterFilter,
+  type RosterRow, type SortKey,
 } from "../../../lib/profile/roster.ts";
 import { STAGE_ORDER } from "../../../lib/format/fields.ts";
 import Icon from "../../_ui/Icon.tsx";
 import MultiSelect from "../../_ui/MultiSelect.tsx";
 import { openPopover } from "../../_ui/Popover.tsx";
-import { AddFilter, RangeFilter, TextFilter } from "./ColumnFilters.tsx";
+import { AddFilter, filterWord, RangeFilter, TextFilter } from "./ColumnFilters.tsx";
 import RosterTable, { RosterLegend } from "./RosterTable.tsx";
 import { ReplaceReport, SaveAsReport, type FromReport } from "../reports/ReportControls.tsx";
 
-/** The pickers that are always in the bar: the filters people reach for first. */
-const PICKERS = ["tier", "stage", "hq", "auditor", "footprint", "commodity", "prop"] as const;
+/**
+ * The pickers always in the bar (Samuel, 7 November: three, so a phone reaches
+ * the table sooner). Every other filter waits in "More filters" and joins the
+ * bar while it is set, however it was set: by hand, a shared link or a report.
+ */
+const PICKERS = ["tier", "auditor", "commodity"] as const;
 
-/** The filters a column has that are not always in the bar; "Add filter" brings them. */
-const EXTRA_LIST = ["exchange", "decides", ...STAGE_ORDER] as const;
-const EXTRA_TEXT = ["name", "ticker"] as const;
-const EXTRA_RANGE = ["auditFee", "taxFee", "marketCap"] as const;
+/** The filters a column has that are not always in the bar; "More filters" brings them. */
+const EXTRA_LIST = [
+  "exchange", "decides", "stage", ...STAGE_ORDER, "footprint", "prop", "hq", "venture", "sec", "audchg", "fye", "repcur",
+] as const;
+const EXTRA_TEXT = ["name", "ticker", "website"] as const;
+const EXTRA_RANGE = [
+  "auditFee", "taxFee", "marketCap", "revenue", "netIncome", "totalAssets", "auditRelatedFee", "otherFee",
+  "auditorSince",
+] as const;
 type ExtraKey = typeof EXTRA_LIST[number] | typeof EXTRA_TEXT[number] | typeof EXTRA_RANGE[number];
 
 /** Every column, in the table's order, and the filter that narrows it. */
@@ -31,17 +41,29 @@ const ADDABLE: Array<{ key: ExtraKey | typeof PICKERS[number]; label: string }> 
   { key: "marketCap", label: "Market cap" },
   { key: "ticker", label: "Ticker" },
   { key: "exchange", label: "Exchange" },
+  { key: "website", label: "Website" },
   { key: "tier", label: "Tier" },
   { key: "decides", label: "Stage (deciding the tier)" },
   { key: "stage", label: "Stage of operations (any)" },
   ...STAGE_ORDER.map((s) => ({ key: s, label: `Stage: ${STAGE_LABEL[s]}` })),
   { key: "footprint", label: "Footprint" },
+  { key: "prop", label: "Properties in" },
   { key: "commodity", label: "Commodities" },
   { key: "hq", label: "Company HQ" },
-  { key: "prop", label: "Properties in" },
+  { key: "venture", label: "Venture graduate" },
+  { key: "sec", label: "SEC registrant" },
+  { key: "fye", label: "Fiscal year-end" },
+  { key: "repcur", label: "Reporting currency" },
+  { key: "revenue", label: "Revenue" },
+  { key: "netIncome", label: "Net income" },
+  { key: "totalAssets", label: "Total assets" },
   { key: "auditor", label: "Auditor" },
+  { key: "auditorSince", label: "Auditor since" },
+  { key: "audchg", label: "Auditor change" },
   { key: "auditFee", label: "Audit fees" },
+  { key: "auditRelatedFee", label: "Audit-related fees" },
   { key: "taxFee", label: "Tax fees paid to audit firm" },
+  { key: "otherFee", label: "Other fees" },
 ];
 
 const FEE_PRESENCE: Array<[Presence, string]> = [
@@ -52,6 +74,7 @@ const CAP_PRESENCE: Array<[Presence, string]> = [["value", "Has a value"], ["emp
 function extraActive(f: RosterFilter, key: ExtraKey): boolean {
   if (key === "name") return Boolean(f.name);
   if (key === "ticker") return Boolean(f.ticker) || f.tickerHas !== "";
+  if (key === "website") return Boolean(f.website) || f.websiteHas !== "";
   if ((EXTRA_RANGE as readonly string[]).includes(key)) return rangeSet(f[key as RangeKey]);
   return f[key as Multi].length > 0;
 }
@@ -59,11 +82,14 @@ function extraActive(f: RosterFilter, key: ExtraKey): boolean {
 function clearExtra(key: ExtraKey): Partial<RosterFilter> {
   if (key === "name") return { name: "" };
   if (key === "ticker") return { ticker: "", tickerHas: "" };
+  if (key === "website") return { website: "", websiteHas: "" };
   if ((EXTRA_RANGE as readonly string[]).includes(key)) return { [key]: EMPTY_RANGE };
   return { [key]: [] };
 }
 
-const EXTRA_KEYS: readonly ExtraKey[] = [...EXTRA_TEXT, ...EXTRA_LIST, ...EXTRA_RANGE];
+const EXTRA_SET = new Set<string>([...EXTRA_TEXT, ...EXTRA_LIST, ...EXTRA_RANGE]);
+/** In the table's column order, so filters a link or report sets line up as the columns do. */
+const EXTRA_KEYS: readonly ExtraKey[] = ADDABLE.map((c) => c.key).filter((k): k is ExtraKey => EXTRA_SET.has(k));
 
 /**
  * Every company, full width, narrowed by any combination of filters -- one
@@ -87,7 +113,7 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
   rows: RosterRow[]; deloitteAudits: number; initial: RosterFilter; from?: FromReport;
 }) {
   const [filter, setFilter] = useState<RosterFilter>(initial);
-  // Filters brought into the bar by "Add filter", kept while they are being set.
+  // Filters brought into the bar by "More filters" or set by the URL, kept while they are being set.
   const [added, setAdded] = useState<ExtraKey[]>(() => EXTRA_KEYS.filter((k) => extraActive(initial, k)));
   const [justAdded, setJustAdded] = useState<ExtraKey | null>(null);
   const findRef = useRef<HTMLInputElement | null>(null);
@@ -131,7 +157,7 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
     return `/api/companies/export?${p.toString()}`;
   };
 
-  const hidden = new Set<HideKey>(filter.hide);
+  const coverage = useMemo(() => columnCoverage(rows), [rows]);
 
   const pick = (key: string) => {
     if ((EXTRA_KEYS as readonly string[]).includes(key)) {
@@ -161,12 +187,21 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
         return <TextFilter key={key} name="ticker" label="Ticker" value={filter.ticker}
                            onChange={(ticker) => set({ ticker })}
                            presence={filter.tickerHas} onPresence={(tickerHas) => set({ tickerHas })} {...common} />;
-      case "auditFee": case "taxFee":
+      case "website":
+        return <TextFilter key={key} name="website" label="Website" value={filter.website}
+                           onChange={(website) => set({ website })}
+                           presence={filter.websiteHas} onPresence={(websiteHas) => set({ websiteHas })} {...common} />;
+      case "auditFee": case "taxFee": case "revenue": case "netIncome": case "totalAssets":
+      case "auditRelatedFee": case "otherFee":
         return <RangeFilter key={key} name={key} label={RANGE_LABEL[key]} value={filter[key]}
                             onChange={(r) => set({ [key]: r })}
                             currencies={facets[`${key}Cur`]} years={facets[`${key}Fy`]} presences={FEE_PRESENCE}
                             note="Amounts compare as printed, each in its own currency. Pick a currency to compare like with like."
                             {...common} />;
+      case "auditorSince":
+        return <RangeFilter key={key} name={key} label={RANGE_LABEL[key]} value={filter.auditorSince}
+                            onChange={(auditorSince) => set({ auditorSince })} presences={FEE_PRESENCE} plain
+                            note="A year, such as 2015." {...common} />;
       case "marketCap":
         return <RangeFilter key={key} name={key} label={RANGE_LABEL[key]} value={filter.marketCap}
                             onChange={(marketCap) => set({ marketCap })} presences={CAP_PRESENCE}
@@ -177,7 +212,7 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
             <MultiSelect name={key} label={FILTER_LABEL[key]} groups={facets[key]} selected={filter[key]}
                          onChange={(next) => set({ [key]: next })} autoOpen={justAdded === key} />
             <button type="button" className="btn sm quiet icon-only cf-x" onClick={() => remove(key)}
-                    aria-label={`Remove the ${FILTER_LABEL[key].toLowerCase()} filter`} title="Remove filter">
+                    aria-label={`Remove the ${filterWord(FILTER_LABEL[key])} filter`} title="Remove filter">
               <Icon name="x" size={13} />
             </button>
           </span>
@@ -185,8 +220,13 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
     }
   };
 
-  const columnGroups = [{ label: "Columns", options: HIDE_KEYS.map((h) => ({ value: h, label: HIDE_WORD[h] })) }];
-  const shownColumns = HIDE_KEYS.filter((h) => !hidden.has(h));
+  // Each column with how many companies hold something in it, so a sparse
+  // column reads as sparse here rather than as broken on the page.
+  const colOption = (k: ColKey) => ({ value: k, label: `${COL_WORD[k]} · ${coverage[k]} of ${rows.length}` });
+  const columnGroups = [
+    { label: "Columns", options: LEGACY_COLS.map(colOption) },
+    { label: "More columns", options: MORE_COLS.map(colOption) },
+  ];
 
   return (
     <>
@@ -208,9 +248,9 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
           <span className="fig-sm">{shown.length}</span> of <span className="fig-sm">{rows.length}</span>
           {" · Deloitte audits "}<span className="fig-sm">{deloitteAudits}</span>
         </span>
-        <MultiSelect name="cols" label="Columns" groups={columnGroups} selected={shownColumns}
-                     summary={hidden.size === 0 ? "All" : `${shownColumns.length + 1} of ${HIDE_KEYS.length + 1}`}
-                     onChange={(next) => set({ hide: HIDE_KEYS.filter((h) => !next.includes(h)) })} />
+        <MultiSelect name="cols" label="Columns" groups={columnGroups} selected={filter.cols}
+                     summary={`${filter.cols.length + 1} of ${COL_KEYS.length + 1}`}
+                     onChange={(next) => set({ cols: COL_KEYS.filter((k) => next.includes(k)) })} />
         <a className="btn sm secondary" href={exportHref("xlsx")} download>
           <Icon name="download" size={13} />Excel
         </a>
@@ -243,7 +283,7 @@ export default function Roster({ rows, deloitteAudits, initial, from }: {
                    onPick={pick} />
         {narrowed && (
           <button type="button" className="btn sm quiet" onClick={() => {
-            setFilter({ ...EMPTY_FILTER, sort: filter.sort, dir: filter.dir, hide: filter.hide });
+            setFilter({ ...EMPTY_FILTER, sort: filter.sort, dir: filter.dir, cols: filter.cols });
             setAdded([]);
           }}>
             <Icon name="x" size={13} />Clear filters

@@ -12,7 +12,7 @@
 import type { Sql } from "../db/sql.ts";
 import { shownPeriod } from "../db/periods.ts";
 import { formatFieldValue, STAGE_ORDER, type Stage } from "../format/fields.ts";
-import { metaFor, type RosterRow, type StageEvidence } from "./roster.ts";
+import { metaFor, MORE_FIELDS, type RosterRow, type StageEvidence } from "./roster.ts";
 import { citationOf, citationsForPeriod, type Citation } from "./citations.ts";
 
 export { citationOf };
@@ -417,6 +417,7 @@ export async function listCompanies(db: Sql, opts: { allowDraft: boolean }): Pro
       regions: regionsOf(get("property_regions")),
       sources: Object.fromEntries([...vals].map(([k, v]) => [k, v.source])),
       meta: metaFor([...vals].map(([k, v]) => ({ field: k, label: catalogue.get(k)?.label ?? k, value: v.value }))),
+      more: Object.fromEntries(MORE_FIELDS.map((k) => [k, get(k)])),
     };
   });
 }

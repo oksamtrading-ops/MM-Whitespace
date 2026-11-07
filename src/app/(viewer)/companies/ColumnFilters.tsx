@@ -4,17 +4,20 @@ import { useEffect, useState } from "react";
 import Popover from "../../_ui/Popover.tsx";
 import Icon from "../../_ui/Icon.tsx";
 import {
-  amountText, parseAmount, type FacetGroup, type Presence, type RangeFilter as Range, type TextPresence,
+  amountText, amountText as amountWords, parseAmount, type FacetGroup, type Presence, type RangeFilter as Range, type TextPresence,
 } from "../../../lib/profile/roster.ts";
 
 /** One amount box: it narrows as soon as what is typed is an amount, and says so when it is not. */
-function AmountField({ label, value, onChange }: {
+function AmountField({ label, value, onChange, plain = false }: {
   label: string; value: number | null; onChange: (n: number | null) => void;
+  /** A year: written as itself, never 2.01k. */
+  plain?: boolean;
 }) {
-  const [text, setText] = useState(amountText(value));
+  const show = (n: number | null) => (plain ? (n === null ? "" : String(n)) : amountText(n));
+  const [text, setText] = useState(show(value));
   // Cleared from outside (Clear filters, a report opened): follow it.
   useEffect(() => {
-    if (parseAmount(text) !== value) setText(amountText(value));
+    if (parseAmount(text) !== value) setText(show(value));
     // Only an outside change of the value should rewrite the box.
   }, [value]);
   const parsed = parseAmount(text);
@@ -73,11 +76,16 @@ function Radios<T extends string>({ legend, name, options, value, onChange }: {
   );
 }
 
+/** A filter's name inside a sentence: "company HQ", "SEC registrant", never "company hq". */
+export function filterWord(label: string): string {
+  return label.split(" ").map((w) => (/^[A-Z]{2,}$/.test(w) ? w : w.toLowerCase())).join(" ");
+}
+
 function RemoveButton({ label, onRemove }: { label: string; onRemove?: () => void }) {
   if (!onRemove) return null;
   return (
     <button type="button" className="btn sm quiet cf-remove" onClick={onRemove}>
-      <Icon name="x" size={13} />Remove {label.toLowerCase()} filter
+      <Icon name="x" size={13} />Remove {filterWord(label)} filter
     </button>
   );
 }
@@ -112,12 +120,15 @@ export function TextFilter({ label, name, value, onChange, presence, onPresence,
  * whether research found one. Fees compare in their own currency, so the
  * panel says that rather than let 500k USD and 500k CAD look like one number.
  */
-export function RangeFilter({ label, name, value, onChange, currencies, years, presences, onRemove, autoOpen, note }: {
+export function RangeFilter({ label, name, value, onChange, currencies, years, presences, onRemove, autoOpen, note, plain = false }: {
   label: string; name: string; value: Range; onChange: (r: Range) => void;
   currencies?: FacetGroup[]; years?: FacetGroup[];
   presences: Array<[Presence, string]>;
   onRemove?: () => void; autoOpen?: boolean; note?: string;
+  /** Years, not amounts. */
+  plain?: boolean;
 }) {
+  const amountText = (n: number | null) => (plain ? String(n ?? "") : amountWords(n));
   const set = value.min !== null || value.max !== null || value.cur.length > 0 || value.fy.length > 0 || value.has !== "";
   const parts: string[] = [];
   if (value.min !== null && value.max !== null) parts.push(`${amountText(value.min)}–${amountText(value.max)}`);
@@ -129,8 +140,8 @@ export function RangeFilter({ label, name, value, onChange, currencies, years, p
   return (
     <Popover label={label} summary={parts.length ? parts.join(", ") : "Any"} set={set} autoOpen={autoOpen} dataKey={name}>
       <div className="cf-range">
-        <AmountField label="From" value={value.min} onChange={(min) => onChange({ ...value, min })} />
-        <AmountField label="To" value={value.max} onChange={(max) => onChange({ ...value, max })} />
+        <AmountField label="From" value={value.min} plain={plain} onChange={(min) => onChange({ ...value, min })} />
+        <AmountField label="To" value={value.max} plain={plain} onChange={(max) => onChange({ ...value, max })} />
       </div>
       {note && <p className="cf-note">{note}</p>}
       {currencies && <Checks legend="Currency" name={`${name}_cur`} groups={currencies} selected={value.cur}
@@ -144,13 +155,13 @@ export function RangeFilter({ label, name, value, onChange, currencies, years, p
   );
 }
 
-/** "Add filter": every column, so any of them can narrow the table. */
+/** "More filters": every column, in the table's order, so any of them can narrow the table. */
 export function AddFilter({ columns, onPick }: {
   columns: Array<{ key: string; label: string; active: boolean }>;
   onPick: (key: string) => void;
 }) {
   return (
-    <Popover label="Add filter" set={false} dataKey="add-filter">
+    <Popover label="More filters" set={false} dataKey="more-filters">
       <ul className="cf-menu">
         {columns.map((c) => (
           <li key={c.key}>

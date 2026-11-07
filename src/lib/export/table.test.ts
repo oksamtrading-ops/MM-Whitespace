@@ -116,7 +116,7 @@ test("the tax fee is a column of the file, and a column hidden on screen is left
   assert.deepEqual((all.rows[0] as Record<string, unknown>).tax_fee, { amount: 3, currency: "CAD", fiscal_year: 2025 });
 
   const some = tablePayload({ rows: [row], total: 1, filterWords: "x", basis: { label: "P", revision: 9 },
-                              hide: ["ticker", "stages", "taxFee"] });
+                              cols: ["marketCap", "tier", "stage", "footprint", "commodities", "hq", "auditor", "auditFee"] });
   const left = some.columns.map((c) => c.key);
   for (const gone of ["ticker", "exchange", "exploration", "development", "production", "royalty_streaming", "tax_fee"]) {
     assert.ok(!left.includes(gone), `${gone} is still in the file`);
@@ -146,4 +146,54 @@ test("a saved report downloads as a file named for it, with its filter and hidde
   const header = csv.bytes.toString("utf8").split("\n").find((l) => l.startsWith("Company"));
   assert.ok(header && !/Ticker|Exchange|Tax fees/.test(header), header ?? "no header");
   assert.match(header ?? "", /Audit fees/);
+});
+
+test("a picked column is a column of the file, written as the screen writes it, and only once", () => {
+  const row = {
+    companyId: "c1", name: "Northco", ticker: "N", exchange: "TSX", tier: 4, status: "classified", footprint: "none",
+    auditor: "PwC", marketCap: 1, hqRegion: "Ontario, Canada", hqCity: null, commodities: ["Gold"],
+    auditFee: null, taxFee: null, stages: [], stageEvidence: "complete" as const, regions: { CANADA: ["ON"] },
+    sources: {},
+    meta: [{ field: "total_assets", label: "Total assets", text: "C$5 (FY2025)" },
+           { field: "website", label: "Website", text: "https://northco.example" },
+           { field: "incumbent_erp", label: "Incumbent ERP", text: "SAP" }],
+    more: { total_assets: { amount: 5, currency: "CAD", fiscal_year: 2025 }, website: "https://northco.example",
+            venture_graduate: true, auditor_since: 2011 },
+  };
+  const plain = tablePayload({ rows: [row], total: 1, filterWords: "x", basis: { label: "P", revision: 9 } });
+  const plainKeys = plain.columns.map((c) => c.key);
+  assert.ok(!plainKeys.includes("total_assets"), "not picked: not a column of its own");
+  assert.ok(plainKeys.includes("meta:total_assets"), "but the value still rides along at the end, as it always has");
+
+  const picked = tablePayload({ rows: [row], total: 1, filterWords: "x", basis: { label: "P", revision: 9 },
+                                cols: ["ticker", "website", "props", "venture", "totalAssets", "auditorSince"] });
+  const cols = picked.columns;
+  const keys = cols.map((c) => c.key);
+  for (const k of ["website", "property_regions", "venture_graduate", "total_assets", "auditor_since"]) {
+    assert.ok(keys.includes(k), `${k} is not in the file`);
+  }
+  assert.equal(cols.find((c) => c.key === "total_assets")?.kind, "fee", "an amount with its currency and year");
+  assert.ok(!keys.includes("meta:total_assets") && !keys.includes("meta:website"), "a picked value is written once");
+  assert.ok(keys.includes("meta:incumbent_erp"), "values with no column still ride along");
+  const cells = picked.rows[0] as Record<string, unknown>;
+  assert.deepEqual(cells.total_assets, { amount: 5, currency: "CAD", fiscal_year: 2025 });
+  assert.equal(cells.website, "https://northco.example", "the address, not its host");
+  assert.equal(cells.venture_graduate, "Yes");
+  assert.equal(cells.auditor_since, "2011");
+  assert.equal(cells.property_regions, "Canada: ON");
+  assert.ok(!keys.includes("market_cap"), "a column not picked is left out");
+});
+
+test("an old download link with hide= exports the columns it always did", { skip: !hasPython }, async () => {
+  const { db } = await published();
+  const csv = await exportTable(db, { allowDraft: false, format: "csv", params: new URLSearchParams("hide=ticker") });
+  const header = csv.bytes.toString("utf8").split("\n").find((l) => l.startsWith("Company")) ?? "";
+  assert.match(header, /^Company,Market cap \(CAD\),Tier,/, header);
+  assert.match(header, /Auditor,Audit fees — currency,.*Tax fees paid to audit firm — fiscal year,/,
+               "the columns it always had, in their order");
+  assert.doesNotMatch(header, /Ticker|Exchange|Revenue|Total assets|Website,/, "and no new column appeared");
+  const picked = await exportTable(db, { allowDraft: false, format: "csv",
+                                         params: new URLSearchParams("cols=totalAssets&cols=revenue") });
+  const head2 = picked.bytes.toString("utf8").split("\n").find((l) => l.startsWith("Company")) ?? "";
+  assert.match(head2, /^Company,Revenue — currency,Revenue — amount,Revenue — fiscal year,Total assets — currency,/, head2);
 });

@@ -669,8 +669,21 @@ async function journeys(dbPath) {
   check("the AI notice runs the page's full width", /class="ainote ainote-full"/.test(roster));
   check("a Tax fees paid to audit firm column", /<button[^>]*class="sort"[^>]*>Tax fees paid to audit firm/.test(roster));
   check("no stage cell says ?", !/class="stage-unknown"[^>]*>\?</.test(roster));
-  check("every column can be filtered: an Add filter menu, and Save as report",
-        roster.includes("Add filter") && roster.includes("Save as report") && roster.includes('name="cols"'));
+  check("every column can be filtered: a More filters menu, and Save as report",
+        roster.includes("More filters") && roster.includes("Save as report") && roster.includes('name="cols"'));
+  // Samuel, 7 November: only Tier, Auditor and Commodities stay in the bar;
+  // the rest wait in More filters, and join the bar whenever they are set.
+  check("the bar holds Tier, Auditor and Commodities, and nothing else until it is set",
+        ["tier", "auditor", "commodity"].every((k) => roster.includes(`data-key="${k}"`)) &&
+        ["stage", "hq", "footprint", "prop"].every((k) => !roster.includes(`data-key="${k}"`)));
+  let fromLink = "";
+  for (const fp of ["canada_only", "canada_and_abroad", "abroad"]) {
+    const page = text((await get(`/companies?footprint=${fp}`, viewer.cookie)).html);
+    if (page.includes('data-key="footprint"')) { fromLink = page; break; }
+  }
+  check("a filter set by a link shows in the bar, with a way to remove it",
+        fromLink.includes('data-key="footprint"') && fromLink.includes("Remove the footprint filter") &&
+        fromLink.includes("Clear filters"));
   check("Reports is in the rail for a Viewer", /href="\/reports"/.test(roster));
 
   const fullCount = Number(roster.match(/(\d+)<\/span> of <span class="fig-sm">(\d+)/)?.[2]);
@@ -685,6 +698,34 @@ async function journeys(dbPath) {
   check("a filter's words say what it is", byCapText.includes("Market cap: at least C$1B"));
   const byName = await get("/companies?name=zzzz-nobody", viewer.cookie);
   check("a text filter that matches nothing says so", text(byName.html).includes("No company matches"));
+
+  // More columns (Samuel, 7 November 2026): hidden until picked, each with
+  // a filter, in the export, and an old ?hide= link opens as it always did.
+  const sortHead = (html, label) => new RegExp(`class="sort"[^>]*>${label}<`).test(text(html));
+  check("the new columns are hidden until picked",
+        !sortHead(index.html, "Total assets") && !sortHead(index.html, "Website") && !sortHead(index.html, "Revenue") &&
+        sortHead(index.html, "Audit fees"));
+  check("the Columns picker says how many companies each column holds",
+        /Total assets · \d+ of \d+/.test(roster) && /Exchange · \d+ of \d+/.test(roster) && roster.includes("More columns"));
+  const picked = await get("/companies?cols=website&cols=exchange&cols=totalAssets&cols=revenue&cols=fye", viewer.cookie);
+  check("picked, they are columns, and only they are",
+        ["Website", "Exchange", "Total assets", "Revenue", "Fiscal year-end"].every((l) => sortHead(picked.html, l)) &&
+        !sortHead(picked.html, "Audit fees") && !sortHead(picked.html, "Tier"));
+  const oldHide = await get("/companies?hide=ticker", viewer.cookie);
+  check("an old ?hide= link shows the columns it always did, and no new one",
+        !sortHead(oldHide.html, "Ticker") && sortHead(oldHide.html, "Tax fees paid to audit firm") &&
+        !sortHead(oldHide.html, "Total assets") && !sortHead(oldHide.html, "Exchange"));
+  const assetsKnown = await get("/companies?assets_has=empty&venture=unknown&web_has=value", viewer.cookie);
+  check("the new filters narrow the page the server sends",
+        countOf(assetsKnown.html) <= fullCount && text(assetsKnown.html).includes("Venture graduate: Not known") &&
+        text(assetsKnown.html).includes("Total assets: no value") && text(assetsKnown.html).includes("Has a website"),
+        `${countOf(assetsKnown.html)} of ${fullCount}`);
+  const pickedCsv = await fetch(`${BASE}/api/companies/export?cols=totalAssets&cols=website&format=csv`,
+                                { headers: { cookie: viewer.cookie } });
+  const pickedHead = (await pickedCsv.text()).split("\n").find((l) => l.startsWith("Company")) ?? "";
+  check("and the export carries the columns picked", pickedCsv.status === 200 &&
+        /^Company,Website,Total assets — currency,Total assets — amount,Total assets — fiscal year/.test(pickedHead),
+        pickedHead.slice(0, 160));
 
   // Saved reports, through the library as the actions call it, then read as
   // each person would read them.
@@ -708,7 +749,7 @@ async function journeys(dbPath) {
   const privPage = text((await get(`/reports/${priv.id}`, viewer.cookie)).html);
   check("the owner opens it as its rows, read-only", countOf(privPage) === countOf(byCap.html) &&
         privPage.includes("Vee&#x27;s big caps") && !/>Ticker<\/(th|button)>/.test(privPage) &&
-        !privPage.includes("Add filter") && !privPage.includes('name="cols"') && !privPage.includes('class="sort"') &&
+        !privPage.includes("More filters") && !privPage.includes('name="cols"') && !privPage.includes('class="sort"') &&
         privPage.includes("Market cap: at least C$1B"),
         `${countOf(privPage)} rows, against ${countOf(byCap.html)} on /companies`);
   check("and may rename and delete it, but its filters change only in Companies",
@@ -720,7 +761,7 @@ async function journeys(dbPath) {
   const opened = text((await get(`/companies?cap_min=1000000000&hide=ticker&from=${priv.id}`, viewer.cookie)).html);
   check("opened in Companies, its owner may replace its filters from there",
         opened.includes("Filters from the report") && opened.includes("Replace “Vee&#x27;s big caps”") &&
-        opened.includes("Add filter") && countOf(opened) === countOf(byCap.html));
+        opened.includes("More filters") && countOf(opened) === countOf(byCap.html));
   const peeked = text((await get(`/companies?tier=4&from=${priv.id}`, analyst.cookie)).html);
   check("a private report's name never reaches anybody else's Companies page",
         !peeked.includes("big caps") && !peeked.includes("Filters from the report"));
@@ -745,7 +786,7 @@ async function journeys(dbPath) {
   const renamed = text((await get(`/reports/${pub.id}`, viewer.cookie)).html);
   check("an Admin's rename and replacement reach the owner", adminRename.ok &&
         renamed.includes("Royalty and streaming names") && !/>Market cap<\/(th|button)>/.test(renamed) &&
-        renamed.includes("tier=4&amp;hide=marketCap&amp;format=xlsx&amp;report="));
+        /format=xlsx&amp;report=/.test(renamed) && !/cols=marketCap/.test(renamed));
 
   // The download: the same export the table uses, named for the report.
   const repCsv = await fetch(`${BASE}/api/companies/export?tier=4&hide=marketCap&format=csv&report=${pub.id}`,
@@ -1157,6 +1198,11 @@ async function journeys(dbPath) {
     ["/companies, filtered (viewer)", "/companies?tier=4&stage=royalty_streaming", viewer.cookie],
     ["/companies, every kind of filter (viewer)",
      "/companies?name=a&exchange=TSX&decides=royalty_streaming&exploration=no&audit_has=empty&cap_min=1&hide=ticker",
+     viewer.cookie],
+    ["/companies, every column shown (viewer)",
+     "/companies?" + ["marketCap", "ticker", "exchange", "website", "tier", "stage", "stages", "footprint", "props",
+       "commodities", "hq", "venture", "sec", "fye", "repCur", "revenue", "netIncome", "totalAssets", "auditor",
+       "auditorSince", "auditorChange", "auditFee", "auditRelatedFee", "taxFee", "otherFee"].map((k) => `cols=${k}`).join("&"),
      viewer.cookie],
     ["/reports (viewer)", "/reports", viewer.cookie],
     ["/reports (analyst)", "/reports", analyst.cookie],
