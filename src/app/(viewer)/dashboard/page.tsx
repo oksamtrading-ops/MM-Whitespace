@@ -1,7 +1,6 @@
 import { newestPeriod, newestPublishedPeriod } from "../../../lib/db/periods.ts";
 import type { Metadata, Route } from "next";
 import { requireRole } from "../../../lib/auth/context.ts";
-import { personSql } from "../../../lib/auth/person.ts";
 import { Forbidden } from "../../../lib/auth/session.ts";
 import { AI_NOTICE, EXCHANGE_NOTICE, INTERNAL_USE, VENDOR_NOTICE } from "../../../lib/publish/notices.ts";
 import { readPublished } from "../../../lib/publish/snapshot.ts";
@@ -13,7 +12,6 @@ import Callout from "../../_ui/Callout.tsx";
 import Icon from "../../_ui/Icon.tsx";
 import Page from "../../_ui/Page.tsx";
 import { periodName } from "../../_ui/format.ts";
-import About from "./About.tsx";
 import Board from "./Board.tsx";
 import BriefButton from "./BriefButton.tsx";
 
@@ -25,7 +23,9 @@ export const metadata: Metadata = { title: "Dashboard" };
  * everybody who opens it. The market by tier, its head offices across Canada
  * by province and tier, and its attest firms by head office and by tier.
  * Nothing on it filters: every figure opens its companies in Companies,
- * which is where a reader narrows.
+ * which is where a reader narrows. The header carries only the title and its
+ * actions; a revision published through a blocked gate says so, with its
+ * reason, above the panels, and says nothing otherwise.
  *
  * The server reads the frozen snapshot and draws every figure. What reaches
  * the browser is what a Viewer may read: no company's Deloitte market, which
@@ -59,30 +59,15 @@ export default async function Dashboard() {
     );
   }
 
-  const db = ctx.db;
-  const [atlas, publisher] = await Promise.all([
-    readAtlas(db, period.id, snap.publication.id),
-    snap.publication.published_by
-      ? db.get(`select ${personSql("u")} as name from app_users u where u.id = ?`, snap.publication.published_by) as Promise<{ name: string } | undefined>
-      : Promise.resolve(undefined),
-  ]);
+  const atlas = await readAtlas(ctx.db, period.id, snap.publication.id);
   const { name: periodTitle } = periodName(period.label);
   const { threshold, currency, operator, asOf } = atlas.period;
   const line = operator === "gt" ? `worth more than ${fmtCap(threshold, currency)}` : `worth ${fmtCap(threshold, currency)} or more`;
   const pub = atlas.publication;
 
   return (
-    <Page title="Dashboard" count={atlas.companies.length}
-          meta={`${periodTitle} · revision ${pub.revision}${pub.overrideReason ? " · through a blocked gate" : ""}`}
+    <Page title="Dashboard"
           actions={<>
-            <About label={`About revision ${pub.revision}`} warn={Boolean(pub.overrideReason)}>
-              <p className="db-about-t">{periodTitle}, revision {pub.revision}</p>
-              <p>Published {dayLabel(pub.publishedAt.slice(0, 10))}{publisher?.name ? ` by ${publisher.name}` : ""}.
-                Market values as of {dayLabel(asOf)}; the population is every company {line}.</p>
-              {pub.overrideReason && <Callout tone="warn" title="Published through a blocked gate">{pub.overrideReason}</Callout>}
-              {pub.amendmentReason && <Callout tone="info" title={`What revision ${pub.revision} changed`}>{pub.amendmentReason}</Callout>}
-              <p className="db-about-q">Every figure is a count of published values. Nothing here ranks a company or says which to approach.</p>
-            </About>
             <BriefButton atlas={atlas} periodTitle={periodTitle} />
             {/* The period workbook carries the WORKING period, so /api/export
                 refuses a Viewer -- and a button that only ever answers 403 is
@@ -97,6 +82,12 @@ export default async function Dashboard() {
                 </a>}
           </>}>
       <h1 className="sr-only">{periodTitle} dashboard</h1>
+      {/* An override nobody can see is an override nobody questions (doc 08):
+          the reason a gate was passed is printed here for as long as the
+          revision stands. */}
+      {pub.overrideReason && (
+        <Callout tone="warn" title="Published through a blocked gate" className="db-gate">{pub.overrideReason}</Callout>
+      )}
       <Board data={{
         total: atlas.companies.length,
         tiers: tierCounts(atlas.companies),

@@ -61,9 +61,9 @@ export default async function Publish() {
     amendment_reason: string | null; unresolved_count: number; by_name: string | null;
   }>;
 
-  // What an amendment would actually change. Its reason is printed on the
-  // dashboard header, and revision 11 of Q3-2026 named two fixes it did not
-  // contain, because nothing on this screen said what it held.
+  // What an amendment would actually change. Its reason is kept with the
+  // revision and listed below, and revision 11 of Q3-2026 named two fixes it
+  // did not contain, because nothing on this screen said what it held.
   const changes = revisions.length > 0 ? await revisionChanges(ctx.db, period.id) : null;
   const labels = new Map((await ctx.db.all("select key, label from field_catalog") as
     Array<{ key: string; label: string }>).map((f) => [f.key, f.label]));
@@ -161,7 +161,7 @@ export default async function Publish() {
         {changes && (
           <Section id="changes" title="What changes in this revision" index={4} icon="history"
                    caption={`What the next revision would freeze that revision ${changes.revision} does not. ` +
-                            "Read it before writing the reason: the reason is printed on the dashboard header."}>
+                            "Read it before writing the reason: the reason is kept with the revision, in the list below."}>
             <Changes changes={changes} labels={labels} />
           </Section>
         )}

@@ -523,9 +523,12 @@ removed. The design record is `docs/design/19-dashboard.md`.
   (`Board.tsx`) from the published snapshot (`readAtlas`). `board.ts` counts
   the panels and builds the links: `tierCounts`, `headOffices`, `attestFirms`
   and `companiesHref`. `Hover.tsx` is the only script on the board (a tooltip,
-  and a province lit with its row). `About.tsx` holds the publication record,
-  including the override and amendment reasons the publish screen promises
-  are on the dashboard header. `BriefButton.tsx` opens Brief me.
+  and a province lit with its row). The header is the title, Brief me and
+  Export: Samuel removed its count, revision line and "About revision"
+  disclosure the same day. A revision published through a blocked gate shows
+  its reason in a warning callout above the panels, which is where the
+  publish screen promises it is printed; an amendment's reason is listed on
+  the publish screen only. `BriefButton.tsx` opens Brief me.
 - **Removed.** `Atlas.tsx`, `Memo.tsx`, `Find.tsx`, `offices.ts`, and
   `src/lib/publish/cities.ts` with its test. From `lens.ts`: the lenses, the
   league, the firm parts, the size matrix, links, moves, signals, year-ends,

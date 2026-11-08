@@ -4,7 +4,7 @@
 
 **Rewritten on 8 November 2026.** Samuel asked for "a more simple dashboard that fits on a page without scrolling", with the filters removed and the page fixed on three views: the market by tier, head offices across Canada by province and tier, and attest firms by province and tier. He approved the layout from a mock-up, kept **Brief me**, chose to let every figure open its companies in Companies, set the firm rows at the Big 4 and every firm with ten or more companies, and removed the rest. The globe dashboard of 3 November is retired: its sentence and four numbers, the filter bar, the memo, Find and Show working. The globe stays, inside Brief me only (§8).
 
-This doc still takes the place of doc 18 §10 for the dashboard's map (§3), and no longer reverses doc 18 §1: there are no tiles. The code is `src/app/(viewer)/dashboard/` (`page.tsx`, `Board.tsx`, `Hover.tsx`, `About.tsx`, `BriefButton.tsx`, `Brief.tsx`, `words.ts`) and `src/lib/publish/board.ts`, whose counts are tested in `board.test.ts`. Brief me also uses `src/app/_ui/Globe.tsx` and `src/lib/publish/` (`atlas.ts`, `lens.ts`, `globe.ts`, `world.ts`).
+This doc still takes the place of doc 18 §10 for the dashboard's map (§3), and no longer reverses doc 18 §1: there are no tiles. The code is `src/app/(viewer)/dashboard/` (`page.tsx`, `Board.tsx`, `Hover.tsx`, `BriefButton.tsx`, `Brief.tsx`, `words.ts`) and `src/lib/publish/board.ts`, whose counts are tested in `board.test.ts`. Brief me also uses `src/app/_ui/Globe.tsx` and `src/lib/publish/` (`atlas.ts`, `lens.ts`, `globe.ts`, `world.ts`).
 
 ## 1. What it is for
 
@@ -40,11 +40,12 @@ Nothing on the dashboard filters, and a query string changes nothing on it. The 
 
 ## 6. The header
 
-The title, the count, and "Q4 2026 · revision 6" (with "· through a blocked gate" when it was). Then three actions:
+The title and two actions, and nothing else. Samuel removed the count, the period-and-revision line and the "About revision" disclosure on 8 Nov 2026; the tier panel already states the population and its as-of date.
 
-- **About revision N**, a disclosure (`About.tsx`): who published it and when, the line and the as-of date, the override reason under "Published through a blocked gate" when there is one, and what an amendment changed. The publish screen promises these reasons are printed on the dashboard header, and this is where they are. Its button carries a warning icon when the revision went through a blocked gate. Escape or a press outside closes it.
 - **Brief me** (§7).
 - **Export** for those who review. A Viewer gets **Export from Companies** instead, because `/api/export` refuses a Viewer.
+
+**A revision published through a blocked gate** says so at the top of the page, above the panels: a warning band, "Published through a blocked gate" run together with the Admin's reason in one or two lines, for as long as the revision stands. An override nobody can see is an override nobody questions (doc 08), and the publish screen promises the reason is printed there. A revision that passed its gate shows nothing, and the board takes the height. An amendment's reason is not on the dashboard; it is kept with the revision and listed on the publish screen.
 
 The licence notices are printed only, as before, and the AI notice is the one quiet line under the tiers.
 
@@ -68,7 +69,7 @@ Brief me's frames draw on `Globe.tsx`: an orthographic globe for the Americas an
 
 ## 9. Layout, phone and print
 
-**Wider than 1100px:** two columns, 30 to 70. The tiers fill the left, with the AI notice under them. Head offices take the top right (41%) and the firms the bottom right (59%). The board is the window's height less the header's and the page's top and bottom space, so the page does not scroll. The firm table's rows share out the height: 23px at 1280×800, 28px at 1440×900, 20px at 1280×700. Under 760px tall the frames tighten. Under 560px of board the page scrolls rather than squeeze further. **1100px and under:** one column (tiers, head offices, firms, then the AI notice), and the page scrolls. The map is at most 320px tall. Table rows are 28px, and a table too wide for its column scrolls in place with its row names held. **640px and under:** a long row name wraps in a narrower column, and About opens across the screen under the header. **The page never scrolls sideways, down to 320px:** the words kept for screen readers inside a scrolling table are positioned within its scroller, because otherwise they widen the page. **Print:** one column, without the tooltip or About.
+**Wider than 1100px:** two columns, 30 to 70. The tiers fill the left, with the AI notice under them. Head offices take the top right (41%) and the firms the bottom right (59%). The page is a column the window's height under the header, and the board takes what the override notice, when there is one, leaves, so the page does not scroll. The firm table's rows share out the height: 22px at 1280×800, 27px at 1440×900, 19px at 1280×700, and about 3px less each with the override notice. Under 760px tall the frames tighten, and with the notice the tier bars do too, so 1280×700 still fits. Under 560px of board the page scrolls rather than squeeze further. **1100px and under:** one column (tiers, head offices, firms, then the AI notice), and the page scrolls. The map is at most 320px tall. Table rows are 28px, and a table too wide for its column scrolls in place with its row names held. **640px and under:** a long row name wraps in a narrower column. **The page never scrolls sideways, down to 320px:** the words kept for screen readers inside a scrolling table are positioned within its scroller, because otherwise they widen the page. **Print:** one column, without the tooltip.
 
 ## 10. Tokens and checks
 

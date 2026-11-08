@@ -342,8 +342,14 @@ async function journeys(dbPath) {
   check("the dashboard renders its three panels",
         ["Market composition by tier", "Head offices across Canada, by province and tier", "Attest firms, by head office and by tier"]
           .every((t) => dash.html.includes(t)));
-  check("the override reason is printed on the header",
-        dash.html.includes("Published through a blocked gate"));
+  // The header is the title and its actions; a revision published through a
+  // blocked gate says so, with its reason, at the top of the page.
+  check("the override reason is printed at the top of the dashboard",
+        dash.html.includes("Published through a blocked gate") && dash.html.includes("End-to-end journey: day-one baseline."));
+  const dashHead = dash.html.slice(dash.html.indexOf('class="pagehead"'), dash.html.indexOf('class="rt"'));
+  check("and the header carries no count, revision line or About",
+        dashHead.length > 0 && !dashHead.includes('class="count"') && !dashHead.includes('class="meta"') &&
+        !dash.html.includes("About revision"));
   // Every panel counts the whole population once: the tiers, the head offices
   // and the firms each sum to the companies the page says it shows.
   const dashBoard = dash.html.slice(dash.html.indexOf('<div class="db"'), dash.html.indexOf('<footer class="notices"'));
@@ -561,7 +567,7 @@ async function journeys(dbPath) {
   check("a further publication is an amendment, not a replacement",
         adminPublish.html.includes("Publish an amendment") &&
         adminPublish.html.includes('name="amendmentReason"'));
-  // An amendment's reason is printed on the dashboard header, and revision 11
+  // An amendment's reason is kept with the revision and listed here, and revision 11
   // of Q3-2026 named two fixes it did not contain. So the screen says what the
   // next revision changes, and asks again when the answer is nothing.
   const unchanged = adminPublish.html.includes("Nothing has changed since revision");
