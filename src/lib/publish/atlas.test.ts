@@ -6,7 +6,6 @@ import { commitPeriod, type ParsedCompany } from "../db/commit.ts";
 import { recordDecision } from "../review/decide.ts";
 import { publishPeriod } from "./snapshot.ts";
 import { canonicalFirm, readAtlas, type AtlasCompany } from "./atlas.ts";
-import { applyLens, delta, moves, NO_LENS, signals } from "./lens.ts";
 
 function company(ordinal: number, name: string, over: Partial<ParsedCompany> = {}): ParsedCompany {
   return {
@@ -141,7 +140,6 @@ test("every published company appears once, largest first, with its tier as publ
   assert.equal(atlas.publication.revision, 1);
   assert.equal(atlas.publication.overrideReason, "test");
   assert.equal(atlas.publication.amendmentReason, null);
-  assert.deepEqual(applyLens(atlas.companies, NO_LENS), atlas.companies);
 });
 
 test("the Deloitte market is never read: not its key, not its value, anywhere in the dashboard's data", async () => {
@@ -236,26 +234,7 @@ test("researched facts read as the dashboard uses them, and a fact research has 
     [null, false, null, null, null, null, null]);
 });
 
-test("the views read the atlas as published: a change from \"KPMG LLP\" is a move KPMG lost, and the signals count it", async () => {
-  const { db, p2, pub2 } = await twoPeriods();
-  const atlas = await readAtlas(db, p2, pub2);
-
-  const m = moves(atlas.companies, atlas.period.asOf);
-  assert.deepEqual(m.moves.map((x) => [x.company.name, x.from, x.to, x.date]), [["Alpha Gold Corp.", "KPMG", "Deloitte", "2025-05"]]);
-  assert.deepEqual(m.byFirm, [{ firm: "Deloitte", won: 1, lost: 0 }, { firm: "KPMG", won: 0, lost: 1 }]);
-  assert.equal(m.undated, 1, "Davidson Client's change gives no date");
-  assert.equal(m.looked, 3);
-
-  const s = new Map(signals(atlas.companies, atlas.period.asOf, atlas.period.currency).map((x) => [x.id, x]));
-  assert.deepEqual(s.get("moved")!.companies.map((c) => c.name), ["Alpha Gold Corp."]);
-  assert.deepEqual(s.get("tenure")!.companies.map((c) => c.name), ["Middle Metals Inc."], "MNP since 2009");
-  assert.equal(s.get("tenure")!.of, 1, "Alpha Gold's year is known, but Deloitte's");
-  assert.deepEqual(s.get("sec")!.companies, [], "the one filer is Deloitte's");
-  assert.equal(s.get("sec")!.of, 1, "Middle Metals, checked and not a filer; the Deloitte filer is not another firm's");
-  assert.deepEqual(s.get("large")!.companies.map((c) => c.name), ["Davidson Client Corp."]);
-});
-
-test("with two periods published: the prior period, its entrants, its leavers and what changed between them", async () => {
+test("with two periods published: the prior period, its entrants and its leavers", async () => {
   const { db, p1, p2, pub2 } = await twoPeriods();
   const atlas = await readAtlas(db, p2, pub2);
 
@@ -270,13 +249,6 @@ test("with two periods published: the prior period, its entrants, its leavers an
   assert.deepEqual(atlas.leavers, [
     { id: await companyOf(db, "Leaver Mining Ltd."), name: "Leaver Mining Ltd.", ticker: "LVR", cap: 7e8, auditor: "PwC" },
   ]);
-
-  const d = delta(atlas)!;
-  assert.equal(d.entrants.length, 3);
-  assert.equal(d.continuing, 2);
-  assert.equal(d.capNow, 4e9 + 9e8);
-  assert.equal(d.capThen, 3e9 + 9e8);
-  assert.deepEqual(d.switched.map((m) => [m.company.name, m.from, m.to]), [["Alpha Gold Corp.", "KPMG", "Deloitte"]]);
 });
 
 test("the first period published has no prior, no entrants and no leavers", async () => {
@@ -286,7 +258,6 @@ test("the first period published has no prior, no entrants and no leavers", asyn
   assert.deepEqual(atlas.leavers, []);
   assert.ok(atlas.companies.every((c) => c.prior === null));
   assert.deepEqual(atlas.companies.map((c) => c.name), ["Alpha Gold Corp.", "Middle Metals Inc.", "Leaver Mining Ltd."]);
-  assert.equal(delta(atlas), null);
 });
 
 test("the prior is the newest revision of the period before: an amendment to it shows", async () => {

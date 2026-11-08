@@ -1,41 +1,37 @@
 import { newestPeriod, newestPublishedPeriod } from "../../../lib/db/periods.ts";
 import type { Metadata, Route } from "next";
-import { cookies } from "next/headers";
 import { requireRole } from "../../../lib/auth/context.ts";
 import { personSql } from "../../../lib/auth/person.ts";
 import { Forbidden } from "../../../lib/auth/session.ts";
 import { AI_NOTICE, EXCHANGE_NOTICE, INTERNAL_USE, VENDOR_NOTICE } from "../../../lib/publish/notices.ts";
 import { readPublished } from "../../../lib/publish/snapshot.ts";
 import { readAtlas } from "../../../lib/publish/atlas.ts";
-import { marketPenetration } from "../../../lib/publish/crosstabs.ts";
-import { populationTiles, type Aggregates } from "../../../lib/publish/views.ts";
+import { attestFirms, headOffices, tierCounts } from "../../../lib/publish/board.ts";
+import { dayLabel, fmtCap } from "../../../lib/publish/lens.ts";
 import Refusal from "../../_ui/Refusal.tsx";
+import Callout from "../../_ui/Callout.tsx";
 import Icon from "../../_ui/Icon.tsx";
 import Page from "../../_ui/Page.tsx";
-import AiNotice from "../../_ui/AiNotice.tsx";
-import WorkingToggle from "../../_ui/WorkingToggle.tsx";
-import { showsWorking, WORKING_COOKIE } from "../../_ui/theme.ts";
 import { periodName } from "../../_ui/format.ts";
-import Atlas from "./Atlas.tsx";
-import { viewFromParams } from "./words.ts";
+import About from "./About.tsx";
+import Board from "./Board.tsx";
+import BriefButton from "./BriefButton.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Dashboard" };
 
 /**
- * The dashboard (doc 19): one published revision, read once, drawn as a
- * globe and a memo that both follow the same filters.
+ * The dashboard (doc 19): one published revision on one screen, the same for
+ * everybody who opens it. The market by tier, its head offices across Canada
+ * by province and tier, and its attest firms by head office and by tier.
+ * Nothing on it filters: every figure opens its companies in Companies,
+ * which is where a reader narrows.
  *
- * The server reads the frozen snapshot and renders the first view from the
- * URL, so the sentence, its proof and the globe's first frame are in the
- * HTML; the browser then re-draws everything from the same companies as the
- * filters change, without a round trip. What the browser receives is what a
- * Viewer may read: no company's Deloitte market, which only ever leaves the
- * server as totals.
+ * The server reads the frozen snapshot and draws every figure. What reaches
+ * the browser is what a Viewer may read: no company's Deloitte market, which
+ * the snapshot keeps out of the companies Brief me is handed.
  */
-export default async function Dashboard({ searchParams }: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function Dashboard() {
   let ctx;
   try {
     ctx = await requireRole(["viewer", "analyst", "admin"]);
@@ -64,41 +60,30 @@ export default async function Dashboard({ searchParams }: {
   }
 
   const db = ctx.db;
-  const [atlas, markets, floors, publisher, params, jar] = await Promise.all([
+  const [atlas, publisher] = await Promise.all([
     readAtlas(db, period.id, snap.publication.id),
-    marketPenetration(db, snap.publication.id, "Foreign HQ — no Deloitte market"),
-    db.all("select chart, label, floor_pct from coverage_floors") as Promise<Array<{ chart: string; label: string; floor_pct: number | null }>>,
     snap.publication.published_by
       ? db.get(`select ${personSql("u")} as name from app_users u where u.id = ?`, snap.publication.published_by) as Promise<{ name: string } | undefined>
       : Promise.resolve(undefined),
-    searchParams,
-    cookies(),
   ]);
-
-  const agg = snap.aggregates as Aggregates;
-  const coverageOf = new Map<string, { resolved: number; population: number }>();
-  for (const row of agg.coverage ?? []) {
-    const entry = coverageOf.get(row.bucket) ?? { resolved: 0, population: 0 };
-    if (row.sub === "resolved") entry.resolved = row.n;
-    if (row.sub === "population") entry.population = row.n;
-    coverageOf.set(row.bucket, entry);
-  }
-  const coverage = floors.map((f) => ({
-    chart: f.chart, label: f.label, floorPct: f.floor_pct, ...(coverageOf.get(f.chart) ?? { resolved: 0, population: 0 }),
-  }));
-  // The totals frozen at publication, for the page to check its own arithmetic against.
-  const frozen = {
-    population: Number(populationTiles(agg).tiles.find((t) => t.label === "Companies")?.value ?? 0),
-    deloitte: (agg.auditor_share ?? []).find((a) => a.bucket === "Deloitte")?.n ?? 0,
-  };
   const { name: periodTitle } = periodName(period.label);
+  const { threshold, currency, operator, asOf } = atlas.period;
+  const line = operator === "gt" ? `worth more than ${fmtCap(threshold, currency)}` : `worth ${fmtCap(threshold, currency)} or more`;
+  const pub = atlas.publication;
 
   return (
     <Page title="Dashboard" count={atlas.companies.length}
-          meta={`${periodTitle} · revision ${snap.publication.revision}${snap.publication.override_reason ? " · through a blocked gate" : ""}`}
+          meta={`${periodTitle} · revision ${pub.revision}${pub.overrideReason ? " · through a blocked gate" : ""}`}
           actions={<>
-            {/* Each memo point names the fields it is counted from (doc 09). */}
-            <WorkingToggle initial={showsWorking(jar.get(WORKING_COOKIE)?.value, canReview)} />
+            <About label={`About revision ${pub.revision}`} warn={Boolean(pub.overrideReason)}>
+              <p className="db-about-t">{periodTitle}, revision {pub.revision}</p>
+              <p>Published {dayLabel(pub.publishedAt.slice(0, 10))}{publisher?.name ? ` by ${publisher.name}` : ""}.
+                Market values as of {dayLabel(asOf)}; the population is every company {line}.</p>
+              {pub.overrideReason && <Callout tone="warn" title="Published through a blocked gate">{pub.overrideReason}</Callout>}
+              {pub.amendmentReason && <Callout tone="info" title={`What revision ${pub.revision} changed`}>{pub.amendmentReason}</Callout>}
+              <p className="db-about-q">Every figure is a count of published values. Nothing here ranks a company or says which to approach.</p>
+            </About>
+            <BriefButton atlas={atlas} periodTitle={periodTitle} />
             {/* The period workbook carries the WORKING period, so /api/export
                 refuses a Viewer -- and a button that only ever answers 403 is
                 a broken promise. A Viewer exports from Companies instead,
@@ -112,10 +97,13 @@ export default async function Dashboard({ searchParams }: {
                 </a>}
           </>}>
       <h1 className="sr-only">{periodTitle} dashboard</h1>
-      <Atlas atlas={atlas} periodTitle={periodTitle} initial={viewFromParams(params, atlas)}
-             markets={markets.rows.length ? markets : null} coverage={coverage} frozen={frozen}
-             publisher={publisher?.name ?? null} />
-      <AiNotice compact />
+      <Board data={{
+        total: atlas.companies.length,
+        tiers: tierCounts(atlas.companies),
+        hq: headOffices(atlas.companies),
+        firms: attestFirms(atlas.companies),
+        basis: `${line}, as of ${dayLabel(asOf)}`,
+      }} />
       <footer className="notices">
         <p>{INTERNAL_USE}</p>
         <p>{EXCHANGE_NOTICE}</p>

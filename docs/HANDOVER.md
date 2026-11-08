@@ -1,5 +1,12 @@
 # Handover — Mining & Metals Marketplace Assessment Tool
 
+> **8 November 2026: the dashboard is one screen.** At Samuel's request the
+> globe dashboard is replaced by three fixed panels that fit the window with
+> no scrolling: the market by tier, head offices across Canada by province
+> and tier, and attest firms by head office and by tier. It has no filters.
+> Every figure opens its companies in Companies. Brief me stays. Doc 19 is
+> rewritten; see "Built on 8 November 2026".
+
 > **5 November 2026: documents an analyst supplies.** For a company whose
 > website refuses the fetcher, an Analyst or Admin can supply its PDF
 > (`/companies/{id}/documents`); pass 2 reads it first, every value read from
@@ -450,7 +457,7 @@ source" is true on screen.
 | The plan B and C were built to | `~/.claude/plans/review-the-request-in-eager-noodle.md` (local only, approved by Samuel) |
 | Start here | `README.md` — what is built, how to run it, and why |
 | Operating it | `docs/RUNBOOK.md` — loading a period, sign-in, publishing, incidents |
-| Design | `docs/DESIGN.md` and `docs/design/00`–`19`. **Section 00 first**. Three documents reverse earlier ones and say so: doc 18 reverses doc 17's light-first decision, doc 19 (the dashboard) reverses doc 18 §1's no-tile rule and replaces doc 18 §10, and doc 11's authentication section reverses its own magic-link-only rule. The control-height rule is in doc 18 §5 (tables), §12 (buttons and forms), §14 (targets) and §15 (plan row 28) |
+| Design | `docs/DESIGN.md` and `docs/design/00`–`19`. **Section 00 first**. Three documents reverse earlier ones and say so: doc 18 reverses doc 17's light-first decision, doc 19 (the dashboard, rewritten 8 November for one screen) replaces doc 18 §10, and doc 11's authentication section reverses its own magic-link-only rule. The control-height rule is in doc 18 §5 (tables), §12 (buttons and forms), §14 (targets) and §15 (plan row 28) |
 | Decisions | `docs/decisions/` — all ten closed; decision 1 approved by legal on 4 September 2026. `BATCH-API.md` records why both passes batch; **`S6-PASSWORD-AUTH.md` records why sign-in is a password, and what that gave up** |
 | Settings | `.env.example` lists every variable; `.env.local` holds local secrets and is git-ignored |
 | Source workbooks | Project root and `reference/`. **Git- and Vercel-ignored: licensed, and they carry personal data** |
@@ -503,6 +510,40 @@ override must cite a public page (Release C): an ERP known from an engagement
 is client information.
 
 ## What exists, and what state it is in
+
+### Built on 8 November 2026 — the dashboard on one screen
+
+Samuel asked for "a more simple dashboard that fits on a page without
+scrolling", with no filters, fixed on three views. He approved a mock-up and
+chose four things: figures that open Companies, Brief me kept, firm rows for
+the Big 4 and every firm with ten or more companies, and everything else
+removed. The design record is `docs/design/19-dashboard.md`.
+
+- **The page** (`src/app/(viewer)/dashboard/`). The server draws all of it
+  (`Board.tsx`) from the published snapshot (`readAtlas`). `board.ts` counts
+  the panels and builds the links: `tierCounts`, `headOffices`, `attestFirms`
+  and `companiesHref`. `Hover.tsx` is the only script on the board (a tooltip,
+  and a province lit with its row). `About.tsx` holds the publication record,
+  including the override and amendment reasons the publish screen promises
+  are on the dashboard header. `BriefButton.tsx` opens Brief me.
+- **Removed.** `Atlas.tsx`, `Memo.tsx`, `Find.tsx`, `offices.ts`, and
+  `src/lib/publish/cities.ts` with its test. From `lens.ts`: the lenses, the
+  league, the firm parts, the size matrix, links, moves, signals, year-ends,
+  fees and the prior-period delta. From `words.ts`: the URL state and the
+  memo's words. From `Globe.tsx`: the camera helpers only the old page used.
+  About 380 lines of CSS for the answer, filter bar, memo, focus card and
+  Find. The new rules are all `db-`.
+- **Fit.** Measured in Chrome on the synthetic showcase: 1280×800,
+  1440×900 and 1280×700 do not scroll. Under 1100px it is one column that
+  scrolls, and there is no sideways scroll at 375 or 320. The global
+  `th, td` rule gives every table row a fixed height and a bottom rule, and
+  `.db-mx` turns both off so the rows can share out the panel.
+- **Show working has no control now.** Its cookie still hides `.section
+  .key` on other pages (`layout.tsx`): on for reviewers, off for Viewers.
+- **Tests.** `board.test.ts` is new. The journeys check the three panels, that
+  each sums to the population, the links into Companies, that nothing
+  filters, that a query string changes nothing, and that no Deloitte market
+  reaches a Viewer.
 
 ### Built on 7 November 2026 — the companies table: a filter on every column, saved reports
 
@@ -692,8 +733,8 @@ in "What is waiting on Samuel", item 1. Their amendment reasons, in
   with B for black, T for a table and Esc to leave;
 - **Find** (⌘K or /).
 
-The design record is `docs/design/19-dashboard.md`. The URL rule is in
-`Atlas.tsx`: write the address only on a reader's change, never write a view
+This dashboard was replaced on 8 November; see "Built on 8 November 2026".
+The URL rule was in `Atlas.tsx`: write the address only on a reader's change, never write a view
 taken from the address, and treat an address the current view would write
 as the page's own echo. A dev server hides router races that production
 hits; the memory note on the dashboard says how to test like production.

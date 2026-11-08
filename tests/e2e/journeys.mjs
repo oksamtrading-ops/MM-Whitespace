@@ -305,7 +305,7 @@ async function journeys(dbPath) {
   // 1. A Viewer signs in and reads the published dashboard.
   console.log("\n1. a Viewer signs in and reads the dashboard");
   const anon = await get("/dashboard");
-  check("anonymous is not shown data", !anon.html.includes("Deloitte audits"),
+  check("anonymous is not shown data", !anon.html.includes("Market composition by tier"),
         "the dashboard rendered without a session");
   const viewer = await signIn("viewer@example.invalid");
   check("a Viewer can sign in", viewer.status === 200 && Boolean(viewer.cookie));
@@ -327,7 +327,7 @@ async function journeys(dbPath) {
   const landingViewer = await get("/", viewer.cookie);
   check("a Viewer is offered the dashboard",
         /href="\/dashboard"[^>]*>Continue to the dashboard</.test(landingViewer.html));
-  check("and the landing page shows no company data", !landingViewer.html.includes("Deloitte audits"));
+  check("and the landing page shows no company data", !landingViewer.html.includes("Market composition by tier"));
   const approach = text(landingViewer.html);
   check("signed in, it states the approach with the published period's figures",
         /Last updated on \d{2}\.\d{4}\./.test(approach) &&
@@ -338,18 +338,34 @@ async function journeys(dbPath) {
         !/XXXX|MM\.YYYY/.test(approach),
         "a figure is missing or a placeholder is showing");
   const dash = await get("/dashboard", viewer.cookie);
-  check("the dashboard renders published figures", dash.html.includes("Deloitte audits"));
+  // Doc 19: one revision on one screen, three panels, the same for everybody.
+  check("the dashboard renders its three panels",
+        ["Market composition by tier", "Head offices across Canada, by province and tier", "Attest firms, by head office and by tier"]
+          .every((t) => dash.html.includes(t)));
   check("the override reason is printed on the header",
         dash.html.includes("Published through a blocked gate"));
-  check("the proof line is present", /= \d+ ✓/.test(dash.html));
-  // The map's tier switch: a dropdown opening on every company, with one
-  // option per tier (and Unclassified), each carrying how many it would show.
-  const mapSwitch = dash.html.match(/<div class="map-switch"[\s\S]*?<\/div>/)?.[0] ?? "";
-  check("the map opens on every company, with a dropdown to one tier at a time",
-        /<select id="map-view"/.test(mapSwitch) &&
-        /<option value="all" selected="">All companies \(\d+\)/.test(mapSwitch) &&
-        ["Tier 1 (", "Tier 6 (", "Unclassified ("].every((t) => mapSwitch.includes(t)),
-        "the dropdown is missing, or does not start on all companies");
+  // Every panel counts the whole population once: the tiers, the head offices
+  // and the firms each sum to the companies the page says it shows.
+  const dashBoard = dash.html.slice(dash.html.indexOf('<div class="db"'), dash.html.indexOf('<footer class="notices"'));
+  const total = Number(dashBoard.match(/class="db-big">([\d,]+)</)?.[1].replace(/,/g, "") ?? NaN);
+  const sum = (re) => [...dashBoard.matchAll(re)].reduce((n, m) => n + Number(m[1]), 0);
+  const tierSum = sum(/class="db-bar-n">(\d+)</g);
+  const hqPart = dashBoard.slice(dashBoard.indexOf("db-hq"), dashBoard.indexOf("db-firms"));
+  const firmPart = dashBoard.slice(dashBoard.indexOf("db-firms"));
+  const totals = (part) => [...part.matchAll(/<td class="db-tot">(?:<a [^>]*>)?(?:<span class="db-none">)?(\d+)/g)].reduce((n, m) => n + Number(m[1]), 0);
+  check("the tiers, the head offices and the firms each sum to the population",
+        total > 0 && tierSum === total && totals(hqPart) === total && totals(firmPart) === total,
+        `population ${total}, tiers ${tierSum}, head offices ${totals(hqPart)}, firms ${totals(firmPart)}`);
+  // A figure opens its companies in Companies, filtered there; the dashboard
+  // itself has nothing to filter with.
+  check("every figure opens its companies in Companies",
+        dashBoard.includes('href="/companies?tier=1"') && /href="\/companies\?tier=\d&amp;hq=CA%3A[A-Z]{2}"/.test(dashBoard) &&
+        /href="\/companies\?auditor=Deloitte"/.test(dashBoard) && /href="\/companies\?hq=[^"]+&amp;auditor=[^"]+"/.test(dashBoard));
+  check("and nothing on it filters", !/<select|<form|<input/.test(dashBoard));
+  const withParams = await get("/dashboard?tier=1&firm=deloitte&hq=CA%3ABC", viewer.cookie);
+  const boardOf = (html) => html.slice(html.indexOf('<div class="db"'), html.indexOf('<footer class="notices"'));
+  check("a query string changes nothing on it", boardOf(withParams.html) === dashBoard);
+  check("and no Deloitte market reaches a Viewer's page", !dash.html.includes("dtt_market") && !dash.html.includes("Deloitte market"));
 
   // 2. A Viewer is refused the review workspace.
   console.log("\n2. a Viewer is refused the review workspace");
