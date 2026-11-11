@@ -270,6 +270,34 @@ What changed:
   circulars are no longer read as filings. An independent review found the
   first version refused circulars whose words also named a form, and missed
   "Request for Financial Statements" cards. Both are fixed and tested.
+- **A fee is checked against the currency the document says it uses**
+  (`currencyStatements`, `currencyAt`, `anchor.ts`). The Q4 fee re-run (run
+  37b02a89) proposed Trilogy Metals', Vista Gold's and Andean Precious
+  Metals' fees in Canadian dollars. Each circular says, near the front, that
+  its "$" is US dollars, and the fee table, tens of thousands of characters
+  on, prints only "$". The model read a Canadian issuer's plain "$" as CAD,
+  and the gate looked only at the figure's prefix and a heading above it.
+  The gate now also reads the document's own currency statement: what "$"
+  means, or what all its amounts are in. It reads only a general statement
+  ("all", "unless otherwise", "in this Circular", "herein"), in the first
+  120,000 characters, and prefers one that names the document. It refuses
+  statements about a plan, a table, a letter, pay, a loan, a price, a
+  section, or a study, and those that say how a subset is marked ("amounts
+  in Canadian dollars are denoted C$") or pair symbols "respectively". The
+  statement is the weakest source. It ranks below the figure's prefix and a
+  heading, which now includes a fee column headed with its currency
+  (Graphite One's "Audit fees(1) CA$"). It is not used where anything within
+  3,000 characters of the figure names any currency, because tables state
+  theirs in more ways than a pattern reads. It is not used for a nil row
+  either: NovaGold prints "Nil" in a C$ table under a US$ note. It only
+  tests a claim and is never written into a value as its currency. Replayed
+  over the 28 fee findings at the seven companies whose filings make such a
+  statement or head a column with a currency: the five wrong non-nil fees
+  are held, and every fee a checker confirmed stays proposed. An independent
+  review found that the first version held correct fees under table
+  headings it could not read, took "retainer fee US$ 50,000" for a column
+  heading, and misread scoped and labelling sentences. All of these are fixed
+  and tested.
 
 ## Deliberately not in this build
 

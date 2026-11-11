@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  anchorNumeric, currenciesMentioned, detectCurrency, detectScale, gate, hasTextLayer, normalize,
+  anchorNumeric, currenciesMentioned, currencyAt, currencyStatements, detectCurrency, detectScale, gate, hasTextLayer, normalize,
   normalizeNumeral, numericHaystack, type StoredDocument,
 } from "./anchor.ts";
 
@@ -677,4 +677,209 @@ December 31, 2025 $45,000 $5,000 $8,500 $1,200
   held("tax_fee", "Dated May 1, 2025. Fees for 2024 and 2023: Audit fees $40,000 $38,000 Tax fees Nil Nil");
   // "Non audit fees" is not the audit fee.
   held("audit_fee", "2025 2024 Audit fees $50,000 $45,000 Non audit fees Nil Nil");
+});
+
+// --- Q4 2026 fee re-run, 11 November 2026 ----------------------------------------
+
+/** Pages of a circular between its currency note and its fee table: nothing about money. */
+const BETWEEN = " The meeting will consider the election of directors and the appointment of the auditor.".repeat(60);
+/** A fee table that prints only "$", as most circulars do. */
+const BARE_TABLE = "Fees Paid to Auditor The following fees were billed for the years ended December 31, 2025 and 2024. " +
+  "2025 2024 Audit Fees (1) $ 101,700 105,700 Audit-Related Fees (2) - - Tax Fees (3) - - All Other Fees (4) - - " +
+  "Total $ 101,700 105,700";
+const fee = (currency: string, value = 101_700, fieldKey = "audit_fee") =>
+  ({ value, scale: "units" as const, fiscalYear: 2025, fieldKey, currency });
+
+test("a circular that says its \"$\" is US dollars holds a fee claimed in Canadian dollars", async () => {
+  // Trilogy, Vista and Andean wrote it three ways; each was proposed as CAD.
+  const notes = [
+    "Unless otherwise indicated, all references to “$” or “US$” in this Circular refer to United States dollars. " +
+      "References to “C$” in this Circular refer to Canadian dollars.",
+    "All references to currency in this Information Circular are to United States dollars, unless otherwise indicated.",
+    "CURRENCY PRESENTATION Unless specified herein, all dollar amounts referenced in this Information Circular are " +
+      "in United States dollars and are referred to as “$”. Directors' fees are paid in Canadian dollars.",
+    "Unless otherwise noted, all amounts are in U.S. dollars.",
+  ];
+  for (const note of notes) {
+    const circular = doc(note + BETWEEN + BARE_TABLE);
+    const cad = anchorNumeric(fee("CAD"), circular);
+    assert.equal(cad.mode, "label_only", note);
+    // Where the circular names C$ too, only the new rule can catch it; where
+    // it never does, the older check answers first.
+    assert.match(cad.reason ?? "", /states its amounts are in USD, not CAD|never mentions CAD/);
+    if (/c\$|canadian/i.test(note)) assert.match(cad.reason ?? "", /states its amounts are in USD, not CAD/);
+    const usd = anchorNumeric(fee("USD"), circular);
+    assert.equal(usd.mode, "proximity", note);
+    // Only a prefix or a heading is recorded as the figure's currency: worker.ts
+    // fills a finding's missing currency from it, and a statement up front is
+    // too far from the figure to be written into its value.
+    assert.equal(usd.matched?.currency, undefined);
+    // A nil row is nil in any currency: what the circular says up front does
+    // not hold it (NovaGold prints "Nil" in a C$ table under a US$ note).
+    assert.equal(anchorNumeric(fee("CAD", 0, "tax_fee"), circular).mode, "proximity", note);
+    assert.equal(anchorNumeric(fee("USD", 0, "tax_fee"), circular).matched?.currency, "USD");
+  }
+});
+
+test("a circular whose \"$\" is Canadian dollars holds a fee claimed in US dollars, and agrees with CAD", async () => {
+  const notes = [
+    "Unless otherwise indicated, all references to “$” are to Canadian dollars and references to “US$” are to United States dollars.",
+    "All dollar amounts in this AIF are stated in Canadian dollars, unless otherwise specified.",
+    "In this AIF, unless otherwise indicated, all references to “$”, “C$”, “dollars” or “CAD” refer to Canadian dollars, " +
+      "all references to “US$” or “USD” refer to United States dollars.",
+    "Sauf indication contraire, tous les montants sont exprimés en dollars canadiens.",
+    "Dans la présente circulaire, le symbole « $ » désigne le dollar canadien.",
+  ];
+  for (const note of notes) {
+    const circular = doc(note + BETWEEN + BARE_TABLE);
+    assert.equal(anchorNumeric(fee("CAD"), circular).mode, "proximity", note);
+    assert.equal(anchorNumeric(fee("USD"), circular).mode, "label_only", note);
+  }
+});
+
+test("the figure's own prefix and its table's heading outrank what the document says up front", async () => {
+  const usdNote = "All references to currency in this Information Circular are to United States dollars, unless otherwise indicated.";
+  const prefixed = doc(usdNote + BETWEEN + BARE_TABLE.replace("$ 101,700", "C$ 101,700"));
+  assert.equal(anchorNumeric(fee("CAD"), prefixed).mode, "proximity");
+  const headed = doc(usdNote + BETWEEN + "(expressed in Canadian dollars) " + BARE_TABLE);
+  assert.equal(anchorNumeric(fee("CAD"), headed).mode, "proximity");
+});
+
+test("only a general statement of currency counts, and the document's first", async () => {
+  const at = (text: string) => {
+    const hay = numericHaystack(text + BETWEEN + BARE_TABLE);
+    return detectCurrency(hay, hay.indexOf("101700"));
+  };
+  // A plan's own definitions, a share price, a conversion, a subsidiary's
+  // functional currency, a risk factor: none says what the circular's "$" is.
+  assert.equal(at("Unless otherwise specifically provided, all references to dollars in the Plan are references to Canadian dollars."), null);
+  assert.equal(at("Price range (all per share amounts are in Canadian dollars)."), null);
+  assert.equal(at("All payments were made in Canadian dollars and have been converted into United States dollars at a rate of 0.73."), null);
+  assert.equal(at("The functional currency of the company's Cayman subsidiary is the US dollar."), null);
+  assert.equal(at("Gold is priced in US dollars, and all of our sales are denominated in US dollars."), null);
+  // A part of the document speaking for itself: GoldMining's AIF says "$" is
+  // Canadian dollars up front, and its PEA section that it is in US dollars.
+  assert.equal(at("All currency values for this section of the PEA are presented in United States dollars unless stated otherwise."), null);
+  // The first statement speaks for the document; a later one for its part.
+  assert.equal(at("Unless otherwise stated, references herein to “$” or “dollars” are to Canadian dollars. " + BETWEEN +
+                  "All values are United States dollars unless otherwise stated."), "CAD");
+  // Below the figure counts too: it is still the document's statement.
+  const hay = numericHaystack(BARE_TABLE + BETWEEN + "All dollar amounts are expressed in Canadian dollars unless otherwise stated.");
+  assert.equal(detectCurrency(hay, hay.indexOf("101700")), "CAD");
+  assert.deepEqual(currencyStatements(numericHaystack("Nothing about money here.")), []);
+});
+
+test("a fee column headed with its currency is read, bracketed or not", async () => {
+  // Graphite One: a circular in US dollars, a fee table in CA$ by column.
+  const circular = doc("All monetary amounts in the Information Circular are stated in United States dollars unless otherwise indicated." +
+    BETWEEN + "External Auditor Service Fees Year Ended Audit Fees(1) CA$ Audit –Related Fees(2) CA$ Tax Fees(3) CA$ " +
+    "All Other Fees CA$ 2025 $137,393 - $59,704 $23,594 2024 $161,763 - $49,369 $25,506");
+  const claim = { value: 137_393, scale: "units" as const, fiscalYear: 2025, fieldKey: "audit_fee" };
+  assert.equal(anchorNumeric({ ...claim, currency: "CAD" }, circular).mode, "proximity");
+  assert.equal(anchorNumeric({ ...claim, currency: "USD" }, circular).mode, "label_only");
+  assert.equal(anchorNumeric({ ...claim, value: 59_704, fieldKey: "tax_fee", currency: "CAD" }, circular).mode, "proximity");
+  // "Audit fees ($)" names no currency, so the document's statement stands.
+  const plain = doc("Except where otherwise indicated, references to “$” and “dollars” in this AIF mean Canadian dollars." +
+    BETWEEN + "Period Audit fees ($) Audit related fees ($) Tax fees ($) All other fees ($) " +
+    "Year ended December 31, 2025 275,000 91,252 23,540 Nil");
+  assert.equal(anchorNumeric({ ...claim, value: 275_000, currency: "CAD" }, plain).mode, "proximity");
+  assert.equal(anchorNumeric({ ...claim, value: 275_000, currency: "USD" }, plain).mode, "label_only");
+});
+
+// --- Review of the currency statement rule, 11 November 2026 -------------------
+
+const USD_NOTE = "Unless otherwise indicated, all references to “$” or “US$” in this Circular refer to United States dollars. " +
+  "References to “C$” in this Circular refer to Canadian dollars.";
+const CAD_NOTE = "Unless otherwise indicated, all references to “$” in this AIF are to Canadian dollars and references to “US$” " +
+  "are to United States dollars.";
+const TABLE_ROWS = "2025 2024 Audit Fees (1) $ 101,700 105,700 Audit-Related Fees (2) - - Tax Fees (3) 29,800 40,200";
+
+test("a table that names its own currency in any words keeps the model's reading, whatever the front says", async () => {
+  // A US$ issuer paying a Canadian auditor in C$: the table says so, in more
+  // ways than a heading pattern reads. Where it says anything, the statement
+  // up front decides nothing.
+  for (const heading of [
+    "(in Canadian dollars)", "(Canadian dollars)", "($CAD)", "(CDN $)", "(en dollars canadiens)",
+    "All amounts in the following table are in Canadian dollars.",
+    "The following table sets out the fees billed by PwC, in Canadian dollars, for the years ended December 31.",
+    "Fees billed are in Canadian dollars.",
+  ]) {
+    const circular = doc(USD_NOTE + BETWEEN + "Fees Paid to Auditor " + heading + " " + TABLE_ROWS);
+    assert.equal(anchorNumeric(fee("CAD"), circular).mode, "proximity", heading);
+  }
+  // A currency printed after the figure.
+  const after = doc(CAD_NOTE + BETWEEN + "2025 2024 Audit fees $101,700 USD $105,700 USD");
+  assert.equal(anchorNumeric(fee("USD"), after).mode, "proximity");
+  // French, "$ CA" after the figure.
+  const fr = doc("Sauf indication contraire, tous les montants de la présente circulaire sont exprimés en dollars américains." +
+    BETWEEN + "Honoraires d'audit 2025 101 700 $ CA 2024 105 700 $ CA");
+  assert.equal(detectCurrency(numericHaystack(fr.text), numericHaystack(fr.text).indexOf("101 700")), null);
+});
+
+test("a fee figure in prose is not a fee column's heading", async () => {
+  for (const prose of [
+    "The Company pays management fees USD 10,000 per month to a company controlled by the CEO.",
+    "The chair receives an annual retainer fee US$ 50,000 paid quarterly.",
+    "Marketing fees € 2.5 per tonne apply.",
+  ]) {
+    const hay = numericHaystack(CAD_NOTE + BETWEEN + prose + " External Auditor Service Fees Audit Fees(1) Tax Fees(3) " +
+      "December 31, 2025 $101,700 $8,500");
+    const at = hay.indexOf("101700");
+    assert.equal(currencyAt(hay, at)?.how === "heading", false, prose);
+  }
+  // A header with the currency, then the year row, still is.
+  const hay = numericHaystack("Year ended Audit fees(1) CA$ Tax fees(3) CA$ 2025 $137,393 $59,704");
+  assert.deepEqual(currencyAt(hay, hay.indexOf("137393")), { code: "CAD", how: "heading" });
+});
+
+test("statements that are not about what the document's amounts are in are not read as such", async () => {
+  const first = (text: string) => {
+    const hay = numericHaystack(text + BETWEEN + "Audit fees $ 101,700");
+    return [...new Set(currencyStatements(hay).map((s) => s.code))];
+  };
+  // How a subset is marked, not what the amounts are in.
+  assert.deepEqual(first("Except as otherwise indicated, all amounts in Canadian dollars are indicated by “C$” and all other " +
+    "amounts, indicated by “$” or “US$”, are in United States dollars."), ["USD"]);
+  assert.deepEqual(first("Unless otherwise indicated, amounts in Canadian dollars are denoted “C$” and all other amounts " +
+    "are in United States dollars."), ["USD"]);
+  // "Respectively" pairs symbols with currencies in an order a pattern cannot follow.
+  assert.deepEqual(first("Unless otherwise indicated, references to “US$” and “$” are to United States dollars and " +
+    "Canadian dollars, respectively."), []);
+  // A loan, a table, a letter, a per-share price, an exchange rate, pay.
+  for (const scoped of [
+    "All amounts outstanding under the credit facility are repayable in U.S. dollars.",
+    "Director compensation. All amounts in the table below are in Canadian dollars.",
+    "All dollar amounts in this letter are in Canadian dollars.",
+    "Sauf indication contraire, tous les montants par action sont en dollars canadiens.",
+    "Unless otherwise noted, all compensation amounts are paid in Canadian dollars.",
+  ]) assert.deepEqual(first(scoped), [], scoped);
+  // "Contacting us." ends a sentence; the statement after it is read.
+  assert.deepEqual(first("Shareholders may obtain a copy of the Plan by contacting us. Unless otherwise indicated, all " +
+    "references to “$” in this Circular are to Canadian dollars."), ["CAD"]);
+  // A tail about per-share amounts does not unmake the statement before it.
+  assert.deepEqual(first("Unless otherwise indicated, all amounts are expressed in United States dollars, except per share amounts."), ["USD"]);
+  // Statements real filings make that the first version missed.
+  assert.deepEqual(first("In this Circular, references to “$” or “dollars” are to Canadian dollars and references to “US$” " +
+    "are to United States dollars."), ["CAD"]);
+  assert.deepEqual(first("Unless otherwise indicated, all references to “$” in this Circular of Trilogy Metals Inc. are to " +
+    "United States dollars."), ["USD"]);
+  assert.deepEqual(first("Unless otherwise indicated, all dollar amounts in this Circular are in thousands of United States dollars."), ["USD"]);
+  assert.deepEqual(first("Unless otherwise indicated, all amounts are presented in US$."), ["USD"]);
+});
+
+test("the statement that names the document outranks an earlier one about something else", async () => {
+  const hay = numericHaystack("Dear Shareholder, unless otherwise noted all amounts mentioned are in Canadian dollars. " + BETWEEN +
+    USD_NOTE + BETWEEN + "Fees Paid to Auditor " + TABLE_ROWS);
+  assert.deepEqual(currencyAt(hay, hay.indexOf("101700")), { code: "USD", how: "statement" });
+  // Statements are front matter: one deep in a long filing is not read.
+  const deep = numericHaystack("x ".repeat(70_000) + USD_NOTE + BETWEEN + TABLE_ROWS);
+  assert.deepEqual(currencyStatements(deep), []);
+});
+
+test("a bare total row stays held when only the statement disagrees with its currency", async () => {
+  const v = gate({ fieldKey: "total_assets", document: doc(CAD_NOTE + BETWEEN +
+      "Balance sheet 2025 2024 cash 12,345 11,000 receivables 3,456 2,000 1,234,567 1,100,000"),
+    numeric: { value: 1_234_567, scale: "units", fiscalYear: 2025, fieldKey: "total_assets", currency: "USD" } });
+  assert.equal(v.state, "anchor_mismatch");
+  assert.match(v.reason ?? "", /states its amounts are in CAD, not USD/);
 });

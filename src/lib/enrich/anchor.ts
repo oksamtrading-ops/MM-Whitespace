@@ -203,7 +203,13 @@ const PREFIX_RE = new RegExp(String.raw`(?:^|[^a-z])(${TOKEN})\s?$`);
 const HEADING_RE = new RegExp(
   String.raw`\(\s*(?:in\s+)?(${TOKEN})\s*(?:thousands?|millions?|000'?s?)?[^)]{0,40}\)` +
   String.raw`|\((?:in\s+)?(?:thousands?|millions?)\s+of\s+(${DOLLARS}|${TOKEN})[^)]{0,40}\)` +
-  String.raw`|(?:expressed|stated|presented|reported|amounts?(?: are)?|all amounts(?: are)?)\s+in\s+(?:thousands\s+of\s+|millions\s+of\s+)?(${DOLLARS})`,
+  String.raw`|(?:expressed|stated|presented|reported|amounts?(?: are)?|all amounts(?: are)?)\s+in\s+(?:thousands\s+of\s+|millions\s+of\s+)?(${DOLLARS})` +
+  // A fee column headed with its currency, bracketed or not: Graphite One's
+  // "Audit fees(1) CA$ … Tax fees(3) CA$" over "2025 $137,393 - $59,704".
+  // Not a figure's own prefix in prose ("an annual retainer fee US$ 50,000"):
+  // the token may be followed by a year, as a column header is, never by an
+  // amount.
+  String.raw`|\bfees?\s*(?:\(\w{1,2}\)|\d)?\s*(${TOKEN})(?![a-z0-9])(?!\s*\$?\s*(?!(?:19|20)\d\d\b)\d)`,
   "g");
 
 function codeOf(token: string): string | null {
@@ -222,8 +228,8 @@ function codeOf(token: string): string | null {
  * it did before.
  */
 const CURRENCY_MENTIONS: Array<[string, RegExp]> = [
-  ["USD", /\bu\.?s\.?\s?\$|\busd\b|\bu\.?s\.? dollars?\b|\bunited states dollars?\b/],
-  ["CAD", /\bc\$|\bca\$|\bcdn\$|\bcad\b|\bcanadian dollars?\b|\bdollars? canadiens?\b/],
+  ["USD", /\bu\.?s\.?\s?\$|\busd\b|\bu\.?s\.? dollars?\b|\bunited states dollars?\b|\bdollars? am[ée]ricains?\b|\$\s?us\b/],
+  ["CAD", /\bc\$|\bca\$|\bcdn\s?\$|\bcan\$|\bcad\b|\bcanadian dollars?\b|\bdollars? canadiens?\b|\$\s?ca(?:n|d)?\b/],
   ["AUD", /\ba\$|\bau\$|\baud\b|\baustralian dollars?\b/],
   ["GBP", /£|\bgbp\b|\bpounds? sterling\b/],
   ["EUR", /€|\beur\b|\beuros?\b/],
@@ -233,13 +239,159 @@ export function currenciesMentioned(text: string): string[] {
   return CURRENCY_MENTIONS.filter(([, re]) => re.test(text)).map(([code]) => code);
 }
 
-export function detectCurrency(text: string, near: number): string | null {
+/**
+ * What the document as a whole says its amounts are in, once, near the front:
+ *
+ *   "Unless otherwise indicated, all references to "$" or "US$" in this
+ *    Circular refer to United States dollars."               (Trilogy Metals)
+ *   "All references to currency in this Information Circular are to United
+ *    States dollars, unless otherwise indicated."                 (Vista Gold)
+ *   "All dollar amounts referenced in this Information Circular are in United
+ *    States dollars and are referred to as "$"."                 (Andean, APM)
+ *
+ * The Q4 2026 fee re-run proposed all three companies' fees in Canadian
+ * dollars: the model read a Canadian issuer's plain "$" as CAD, and the fee
+ * table, thousands of characters further on, has no heading of its own to
+ * contradict it. Two shapes are read, and only as a general statement -- one
+ * that says "all" or "unless otherwise", and is not about a plan, a per-share
+ * price or a conversion:
+ *
+ *   what "$" means      "references to "$" ... are to Canadian dollars"
+ *   what amounts are in "all dollar amounts ... are expressed in US dollars"
+ *
+ * The document's first such statement is the one that counts: it is the
+ * front matter's, and speaks for the whole. A later one speaks for its own
+ * part -- GoldMining's AIF says "$" is Canadian dollars up front and, two
+ * thirds of the way in, that its PEA's section is in US dollars; the fee
+ * table after that is in Canadian dollars. It ranks below the figure's own
+ * prefix and a heading over its table, and is not used for a nil row (see
+ * anchorNil).
+ */
+const STATED_CUR = String.raw`(?:(?:thousands|millions) of )?(?:(?:canadian|cdn|united states|us|u\.?s\.?|australian) dollars?|` +
+  String.raw`u\.?s\.?\s?\$|usd|c\$|cdn\$|ca\$|cad|a\$|aud)(?![a-z])|` +
+  String.raw`(?:(?:milliers|millions) de )?dollars? (?:canadiens?|am[ée]ricains?|des [ée]tats-unis|australiens?)`;
+/**
+ * One clause: no full stop or semicolon, except the ones in "U.S." and in a
+ * company's name ("Trilogy Metals Inc. are ...").
+ */
+const ABBREVIATED = String.raw`\bu|\bu\.s|\binc|\bltd|\bcorp|\bco|\bno`;
+const CLAUSE = String.raw`(?:[^.;]|(?<=${ABBREVIATED})\.)`;
+const ABBREVIATED_END = new RegExp(String.raw`(?:${ABBREVIATED})$`);
+const SIGN_MEANS = new RegExp(
+  String.raw`["«]\s?\$,?\s?["»]${CLAUSE}{0,120}?\b(?:are|is|mean|means|refer|refers|d[ée]signent|d[ée]signe|renvoient|renvoie)\b` +
+  String.raw`${CLAUSE}{0,40}?(${STATED_CUR})`, "g");
+// What the amounts are in -- not "amounts in Canadian dollars are denoted C$",
+// which says how a subset is marked.
+const AMOUNTS_IN = new RegExp(
+  String.raw`\b(?:(?:dollar|money|monetary|currency) amounts|amounts|figures|values|financial information|monetary references|` +
+  String.raw`references to (?:currency|money|dollars|dollar amounts|money amounts)|currency references|montants|sommes)\b` +
+  String.raw`${CLAUSE}{0,100}?\b(?:in|to|en|are|is|mean|means|sont)\s+(?:the\s+|le\s+|les\s+)?(${STATED_CUR})` +
+  String.raw`(?!,?\s*(?:are|is|will be|sont)\s+(?:denoted|indicated|identified|shown|designated|referred to|marked|preceded|noted|d[ée]sign[ée]s?|indiqu[ée]s?|identifi[ée]s?|pr[ée]c[ée]d[ée]s?)\b)` +
+  String.raw`(?!\s+(?:which|that|qui)\b)`, "g");
+/** A statement for the whole document: "all", "unless otherwise", or naming the document. */
+const GENERAL = new RegExp(String.raw`\b(?:all|unless|except|tous|toutes|sauf|herein|aux pr[ée]sentes)\b|` +
+  String.raw`\b(?:in|of) (?:this|the) (?:management )?(?:information circular|circular|proxy statement|annual information form|aif|document|annual report|form 40-f)\b|` +
+  String.raw`dans (?:la pr[ée]sente|le pr[ée]sent|ce document)`);
+/** The document itself, named: such a statement outranks one about anything else. */
+const NAMES_DOCUMENT = /\bherein\b|\b(?:this|the) (?:management )?(?:information circular|circular|proxy statement|annual information form|aif|document|annual report|form 40-f)\b|aux pr[ée]sentes|dans (?:la pr[ée]sente|le pr[ée]sent|ce document)/;
+/** A part of the document, or something other than its amounts, speaking for itself. */
+const SCOPED = new RegExp(String.raw`\bplan\b|\bper share\b|\bpar action\b|convert|translat|following table|\btables?\b|\btableau\b|` +
+  String.raw`\bbelow\b|\babove\b|\bletter\b|\blettre\b|\bschedule\b|\bappendix\b|\bexhibit\b|\bannexe\b|r[ée]gime|\bsection\b|\bpea\b|` +
+  String.raw`\bstudy\b|[ée]tude|technical report|rapport technique|feasibility|faisabilit|compensation|r[ée]mun[ée]ration|\bsalar|` +
+  String.raw`\brates?\b|\btaux\b|exchange|\bloans?\b|\bpr[êe]t\b|facilit|\bcredit\b|\bdebt\b|\bdette\b|payable|outstanding|` +
+  String.raw`\bprices?\b|\bpriced\b|\bsales\b|\bcosts?\b|\brevenues?\b`);
+/** Statements are front matter: read only the start of a document. */
+const STATEMENT_REACH = 120_000;
+
+function statedCode(words: string): string | null {
+  if (/canad|cdn|^c\$|^ca\$|^cad/.test(words.replace(/^(?:thousands|millions|milliers) (?:of|de) /, ""))) return "CAD";
+  if (/austral|^a\$|^aud/.test(words)) return "AUD";
+  if (/united states|\bus\b|u\.?s\.?|usd|am[ée]ricain|[ée]tats-unis/.test(words)) return "USD";
+  return null;
+}
+
+let statementsMemo: { hay: string; found: Array<{ at: number; code: string; namesDocument: boolean }> } | null = null;
+
+/** Every general statement of currency near the start of a normalised haystack, in order. */
+export function currencyStatements(hay: string): Array<{ at: number; code: string; namesDocument: boolean }> {
+  if (statementsMemo && statementsMemo.hay === hay) {
+    // Rebind, so the next call with this same string compares by reference.
+    statementsMemo.hay = hay;
+    return statementsMemo.found;
+  }
+  const head = hay.slice(0, STATEMENT_REACH);
+  const found: Array<{ at: number; code: string; namesDocument: boolean }> = [];
+  for (const re of [SIGN_MEANS, AMOUNTS_IN]) {
+    for (const m of head.matchAll(re)) {
+      const at = m.index ?? 0;
+      // The clause the statement stands in: back to the last full stop or
+      // semicolon (not one of "U.S." or "Inc."), forward to the next.
+      let lo = at;
+      while (lo > 0 && lo > at - 200 &&
+             !(/[.;]/.test(head[lo - 1]) && !(head[lo - 1] === "." && ABBREVIATED_END.test(head.slice(Math.max(0, lo - 6), lo - 1))))) lo--;
+      const end = at + m[0].length;
+      const tail = head.slice(end, end + 80).split(/;|\.(?!s\.)(?<!\bu\.)/)[0];
+      const subject = head.slice(lo, end);
+      const clause = subject + tail;
+      // Scope is judged on what the statement says, not on its tail:
+      // "... in US dollars, except per share amounts" still speaks for all.
+      if (!GENERAL.test(clause) || SCOPED.test(subject)) continue;
+      // "References to "US$" and "$" are to United States dollars and
+      // Canadian dollars, respectively": which is which needs more reading
+      // than a pattern can do.
+      if (re === SIGN_MEANS && /respective/.test(clause)) continue;
+      const code = statedCode(m[1]);
+      if (code) found.push({ at, code, namesDocument: NAMES_DOCUMENT.test(clause) });
+    }
+  }
+  found.sort((a, b) => a.at - b.at);
+  statementsMemo = { hay, found };
+  return found;
+}
+
+/**
+ * The currency the document says it uses: its first statement that names
+ * the document ("in this Circular", "herein"), else its first general one.
+ */
+function documentCurrency(hay: string): string | null {
+  const stated = currencyStatements(hay);
+  return (stated.find((s) => s.namesDocument) ?? stated[0])?.code ?? null;
+}
+
+/**
+ * The currency a figure is in, and where the document says so.
+ *
+ * The document's statement is the weakest of the three, and is used only
+ * where nothing near the figure names any currency at all: a table may say
+ * "(in Canadian dollars)", "($CAD)", "fees billed … in Canadian dollars" or
+ * "$101,700 USD" in more ways than a pattern can read, and where it says
+ * anything, the model's reading of it stands, as it did before.
+ */
+export function currencyAt(text: string, near: number, end = near): { code: string; how: "prefix" | "heading" | "statement" } | null {
   const prefix = text.slice(Math.max(0, near - 8), near).match(PREFIX_RE);
-  if (prefix) return codeOf(prefix[1]);
+  if (prefix) {
+    const code = codeOf(prefix[1]);
+    if (code) return { code, how: "prefix" };
+  }
   const lo = Math.max(0, near - 3000);
   let nearest: string | null = null;
-  for (const m of text.slice(lo, near).matchAll(HEADING_RE)) nearest = codeOf(m[1] ?? m[2] ?? m[3] ?? "");
-  return nearest;
+  for (const m of text.slice(lo, near).matchAll(HEADING_RE)) nearest = codeOf(m[1] ?? m[2] ?? m[3] ?? m[4] ?? "");
+  if (nearest) return { code: nearest, how: "heading" };
+  const stated = documentCurrency(text);
+  if (!stated) return null;
+  if (currenciesMentioned(text.slice(lo, end + 400)).length > 0) return null;
+  return { code: stated, how: "statement" };
+}
+
+/** Why a claimed currency is not the document's. */
+function currencyMismatch(where: { code: string; how: string }, claimed: string): string {
+  return where.how === "statement"
+    ? `the document states its amounts are in ${where.code}, not ${claimed}`
+    : `the figure is in ${where.code} where it appears, not ${claimed}`;
+}
+
+export function detectCurrency(text: string, near: number): string | null {
+  return currencyAt(text, near)?.code ?? null;
 }
 
 /**
@@ -489,10 +641,21 @@ function anchorNil(hay: string, claim: NumericClaim, doc: StoredDocument): Ancho
   if (!yearStr) return null;
   const labelsOf = (key: string) => (FIELD_LABELS[key] ?? []).map(normalize).filter(Boolean);
   const own = labelsOf(claim.fieldKey);
-  const found = (start: number, end: number, label: string, numeral: string): AnchorResult => ({
-    mode: "proximity", start, end, documentHash: doc.contentHash,
-    matched: { numeral, label, year: yearStr },
-  });
+  const claimed = (claim.currency ?? "").toUpperCase();
+  const found = (start: number, end: number, label: string, numeral: string): AnchorResult => {
+    // A nil row is nil in any currency, but the finding still records one,
+    // so a nil whose own cell or table heading names another currency is
+    // held. What the document says up front is not enough: NovaGold's
+    // circular says "$" is US dollars and prints its fee table in C$, with
+    // "Nil" cells that carry no currency of their own.
+    const where = claimed ? currencyAt(hay, start) : null;
+    if (where && where.how !== "statement" && where.code !== claimed) {
+      return { mode: "label_only", start: null, end: null, documentHash: doc.contentHash,
+               reason: currencyMismatch(where, claimed) };
+    }
+    return { mode: "proximity", start, end, documentHash: doc.contentHash,
+             matched: { numeral, label, year: yearStr, currency: where?.code === claimed ? claimed : undefined } };
+  };
 
   for (const label of own) {
     for (let at = hay.indexOf(label); at !== -1; at = hay.indexOf(label, at + 1)) {
@@ -577,11 +740,11 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
 
   const candidates: Array<{ needle: string; scale: Scale }> = [
     { needle: asPrinted, scale: claim.scale },
-    { needle: asFull, scale: "units" },
+    ...(asFull === asPrinted && claim.scale === "units" ? [] : [{ needle: asFull, scale: "units" as Scale }]),
   ];
 
   let sawLabel = false;
-  let unlabelled: { at: number; needle: string } | null = null;
+  let unlabelled: { at: number; needle: string; clash?: string } | null = null;
   let currencyClash: string | null = null;
   // A currency the document never names, in a document that names others, is
   // not this document's figure whatever the digits say.
@@ -606,6 +769,10 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
 
       const label = labels.find((l) => window.includes(l));
       if (label) sawLabel = true;
+      // Only a labelled occurrence can anchor; of the unlabelled, only the
+      // first is kept. Skipping the rest spares a scale and currency check at
+      // every bare "5" in a long filing.
+      else if (unlabelled) continue;
       const yearStr = claim.fiscalYear ? String(claim.fiscalYear).slice(0, 4) : null;
       const yearHit = !yearStr || window.includes(yearStr);
 
@@ -623,9 +790,15 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
         sawLabel = sawLabel || Boolean(label);
         continue;
       }
-      const docCurrency = detectCurrency(hay, at);
-      if (claim.currency && docCurrency && docCurrency !== claimed) {
-        currencyClash = `the figure is in ${docCurrency} where it appears, not ${claimed}`;
+      const where = currencyAt(hay, at, at + needle.length);
+      // What the figure's own prefix or heading says is recorded on the
+      // anchor (worker.ts fills a missing currency from it); what the
+      // document says up front only tests a claim.
+      const docCurrency = where && where.how !== "statement" ? where.code : null;
+      if (claim.currency && where && where.code !== claimed) {
+        currencyClash = currencyMismatch(where, claimed);
+        // A bare row held as unlabelled stays held, with the reason.
+        if (!label) unlabelled ??= { at, needle, clash: currencyClash };
         continue;
       }
       if (label && yearHit) {
@@ -650,7 +823,8 @@ export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorR
   if (unlabelled && unlabelled.needle.replace(/\D/g, "").length >= 5) {
     return { mode: "none", start: unlabelled.at, end: unlabelled.at + unlabelled.needle.length,
              documentHash: doc.contentHash, inexact: "unlabelled",
-             reason: "the figure appears at its declared scale, but no label for it appears anywhere in the document" };
+             reason: unlabelled.clash ??
+               "the figure appears at its declared scale, but no label for it appears anywhere in the document" };
   }
   return { mode: "none", start: null, end: null, documentHash: doc.contentHash,
            reason: "neither the figure nor a controlled label appears in the document" };
