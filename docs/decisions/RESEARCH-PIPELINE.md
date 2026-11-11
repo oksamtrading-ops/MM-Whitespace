@@ -36,6 +36,13 @@ accepts.** Concretely:
   one investor-relations document host (`q4cdn.com`). A domain the model
   proposes is fetched only to **verify** it — its homepage, and nothing else —
   and becomes trusted only when an Analyst accepts the website.
+- One exception, since 11 November 2026: a PDF on a **public file-storage
+  host** (Amazon S3, DigitalOcean Spaces, Google Cloud Storage, Azure Blob
+  Storage, CloudFront) is read when the company's own site points at it — a
+  link on a page fetched from the company's host, or a redirect its server
+  issued for an address its own page printed. Never when the model reported
+  the address, and never on the word of a page on EDGAR or q4cdn.com. See
+  "Fees nobody read", below.
 - A downloaded document that does not name the company is discarded. The
   worst output this system can produce is a well-cited fee from the wrong
   company's filing.
@@ -178,6 +185,71 @@ currency merely mentioned nearby. Fees accepted before this read
 
 **Money says which dollar everywhere:** C$ for market caps and the dashboard
 threshold, US$ for research spend and budgets (the vendor bills in USD).
+
+## Fees nobody read — 11 November 2026
+
+In Q4 2026 (revision 10) audit fees were published for 126 of 348 companies
+and tax fees for 60. Traced company by company:
+
+- **28 audit fees were proposed and never decided**, and 12 more were flagged
+  stale (FY2023 or earlier) on purpose.
+- **71 tax fees of nil were held.** A fee table prints a fee nobody was
+  billed as "Nil", "–" or "$-". There is no "0" for the numeric gate to find,
+  so each was held as label-only. The gate now reads a nil in two layouts
+  (`anchorNil`, `anchor.ts`), narrowly:
+  - by row ("Tax fees Nil Nil"): the row must start at the fee's label and
+    every cell on it must be nil, with the fiscal year within the window. A
+    row such as "Tax fees $9,100 Nil" says one year was zero but not which,
+    so it is still held;
+  - by column (a header "Audit fees · Audit-related fees · Tax fees · All
+    other fees" over a row per year): the fee's column is its place among the
+    labels in the table's own header, and the fiscal year's row must have a
+    cell for every column.
+
+  Replayed over the 71 held windows, 47 now anchor (45 companies), each
+  checked by eye. The 24 still held are prose ("did not incur tax fees"),
+  rows with the audit firm's name in them, mixed rows, and text the PDF
+  layer scrambled. Findings already held are not re-gated: a person decides
+  them in review.
+- **157 companies never had a document with a fee table read.** TSXV issuers
+  were hit hardest (32 of 187 with a fee, against 94 of 161 on the TSX): their
+  table is only in the AGM circular. Nine were checked by hand without SEDAR+,
+  and **all nine publish the table, linked from their own website.** Research
+  missed them because:
+  - five keep the PDF on a file-storage host their AGM or filings page links
+    to (Endeavour, Arizona Gold & Silver, Banyan, Galantas, Sirios), and
+    candidates off the company's host were dropped without a note;
+  - the circular or AIF sat on an "AGM Materials", "Meeting Materials" or
+    "Corporate Filings" page research never opened, sometimes two clicks deep
+    (NGEx, Cartier);
+  - research spent its five documents on statements, MD&A and news first
+    (Graphite One, Silver X).
+
+What changed:
+
+- **Storage hosts the company points at** (`fetch.ts`, `isFileStorageHost`;
+  `fetchDocument`'s `storage` option). Anyone can put a file on S3, so being
+  there proves nothing. The first hop may be a storage host only when the
+  address was a link on a page fetched from the company's own host — not
+  from EDGAR or q4cdn.com, which are trusted for their own files but whose
+  links are another filer's choice (`CandidateDoc.storageLink`, set only by
+  `linkedFilings`). A later hop may be one only when the address was a link
+  the company's own page printed (`CandidateDoc.siteLink`) and the company's
+  server redirected there: an address the model reported is not followed to
+  a storage host, since an open redirect on the company's site would let the
+  model choose the bucket. A storage host may redirect within itself, never
+  to another storage host or anywhere else; every hop's address is still
+  checked against private space, and the document must still name the
+  company. Read this way, the file is the company's own and is stored at the
+  issuer-hosted tier (2).
+- **When no filing read has the fee table, research looks for it on the
+  company's site** (`findFeeFiling`, `live.ts`). From the home page it opens
+  up to four investor pages and the meeting pages they lead to, collects the
+  circulars and AIFs they link to, and fetches up to three, keeping the first
+  PDF that names the company and prints the table (`hasFeeTable`). Fetches
+  only, no model call. With five documents already read, the least useful in
+  reading order is set aside for it, never one an analyst supplied, and the
+  documents are put back in reading order so the fee filing is read first.
 
 ## Deliberately not in this build
 

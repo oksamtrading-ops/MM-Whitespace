@@ -104,6 +104,31 @@ export function isAllowedHost(host: string, allowlist: Set<string>): boolean {
   return false;
 }
 
+/**
+ * Public file-storage hosts, where many issuers keep the PDFs their own site
+ * links to: Amazon S3, DigitalOcean Spaces, Google Cloud Storage, Azure Blob
+ * Storage and CloudFront. Of nine Q4 2026 companies with no fee read, five had
+ * their circular or AIF there, linked from their AGM or filings page
+ * (Endeavour, Arizona Gold & Silver, Banyan, Galantas, Sirios; 11 November).
+ *
+ * Anyone can put a file on these hosts, so being on one proves nothing. A file
+ * there is fetched only when the company's own site points at it: linked from
+ * a page fetched from the company's host, or a redirect its server issued
+ * (fetchDocument's `storage` option). Never on a URL the model proposed.
+ */
+const FILE_STORAGE_HOSTS: RegExp[] = [
+  /(^|\.)s3([.-][a-z0-9-]+)*\.amazonaws\.com$/,
+  /(^|\.)digitaloceanspaces\.com$/,
+  /(^|\.)storage\.googleapis\.com$/,
+  /(^|\.)blob\.core\.windows\.net$/,
+  /(^|\.)cloudfront\.net$/,
+];
+
+export function isFileStorageHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  return FILE_STORAGE_HOSTS.some((re) => re.test(h));
+}
+
 /* ------------------------------------------------------- type sniffing */
 
 export type DetectedType = "pdf" | "html" | "text" | "unknown";
@@ -282,10 +307,30 @@ export function classifyTier(host: string, allowlist: Set<string>): SourceTier {
   return 4;
 }
 
+/**
+ * When a file-storage host (isFileStorageHost) may be fetched. Both are off
+ * unless the caller says so:
+ *
+ *   linked     the address itself was a link on a page fetched from the
+ *              company's own host, so its first hop may be a storage host
+ *   redirects  a redirect from an allowed host may lead to one: the
+ *              company's server sent it there. A storage host may then
+ *              redirect within itself, never to another storage host: one
+ *              bucket's redirect is not the company's choice of another.
+ *              Callers set it only for an address the company's own page
+ *              printed, so an open redirect on its site does not let the
+ *              model choose a bucket (live.ts, CandidateDoc.siteLink).
+ *
+ * Either way the file is the company's own, as much as if it were on its
+ * host, so it is read at the issuer-hosted tier.
+ */
+export type StorageAllowance = { linked?: boolean; redirects?: boolean };
+
 export async function fetchDocument(
   rawUrl: string,
   allowlist: Set<string>,
   deps: FetchDeps,
+  storage: StorageAllowance = {},
 ): Promise<FetchedDocument> {
   const now = deps.now ?? (() => new Date());
   let url: URL;
@@ -301,8 +346,15 @@ export async function fetchDocument(
   let current = url;
   let response: HttpResponse | null = null;
 
+  let viaStorage = false;
+  let previous: { host: string; viaStorage: boolean } | null = null;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    if (!isAllowedHost(current.hostname, allowlist)) {
+    const host = current.hostname.toLowerCase();
+    viaStorage = !isAllowedHost(host, allowlist) && isFileStorageHost(host) &&
+      (previous === null ? storage.linked === true
+        : storage.redirects === true && (!previous.viaStorage || previous.host === host));
+    previous = { host, viaStorage };
+    if (!viaStorage && !isAllowedHost(current.hostname, allowlist)) {
       throw new FetchRefused(
         "host_not_allowed", current.href,
         "host is not on the allowlist derived from the extract. A domain the model " +
@@ -343,7 +395,7 @@ export async function fetchDocument(
   const declared = response.headers["content-type"] ?? response.headers["Content-Type"] ?? null;
   return documentFromBody(response.body, declared, {
     url: rawUrl, finalUrl: current.href, retrievedAt: now().toISOString(),
-    sourceTier: classifyTier(current.hostname, allowlist),
+    sourceTier: viaStorage ? 2 : classifyTier(current.hostname, allowlist),
   }, deps.extractors ?? {});
 }
 

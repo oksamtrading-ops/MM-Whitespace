@@ -551,3 +551,130 @@ Total                   14,977      13,804`;
     numeric: { value: 15_977, scale: "units", fiscalYear: 2023, fieldKey: "total_assets", currency: "CAD" } });
   assert.equal(notInQuote.state, "unsupported", "the quote is real, but it does not carry the figure");
 });
+
+/** A venture issuer's fee table, as Q4 2026's circulars print a fee nobody was billed. */
+const NIL_TABLE = `
+External Auditor Service Fees
+
+Financial Year Ending      Audit Fees   Audit Related Fees   Tax Fees(3)   All Other Fees
+December 31, 2025          $145,450     Nil                  Nil.          $18,000
+December 31, 2024          $120,000     Nil                  Nil.          Nil
+`;
+
+test("a fee of nil anchors on the row that prints it, not on a figure", async () => {
+  // Q4 2026: "Tax fees Nil Nil", "Tax Fees $- $-", "Tax fees (3) - -" and
+  // "Tax Fees $nil $nil" were all held as label-only, for want of a "0".
+  for (const row of ["Tax fees Nil Nil", "Tax Fees $- $-", "Tax fees (3) - -", "Tax Fees $nil $nil",
+                     "Tax Fees(3) Nil. Nil.", "Tax fees: – –", "Honoraires fiscaux néant néant"]) {
+    const text = `Fiscal year ended December 31, 2025 and 2024\nAudit fees $62,000 $58,000\n${row}\n`;
+    const r = anchorNumeric({ value: 0, scale: "units", fiscalYear: 2025, fieldKey: "tax_fee" }, doc(text));
+    assert.equal(r.mode, "proximity", row);
+  }
+  // A table laid out by column puts the label in its header, not on a row of
+  // cells: which nil is the tax fee is the layout's to say, so a person reads it.
+  // Laid out by column, the fee's column is its place in the table's header.
+  const byColumn = anchorNumeric({ value: 0, scale: "units", fiscalYear: 2025, fieldKey: "tax_fee" }, doc(NIL_TABLE));
+  assert.equal(byColumn.mode, "proximity");
+  assert.equal(byColumn.matched?.label, "tax fees");
+  // Through the gate, a nil row is a proposal like any anchored figure.
+  const g = gate({ fieldKey: "audit_related_fee", document: doc("For the years ended 2025 and 2024: Audit-related fees Nil Nil"),
+    numeric: { value: 0, scale: "units", fiscalYear: 2025, fieldKey: "audit_related_fee" } });
+  assert.equal(g.state, "proposed");
+});
+
+test("a nil is not read where the row says which year it is not, or where no year is near", async () => {
+  // One year billed, one not: which is which is the column's to say, and the
+  // row does not. Held for a person, as before.
+  const mixed = anchorNumeric({ value: 0, scale: "units", fiscalYear: 2025, fieldKey: "tax_fee" },
+    doc("For the years 2025 and 2024: Tax fees $9,100 Nil"));
+  assert.notEqual(mixed.mode, "proximity");
+  // Prose has no cells.
+  const prose = anchorNumeric({ value: 0, scale: "units", fiscalYear: 2025, fieldKey: "tax_fee" },
+    doc("In 2025 no tax fees were billed by the auditor."));
+  assert.notEqual(prose.mode, "proximity");
+  // A nil with no fiscal year anywhere near it.
+  const far = anchorNumeric({ value: 0, scale: "units", fiscalYear: 2025, fieldKey: "tax_fee" },
+    doc(`Annual report 2025. ${"x ".repeat(600)} Tax fees Nil Nil`));
+  assert.notEqual(far.mode, "proximity");
+  // Only a fee line: a revenue of nil is not this rule's to read.
+  const revenue = anchorNumeric({ value: 0, scale: "units", fiscalYear: 2025, fieldKey: "total_revenue" },
+    doc("2025 Revenue Nil Nil"));
+  assert.notEqual(revenue.mode, "proximity");
+  // A non-zero claim never anchors on a nil.
+  const claimed = anchorNumeric({ value: 18_000, scale: "units", fiscalYear: 2025, fieldKey: "tax_fee" }, doc(NIL_TABLE));
+  assert.notEqual(claimed.matched?.numeral, "nil");
+});
+
+test("a nil is read from the fee's own column, and from no other", async () => {
+  const claim = (fieldKey: string, fiscalYear = 2025) => ({ value: 0, scale: "units" as const, fiscalYear, fieldKey });
+  // "All other fees" for 2025 is $18,000: the nil beside it is not its.
+  assert.notEqual(anchorNumeric(claim("other_fee"), doc(NIL_TABLE)).mode, "proximity");
+  // For 2024 it is Nil.
+  assert.equal(anchorNumeric(claim("other_fee", 2024), doc(NIL_TABLE)).mode, "proximity");
+  assert.equal(anchorNumeric(claim("audit_related_fee"), doc(NIL_TABLE)).mode, "proximity");
+  // An audit fee is never zero by this path: the 2025 cell is a figure.
+  assert.notEqual(anchorNumeric(claim("audit_fee"), doc(NIL_TABLE)).mode, "proximity");
+
+  // Currency-prefixed cells and footnotes, as venture issuers print them.
+  const prefixed = `Year Audit Fees(1) Audit Related Fees(2) Tax Fees(3) All Other Fees(4)
+2025 C$284,000 C$53,500 Nil Nil
+2024 C$250,000 C$40,000 C$12,000 Nil`;
+  assert.equal(anchorNumeric(claim("tax_fee"), doc(prefixed)).mode, "proximity");
+  assert.notEqual(anchorNumeric(claim("tax_fee", 2024), doc(prefixed)).mode, "proximity");
+
+  // A different column order: tax before audit-related.
+  const reordered = `Fiscal year Audit Fees Tax Fees Audit-Related Fees All Other Fees
+2025 $96,000 $4,500 Nil Nil`;
+  assert.notEqual(anchorNumeric(claim("tax_fee"), doc(reordered)).mode, "proximity");
+  assert.equal(anchorNumeric(claim("audit_related_fee"), doc(reordered)).mode, "proximity");
+
+  // A row short of a cell (a firm's name where a figure should be) says
+  // nothing about which column is which: held.
+  const firm = `Year Audit Fees Audit Related Fees Tax Fees All Other Fees
+December 31, 2025 KPMG $495,732 $Nil $Nil $Nil`;
+  assert.notEqual(anchorNumeric(claim("tax_fee"), doc(firm)).mode, "proximity");
+
+  // A dash in prose is punctuation, not a cell.
+  assert.notEqual(anchorNumeric(claim("tax_fee", 2021),
+    doc("for the financial year ended December 31, 2021. Tax Fees - the auditor invoiced approximately $4,000 for tax returns.")).mode, "proximity");
+  // One dash alone, even where the table goes on, is held: the 52-110
+  // footnote "(3) Tax Fees – tax compliance, tax advice …" looks the same.
+  assert.notEqual(anchorNumeric(claim("tax_fee", 2026),
+    doc("year ended April 30, 2026 Audit fees(1) 345,075 Tax fees(3) - All other fees(4) 9,558")).mode, "proximity");
+  // One "Nil" where the table goes on is a row.
+  assert.equal(anchorNumeric(claim("tax_fee", 2026),
+    doc("year ended April 30, 2026 Audit fees(1) 345,075 Tax fees(3) Nil All other fees(4) 9,558")).mode, "proximity");
+
+  // A footnote digit fused onto the label of a row.
+  assert.equal(anchorNumeric(claim("tax_fee"), doc("For 2025 and 2024: Tax fees3 – –")).mode, "proximity");
+});
+
+test("a nil is not read from a footnote, an unknown column, a prose list, or a year further up", async () => {
+  // Each found by review, 11 November 2026: in every one the fee was not zero.
+  const claim = (fieldKey: string, fiscalYear = 2025) => ({ value: 0, scale: "units" as const, fiscalYear, fieldKey });
+  const held = (fieldKey: string, text: string, fiscalYear = 2025) =>
+    assert.notEqual(anchorNumeric(claim(fieldKey, fiscalYear), doc(text)).mode, "proximity", text);
+  const table = `Year Audit Fees(1) Audit-Related Fees(2) Tax Fees(3) All Other Fees(4)
+December 31, 2025 $45,000 $5,000 $8,500 $1,200
+`;
+  // The footnotes under a table, with a dash for punctuation.
+  held("tax_fee", table + "(3) Tax Fees — tax compliance, tax advice and tax planning.");
+  held("other_fee", table + "(4) All Other Fees – other products and services provided by the auditor.");
+  held("audit_related_fee", table + "(2) Audit-Related Fees – Audit-related fees billed by KPMG in fiscal 2025 were $22,000.");
+  // A column this code has no label for, between or beside the known ones.
+  held("tax_fee", "Year Audit Fees Assurance Fees Tax Fees All Other Fees\n2025 80,000 Nil 5,000 3,000");
+  held("other_fee", "Year Audit Fees Audit-Related Fees Tax Compliance Fees Tax Planning Fees All Other Fees\n2025 80,000 10,000 5,000 Nil 2,000");
+  // A figure the shape of a year is a cell, not the end of the row.
+  held("tax_fee", "2025 2024\nAudit fees $50,000 $45,000\nTax fees – 2,000", 2024);
+  held("other_fee", "(C$ thousands) 2025 2024 Audit fees 1,200 1,100 All other fees – 2,031", 2024);
+  // The four categories named in a sentence are not a header.
+  held("tax_fee", "Fees are classified as audit fees, audit-related fees, tax fees and all other fees.\nYear ended December 31, 2025 80,000 10,000 - 7,000 97,000");
+  // "Nil $5,000" is two cells.
+  held("tax_fee", "Year Audit Fees Audit-Related Fees Tax Fees All Other Fees Total\n2025 $80,000 Nil $5,000 – $85,000");
+  // A figure equal to the year is not the year's row.
+  held("tax_fee", "Year Audit Fees Audit-Related Fees Tax Fees All Other Fees\n2024 $2,025 Nil Nil Nil\n2025 $45,000 $3,000 $8,000 Nil");
+  // The year a circular was dated is not a year of the table.
+  held("tax_fee", "Dated May 1, 2025. Fees for 2024 and 2023: Audit fees $40,000 $38,000 Tax fees Nil Nil");
+  // "Non audit fees" is not the audit fee.
+  held("audit_fee", "2025 2024 Audit fees $50,000 $45,000 Non audit fees Nil Nil");
+});

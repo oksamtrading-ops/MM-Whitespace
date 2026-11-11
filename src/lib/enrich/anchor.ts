@@ -391,6 +391,167 @@ export type NumericClaim = {
   currency?: string | null;
 };
 
+/** The lines of an auditor's fee table, where a company that paid nothing prints "Nil" or a dash. */
+const NIL_FEE_FIELDS = ["audit_fee", "audit_related_fee", "tax_fee", "other_fee"] as const;
+/** A footnote marker or colon between a label or figure and the next cell: "Tax Fees(3)", "Tax fees:", "$5,000*". */
+const ROW_MARKER = /^\s*(?:\(\w{1,2}\)|\*+|:|[¹²³⁴⁵])/;
+/**
+ * One cell of a fee row: a nil word, a dash, or a figure, with or without "$"
+ * or "C$", "US$", "CAD$", and an optional full stop. numericHaystack has
+ * already taken the thousands separators out. The currency must be one a
+ * fee table prints: "Nil $5,000" is two cells, not one in "nil" dollars.
+ */
+const ROW_CELL = /^\s*(?:(?:c|ca|cad|us|usd|a|au)\$|\$)?\s*(nil|none|néant|neant|aucun|aucuns|-+|\d[\d,]*(?:\.\d+)?)\.?(?=\s|$|\)|\*)/;
+const NIL_CELL = /^(nil|none|néant|neant|aucun|aucuns|-+|0+(?:\.0+)?)$/;
+const NIL_WORD = /^(nil|none|néant|neant|aucun|aucuns)$/;
+/** A bare year: in a table by column, the next row's key, not a cell of this one. */
+const YEAR_CELL = /^(19|20)\d\d$/;
+/** A year as a table prints it in a heading or a row's key, not inside a figure. */
+const YEAR_AT = /(?<![\d$.,])(?:19|20)\d\d(?!\d)/g;
+/** What may stand between two labels of a header: footnotes and a currency, nothing that is a column of its own. */
+const HEADER_GAP = /^(?:\s|\(\w{1,3}\)|\((?:c|ca|cad|us|usd)?\$\)|(?:c|ca|cad|us|usd)?\$|\d|\*)*$/;
+/** A fee label, whatever words it is written in: an unknown column in a header, or the next row of a table. */
+const ANY_FEES = /\bfees?\b/;
+
+/**
+ * The cells of one row from `from`, footnotes skipped, up to `most`. Laid
+ * out by column, a row stops at the next row's year; laid out by row, a
+ * year-shaped figure ("2,000", once the separator is out) is a cell, and not
+ * a nil one.
+ */
+function readCells(hay: string, from: number, most: number, stopAtYear: boolean): { cells: string[]; start: number; end: number } {
+  let i = from;
+  const skip = () => { for (let m = ROW_MARKER.exec(hay.slice(i)); m; m = ROW_MARKER.exec(hay.slice(i))) i += m[0].length; };
+  skip();
+  const start = i;
+  const cells: string[] = [];
+  for (let m = ROW_CELL.exec(hay.slice(i)); m && cells.length < most; m = ROW_CELL.exec(hay.slice(i))) {
+    if (stopAtYear && YEAR_CELL.test(m[1]) && !/\$/.test(m[0])) break;
+    cells.push(m[1]);
+    i += m[0].length;
+    skip();
+  }
+  return { cells, start, end: i };
+}
+
+const isNil = (cell: string) => NIL_CELL.test(cell.replace(/,/g, ""));
+
+/** Where a label occurs as a whole phrase, not inside a longer word or after "non". */
+function labelAt(hay: string, label: string, at: number): boolean {
+  return !/[\p{L}\p{N}-]/u.test(hay[at - 1] ?? "") && !/[\p{L}]/u.test(hay[at + label.length] ?? "") &&
+    !/\bnon[- ]?\s*$/.test(hay.slice(Math.max(0, at - 5), at));
+}
+
+/**
+ * The years a row's columns are for: the last two told apart in the 300
+ * characters above the label. "2025 2024 Audit fees … Tax fees Nil Nil";
+ * not the date a circular was signed, further up ("Dated May 1, 2025. Fees
+ * for 2024 and 2023: …").
+ */
+function rowYears(hay: string, at: number): Set<string> {
+  const above = [...hay.slice(Math.max(0, at - 300), at).matchAll(YEAR_AT)].map((m) => m[0]);
+  const years: string[] = [];
+  for (let k = above.length - 1; k >= 0 && years.length < 2; k--) if (!years.includes(above[k])) years.push(above[k]);
+  return new Set(years);
+}
+
+/**
+ * A fee of zero, printed the way fee tables print it. There is no "0" on the
+ * page for the numeric path to find, so until 11 November 2026 every such
+ * finding was held as label-only: in Q4 2026, 71 tax fees, and why the tax
+ * fee column trailed the audit fee column by half.
+ *
+ * Deliberately narrow: a nil read wrongly is a fee of zero put to the
+ * analyst as found in the filing (fees are never accepted in bulk,
+ * review/threshold.ts), and a nil missed is one they read for themselves,
+ * as before. Two layouts:
+ *
+ *   by row      "Tax fees Nil Nil", "Tax Fees(3) $- $-", "Tax fees3 – –".
+ *               The row must start at the fee's label, every cell on it
+ *               must be nil, and the fiscal year must be one of the two
+ *               the table's heading names just above. "Tax fees $9,100
+ *               Nil" says one year was zero but not which. One cell alone
+ *               is a row only if it is a word ("Nil", not a dash, which
+ *               prose uses too: "Tax Fees – tax compliance, advice …")
+ *               and the table goes on after it.
+ *   by column   "Year  Audit fees(1)  Audit related fees(2)  Tax fees(3)
+ *               All other fees(4)" over "2025  C$284,000  C$53,500  Nil  Nil".
+ *               The fee's column is its place in the table's own header:
+ *               the labels side by side, with only footnotes or a currency
+ *               between them and no other column of fees beside them; the
+ *               fiscal year's row must have a cell for every column (and
+ *               perhaps a total), and no more.
+ *
+ * Prose ("no tax fees were billed") has no cells, and is held.
+ */
+function anchorNil(hay: string, claim: NumericClaim, doc: StoredDocument): AnchorResult | null {
+  const yearStr = claim.fiscalYear ? String(claim.fiscalYear).slice(0, 4) : null;
+  if (!yearStr) return null;
+  const labelsOf = (key: string) => (FIELD_LABELS[key] ?? []).map(normalize).filter(Boolean);
+  const own = labelsOf(claim.fieldKey);
+  const found = (start: number, end: number, label: string, numeral: string): AnchorResult => ({
+    mode: "proximity", start, end, documentHash: doc.contentHash,
+    matched: { numeral, label, year: yearStr },
+  });
+
+  for (const label of own) {
+    for (let at = hay.indexOf(label); at !== -1; at = hay.indexOf(label, at + 1)) {
+      if (!labelAt(hay, label, at)) continue;
+      let after = at + label.length;
+      // A footnote fused onto the label, as "Tax fees3 – –" prints it.
+      if (/^\d\s/.test(hay.slice(after, after + 2))) after += 1;
+
+      // By row.
+      const row = readCells(hay, after, 6, false);
+      const rest = hay.slice(row.end, row.end + 40);
+      const goesOn = /^\s*($|total\b|\(\d\)|\d)/.test(rest) ||
+        (ANY_FEES.test(rest.slice(0, 30)) && /^\s*[\p{L}-]+(?:\s+[\p{L}-]+){0,3}\s+fees?\b/u.test(rest));
+      const rowOk = row.cells.length > 1 || (row.cells.length === 1 && NIL_WORD.test(row.cells[0]) && goesOn);
+      if (rowOk && row.cells.every(isNil) && rowYears(hay, at).has(yearStr)) {
+        return found(row.start, row.end, label, row.cells.join(" "));
+      }
+
+      // By column: this label in a header beside the table's other fee labels.
+      const header: Array<{ key: string; at: number; end: number }> = [{ key: claim.fieldKey, at, end: after }];
+      for (const key of NIL_FEE_FIELDS) {
+        if (key === claim.fieldKey) continue;
+        let best: { at: number; end: number } | null = null;
+        for (const other of labelsOf(key)) {
+          for (let o = hay.indexOf(other, Math.max(0, at - 250)); o !== -1 && o < at + 250; o = hay.indexOf(other, o + 1)) {
+            if (!labelAt(hay, other, o) || (o < at + label.length && o + other.length > at)) continue;
+            if (!best || Math.abs(o - at) < Math.abs(best.at - at)) best = { at: o, end: o + other.length };
+          }
+        }
+        if (best) header.push({ key, ...best });
+      }
+      header.sort((a, b) => a.at - b.at);
+      if (header.length < 3 || !header.some((h) => h.key === "audit_fee")) continue;
+      // Side by side: nothing between two labels but footnotes and a
+      // currency. Prose has "and" and commas there; a table laid out by row
+      // has figures; a header with a column this code does not know has
+      // that column's name.
+      const sideBySide = header.every((h, j) => j === 0 ||
+        (h.at >= header[j - 1].end && h.at - header[j - 1].end <= 40 && HEADER_GAP.test(hay.slice(header[j - 1].end, h.at))));
+      if (!sideBySide) continue;
+      const headerStart = header[0].at;
+      const headerEnd = header[header.length - 1].end;
+      // No other column of fees just before or after the ones found.
+      if (/fees?\s*(?:\(\w{1,3}\)|\d)?\s*$/.test(hay.slice(Math.max(0, headerStart - 30), headerStart))) continue;
+      const column = header.findIndex((h) => h.key === claim.fieldKey);
+      for (let y = hay.indexOf(yearStr, headerEnd); y !== -1 && y < headerEnd + 400; y = hay.indexOf(yearStr, y + 1)) {
+        if (/[\d$.,]/.test(hay[y - 1] ?? "") || /\d/.test(hay[y + 4] ?? "")) continue;
+        if (ANY_FEES.test(hay.slice(headerEnd, y))) break;
+        const cells = readCells(hay, y + 4, header.length + 2, true);
+        if (cells.cells.length < header.length || cells.cells.length > header.length + 1) break;
+        const cell = cells.cells[column];
+        if (!isNil(cell)) break;
+        return found(cells.start, cells.end, label, cell);
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Proximity conjunction for numeric fields.
  *
@@ -403,6 +564,11 @@ export type NumericClaim = {
 export function anchorNumeric(claim: NumericClaim, doc: StoredDocument): AnchorResult {
   const hay = numericHaystack(doc.text);
   const labels = (FIELD_LABELS[claim.fieldKey] ?? []).map(normalize).filter(Boolean);
+
+  if (claim.value === 0 && (NIL_FEE_FIELDS as readonly string[]).includes(claim.fieldKey)) {
+    const nil = anchorNil(hay, claim, doc);
+    if (nil) return nil;
+  }
 
   // The figure as printed: the asserted value divided back down by its scale.
   const printed = claim.value / SCALE_MULTIPLIER[claim.scale];

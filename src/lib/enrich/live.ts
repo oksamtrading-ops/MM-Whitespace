@@ -31,7 +31,7 @@ import { DISCOVERY_MAX_SEARCHES, ROUTE_CONFIG } from "./client.ts";
 import {
   asStored, edgarFindings, edgarIndexDocuments, edgarProxy, lookupEdgar, normalizeName, SEC_HOST, type EdgarRecord,
 } from "./edgar.ts";
-import { fetchDocument, isAllowedHost, type FetchDeps, type FetchedDocument } from "./fetch.ts";
+import { fetchDocument, isAllowedHost, isFileStorageHost, type FetchDeps, type FetchedDocument } from "./fetch.ts";
 import { buildPrompt, egressScan, PROMPT_VERSION, type PublicCompanyRow, type RestrictionSet } from "./prompt.ts";
 import type { Pass } from "./scope.ts";
 import type { CassetteBody, ProposedFinding } from "./worker.ts";
@@ -206,6 +206,19 @@ async function call(deps: LiveDeps, meter: Meter, request: Record<string, unknow
 export type CandidateDoc = {
   url: string; kind: DocKind; fiscal_year: number | null; title: string;
   provenance: "search_result" | "reported" | "edgar";
+  /**
+   * Set only by linkedFilings, on a file-storage host the company's own page
+   * linked to: the one way such a host is ever fetched (fetch.ts,
+   * isFileStorageHost). Never on a candidate the model reported.
+   */
+  storageLink?: true;
+  /**
+   * Set only by linkedFilings, on any link the company's own site printed. A
+   * redirect to a file-storage host is followed only from such a link: the
+   * company chose the address. From an address the model reported, an open
+   * redirect on the company's site would let the model choose the bucket.
+   */
+  siteLink?: true;
 };
 export type DocKind =
   | "annual_information_form" | "annual_financial_statements" | "annual_mdna" | "information_circular"
@@ -668,6 +681,30 @@ const WINDOW_PATTERNS: RegExp[] = [
 const FEE_PATTERN = /audit fees|audit-related fees|tax fees|all other fees|external auditor service fees|honoraires/gi;
 /** Room the fee windows are promised after the cover, before any other field's. */
 const FEE_RESERVE = 9_000;
+
+/**
+ * Whether a document prints the auditor's fee table: its heading, or two of
+ * its labels set out as a table -- each followed by a figure, a nil or a
+ * dash ("Audit fees $457,693"), or by the next label of a header ("Audit
+ * Fees(1) Audit Related Fees(2)"). Prose names the labels too, and is not
+ * the table: a charter's "pre-approve all audit fees and all other fees", an
+ * MD&A's "higher audit fees and tax fees". A PDF's text wraps a label over
+ * two lines ("Audit\nFees"), so whitespace is one space first.
+ */
+export function hasFeeTable(text: string): boolean {
+  const flat = text.replace(/\s+/g, " ");
+  if (/external auditors?(?:'s?)? service fees|auditors?(?:'s?)? service fees|honoraires (?:pour (?:les )?services |li[ée]s (?:[àa] l'|aux services d'))?(?:d'audit|audit|fiscaux)/i.test(flat)) return true;
+  const label = /(?:audit|audit[- ]related|tax|all other) fees/gi;
+  const tabled = new Set<string>();
+  for (const m of flat.matchAll(label)) {
+    const next = flat.slice(m.index + m[0].length, m.index + m[0].length + 40)
+      .replace(/^(?:\s*(?:\(\w{1,2}\)|\*+|:|\d(?=\s)))*\s*/, "");
+    if (/^(?:(?:[a-z]{1,3}\s?)?\$|\d|nil\b|néant\b|-|–|—|(?:audit|audit[- ]related|tax|all other) fees)/i.test(next)) {
+      tabled.add(m[0].toLowerCase().replace(/[- ]/g, " "));
+    }
+  }
+  return tabled.size >= 2;
+}
 
 /**
  * Where a company names its ERP: mostly the internal-control section, when the
@@ -1146,23 +1183,38 @@ export function kindFromUrl(url: string): DocKind | null {
 /**
  * The filings an index page links to, on hosts already trusted, most useful
  * first. A link to anything that is not plausibly a filing is ignored.
+ *
+ * `from` says where the page itself was fetched from. A page on the
+ * company's own site may also lead to a PDF on a file-storage host (fetch.ts,
+ * isFileStorageHost): Endeavour's AIF, Banyan's and Galantas's circulars, Q4
+ * 2026. A page anywhere else -- EDGAR, or q4cdn.com, which many issuers
+ * share -- leads nowhere new: its links are another filer's choice, not the
+ * company's. `kinds`, if given, keeps only those kinds, before the cap.
  */
 export function linkedFilings(
   links: string[], allow: Set<string>, seen: Set<string>, order: (a: CandidateDoc, b: CandidateDoc) => number,
+  from: { pageUrl?: string | null; siteHost?: string | null; kinds?: Set<DocKind> } = {},
 ): CandidateDoc[] {
   const allowed = (url: string) => {
     const h = hostOf(url);
     return Boolean(h) && [...allow].some((a) => h === a || h!.endsWith(`.${a}`));
   };
+  const pageHost = from.pageUrl ? hostOf(from.pageUrl) : null;
+  const fromIssuer = Boolean(pageHost) && Boolean(from.siteHost) &&
+    isAllowedHost(pageHost!, new Set([from.siteHost!])) && !isFileStorageHost(pageHost!);
   const found: CandidateDoc[] = [];
   for (const url of links) {
     const key = canonicalUrl(url);
-    if (seen.has(key) || !allowed(url) || !/\.pdf($|\?)/i.test(url)) continue;
+    if (seen.has(key) || !/\.pdf($|\?)/i.test(url)) continue;
+    const host = hostOf(url);
+    const storage = !allowed(url) && fromIssuer && host !== null && isFileStorageHost(host);
+    if (!allowed(url) && !storage) continue;
     const kind = kindFromUrl(url);
-    if (!kind) continue;
+    if (!kind || (from.kinds && !from.kinds.has(kind))) continue;
     const years = [...url.matchAll(/20\d\d/g)].map((m) => Number(m[0]));
     found.push({ url, kind, fiscal_year: years.length ? Math.max(...years) : null, title: "linked from the company's page",
-                 provenance: "reported" });
+                 provenance: "reported", ...(storage ? { storageLink: true as const } : {}),
+                 ...(fromIssuer ? { siteLink: true as const } : {}) });
   }
   found.sort(order);
   const picked = found.slice(0, MAX_LINKS_PER_PAGE);
@@ -1251,7 +1303,7 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
       fetches++;
       let doc: FetchedDocument;
       try {
-        doc = await fetchDocument(c.url, allow, deps.fetch);
+        doc = await fetchDocument(c.url, allow, deps.fetch, { linked: c.storageLink === true, redirects: c.siteLink === true });
       } catch (err) {
         notes.push(`not fetched: ${c.url} (${(err as Error).message.slice(0, 120)})`);
         continue;
@@ -1260,7 +1312,7 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
       // discovery often stops at "Investors" or "AGM materials" when its search
       // budget runs out (Run 1, Radisson). Follow its links, read none of it.
       if (doc.docType === "html") {
-        const linked = linkedFilings(doc.links ?? [], allow, seen, order);
+        const linked = linkedFilings(doc.links ?? [], allow, seen, order, { pageUrl: doc.finalUrl, siteHost });
         if (linked.length > 0) {
           // Into the reading order, not ahead of it. Put first, a page of 2023
           // filings had Andina read four of them before anything current.
@@ -1298,12 +1350,14 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
   // it for the stage.
   let homePageOnly = false;
   const pageSource = new Map<FetchedDocument, string>();
+  /** The home page, once fetched here: the fee filing is looked for from it, not fetched again. */
+  let homeFound: Awaited<ReturnType<typeof readHomePage>> | undefined;
   if (docs.length === 0) {
-    const found = await readHomePage(job, siteHost, deps, notes);
+    const found = homeFound = await readHomePage(job, siteHost, deps, notes);
     const home = found?.doc ?? null;
     const { index, about } = home ? sitePages(home.links ?? [], siteHost, seen) : { index: [], about: [] };
     if (home) {
-      const filings = linkedFilings(home.links ?? [], allow, seen, order);
+      const filings = linkedFilings(home.links ?? [], allow, seen, order, { pageUrl: home.finalUrl, siteHost });
       for (const url of index) indexOnly.add(canonicalUrl(url));
       // Only the home page's own leads: pass 1's leftovers past MAX_FETCHES
       // were never going to be read, and would take the site's fetches.
@@ -1344,7 +1398,45 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
       homePageOnly = docs.length > 0;
     }
   }
-  if (supplied.length > 0) {
+  // Filings read, and not one with the fee table: the company's own site
+  // most likely has it, on a page research did not reach. Of nine Q4 2026
+  // companies with no fee read, all nine had theirs one or two clicks from
+  // the home page -- an "AGM Materials", "Corporate Filings" or "Shareholder"
+  // page -- while research spent its five documents on statements, MD&A and
+  // news (11 November). Free: fetches only, no model call.
+  // Also where nothing was read, or only the company's own pages: a
+  // circular two clicks from the home page is past what the home-page
+  // fallback opens.
+  let feeFiling = false;
+  if (!docs.some((d) => hasFeeTable(d.text))) {
+    const readUrls = new Set(docs.flatMap((d) => [canonicalUrl(d.url), canonicalUrl(d.finalUrl)]));
+    feeFiling = await findFeeFiling(job, siteHost, allow, readUrls, order, deps, notes, homeFound, (doc, as) => {
+      if (docs.some((d) => d.contentHash === doc.contentHash) || suppliedHashes.has(doc.contentHash)) return false;
+      if (homePageOnly) {
+        // A filing, so the company's pages give way to it, as they would
+        // have had research reached it first: beside a filing, marketing
+        // copy competes with it for the stage.
+        docs.length = 0;
+        pageSource.clear();
+        homePageOnly = false;
+        notes.push("the fee filing is read in place of the company's pages");
+      }
+      if (docs.length >= MAX_DOCUMENTS) {
+        // The fee table is what this pass most often lacks; the least useful
+        // document already read makes room for it.
+        // Never an analyst's: they supplied it to be read.
+        const last = [...docs].filter((d) => !d.suppliedId).sort((a, b) => order(readAs.get(a)!, readAs.get(b)!)).pop();
+        if (!last) return false;
+        docs.splice(docs.indexOf(last), 1);
+        readAs.delete(last);
+        notes.push(`set aside to make room for the fee filing: ${last.url}`);
+      }
+      docs.push(doc);
+      readAs.set(doc, as);
+      return true;
+    });
+  }
+  if (supplied.length > 0 || feeFiling) {
     // One reading order for both: the prompt's character budget is spent in
     // list order, and three supplied interim reports ahead of a fetched AIF
     // would leave the AIF's fee table out.
@@ -1399,6 +1491,87 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
                ...(supplied.length > 0 ? { supplied: supplied.map(({ doc }) => ({
                  hash: doc.contentHash, id: doc.suppliedId!, url: doc.finalUrl })) } : {}) },
   };
+}
+
+/** Most of the company's own pages opened looking for the fee filing: its investor pages, and the meeting pages they lead to. */
+const FEE_PAGES = 4;
+/** Most filings fetched looking for the one with the fee table. */
+const FEE_FILINGS = 3;
+
+/**
+ * The filing that prints the auditor's fees, found on the company's own site:
+ * from its home page, through the investor pages it links to and the meeting
+ * pages they link to (Cartier's circular is at /media/agm/index.html, under
+ * /investors/meeting-materials), to a circular or AIF -- on the company's
+ * host or a file-storage host its page links to. Read only if it is a PDF
+ * with a text layer that names the company and prints the fee table.
+ *
+ * Its own record of pages and links: what the pass before it queued, and
+ * may never have fetched, is not what it has looked at. `readUrls` are the
+ * documents already read, not fetched again.
+ *
+ * `take` is offered the first that does, and says whether it was taken.
+ */
+async function findFeeFiling(
+  job: LiveJob, siteHost: string, allow: Set<string>, readUrls: Set<string>,
+  order: (a: CandidateDoc, b: CandidateDoc) => number, deps: LiveDeps, notes: string[],
+  known: Awaited<ReturnType<typeof readHomePage>> | undefined,
+  take: (doc: FetchedDocument, as: CandidateDoc) => boolean,
+): Promise<boolean> {
+  const found = known !== undefined ? known : await readHomePage(job, siteHost, deps, notes);
+  if (!found || found.saved) {
+    notes.push("no fee table read, and no home page to look for one from");
+    return false;
+  }
+  const home = found.doc;
+  const site = new Set([siteHost]);
+  const wanted = new Set<DocKind>([...feeKinds(job.row.exchange), "information_circular", "annual_information_form"]);
+  const seen = new Set<string>([canonicalUrl(home.url), canonicalUrl(home.finalUrl), ...readUrls]);
+  const filingsOn = (page: FetchedDocument) =>
+    linkedFilings(page.links ?? [], allow, seen, order, { pageUrl: page.finalUrl, siteHost, kinds: wanted });
+
+  const filings = filingsOn(home);
+  const pages = sitePages(home.links ?? [], siteHost, seen).index.map((url) => ({ url, depth: 1 }));
+  let opened = 0;
+  while (pages.length > 0 && opened < FEE_PAGES) {
+    const { url, depth } = pages.shift()!;
+    opened++;
+    let page: FetchedDocument;
+    try {
+      page = await fetchDocument(url, site, deps.fetch);
+    } catch (err) {
+      notes.push(`not fetched: ${url} (${(err as Error).message.slice(0, 120)})`);
+      continue;
+    }
+    const host = hostOf(page.finalUrl);
+    if (page.docType !== "html" || !host || !isAllowedHost(host, site)) continue;
+    filings.push(...filingsOn(page));
+    if (depth < 2) pages.push(...sitePages(page.links ?? [], siteHost, seen).index.map((u) => ({ url: u, depth: 2 })));
+  }
+  filings.sort(order);
+  notes.push(`looked for the fee filing on the company's site: ${opened} page(s), ${filings.length} filing link(s)`);
+
+  for (const c of filings.slice(0, FEE_FILINGS)) {
+    let doc: FetchedDocument;
+    try {
+      doc = await fetchDocument(c.url, allow, deps.fetch, { linked: c.storageLink === true, redirects: c.siteLink === true });
+    } catch (err) {
+      notes.push(`not fetched: ${c.url} (${(err as Error).message.slice(0, 120)})`);
+      continue;
+    }
+    const why = doc.docType !== "pdf" ? `is not a PDF (${doc.docType})`
+      : !doc.hasTextLayer ? "has no text layer"
+      : namesCompany(doc.text, job.row) < 0 ? "does not name the company"
+      : !hasFeeTable(doc.text) ? "prints no fee table"
+      : null;
+    if (why) { notes.push(`not read for the fees: ${c.url} ${why}`); continue; }
+    await deps.store(doc);
+    if (take(doc, c)) {
+      notes.push(`read the fee filing linked from the company's site: ${c.url}`);
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

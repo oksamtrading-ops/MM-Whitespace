@@ -11,7 +11,7 @@ import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
   BATCH_DISCOUNT, EXTRACTED_FIELDS, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
-  canonicalAuditor, collectSearchUrls, discoveryRequest, homePageHosts, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany, pageKey, sitePages,
+  canonicalAuditor, collectSearchUrls, discoveryRequest, hasFeeTable, homePageHosts, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany, pageKey, sitePages,
   readingOrder, toFinding, windowsOf, type CandidateDoc,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
@@ -74,7 +74,7 @@ const EDGAR_RECORD = JSON.stringify({
   } },
 });
 
-const PAGES: Record<string, { type: string; body: Uint8Array | string }> = {
+const PAGES: Record<string, { type: string; body: Uint8Array | string; redirect?: string }> = {
   "https://northco.invalid/": { type: "text/html",
     body: "<html><body><h1>Northco Mining Corp.</h1><p>TSX: NRTH. Gold in Ontario and Peru.</p></body></html>" },
   "https://northco.invalid/docs/circular-2026.pdf": { type: "application/pdf", body: CIRCULAR },
@@ -111,6 +111,7 @@ function world(opts: { omit?: string[]; pages?: typeof PAGES } = {}) {
       fetched.push(url);
       const page = opts.omit?.includes(url) ? undefined : (opts.pages?.[url] ?? PAGES[url]);
       if (!page) return { status: 404, headers: {}, body: new Uint8Array() };
+      if (page.redirect) return { status: 302, headers: {}, body: new Uint8Array(), location: page.redirect };
       const body = typeof page.body === "string" ? new TextEncoder().encode(page.body) : page.body;
       return { status: 200, headers: { "content-type": page.type }, body };
     },
@@ -981,7 +982,8 @@ test("pass 2 reads a filing that names the company only as it was before a renam
   };
   const without = await read(false);
   assert.deepEqual(without.notes, ["does not name the company: https://northco.invalid/docs/kirkland-aif-2025.pdf",
-                                   "no filing read; read the home page: https://northco.invalid/"],
+                                   "no filing read; read the home page: https://northco.invalid/",
+                                   "looked for the fee filing on the company's site: 0 page(s), 0 filing link(s)"],
                    "without the former name it reads as someone else's, and only the home page is left");
   assert.ok(!without.stored.some((u) => u.includes("kirkland")));
   const withAlias = await read(true);
@@ -2140,4 +2142,169 @@ test("PASS 2: a fee-bearing filing an analyst supplied stands in for the second 
   const r2 = await runOne(db, periodId, northco.id, "general", deps(db, withIt.v, refusingSite("northco.invalid").fetchDeps));
   assert.ok(!(await notesOf(db, r2.runId)).some((n) => n.startsWith("searched again")));
   assert.equal(withIt.requests.filter((x) => Array.isArray(x.tools)).length, 0, "no paid search");
+});
+
+/* ------------------------------------------------- finding the fee filing */
+// Q4 2026, 11 November: of nine companies with no fee read, all nine had the
+// table one or two clicks from their home page, five of them on a file-storage
+// host their own page linked to. Research had read statements, MD&A and news.
+
+const S3_CIRCULAR = "https://northco-files.s3.ca-central-1.amazonaws.com/2026/Northco-Circular-2026.pdf";
+const MODEL_S3 = "https://somebody.s3.amazonaws.com/Northco-Circular-2026.pdf";
+const statement = (n: number) => makePdf([`Northco Mining Corp.\nCondensed interim financial statements, part ${n}, 2026\n` +
+  "Northco Mining Corp. is engaged in the exploration and development of gold and copper properties in Ontario."]);
+const ONLY_STATEMENTS = {
+  ...DISCOVERY_REPORT,
+  documents: [1, 2, 3, 4, 5].map((n) => ({ url: `https://northco.invalid/docs/northco-fs-q${n % 3 + 1}-2026-${n}.pdf`,
+    kind: "interim_report", fiscal_year: 2026, title: `Statements ${n}` })),
+};
+const SITE: typeof PAGES = {
+  "https://northco.invalid/": { type: "text/html", body:
+    `<html><body><h1>Northco Mining Corp.</h1><a href="/investors/">Investors</a><a href="/news/">News</a></body></html>` },
+  "https://northco.invalid/investors/": { type: "text/html", body:
+    `<html><body><h1>Northco Mining Corp. Investors</h1><a href="/investors/meeting-materials/">Meeting materials</a></body></html>` },
+  "https://northco.invalid/investors/meeting-materials/": { type: "text/html", body:
+    `<html><body><h1>Northco Mining Corp. Annual Meeting</h1>
+     <a href="${S3_CIRCULAR}">2026 Management Information Circular</a>
+     <a href="https://northco-files.s3.ca-central-1.amazonaws.com/2026/Form-of-Proxy.pdf">Form of proxy</a></body></html>` },
+  [S3_CIRCULAR]: { type: "application/pdf", body: CIRCULAR },
+  [MODEL_S3]: { type: "application/pdf", body: CIRCULAR },
+  ...Object.fromEntries([1, 2, 3, 4, 5].map((n) =>
+    [`https://northco.invalid/docs/northco-fs-q${n % 3 + 1}-2026-${n}.pdf`, { type: "application/pdf", body: statement(n) }])),
+};
+
+test("a document prints the fee table when two of its lines, or its heading, are there", () => {
+  assert.ok(hasFeeTable("External Auditor Service Fees ... Audit fees 412"));
+  assert.ok(hasFeeTable("Audit fees 412 388 Tax fees 118 102"));
+  assert.ok(hasFeeTable("Year Audit Fees(1) Audit-Related Fees(2) Tax Fees(3) All Other Fees(4)\n2025 $45,000 Nil Nil Nil"));
+  // A PDF's text wraps a label over two lines.
+  assert.ok(hasFeeTable("Audit\nFees $45,000 $40,000\nTax\nFees Nil Nil"));
+  assert.ok(!hasFeeTable("The audit committee pre-approves all audit fees."), "a charter's mention is not the table");
+  // Prose that names two labels is not the table either (review, 11 November 2026).
+  assert.ok(!hasFeeTable("The committee must pre-approve all audit fees and all other fees."));
+  assert.ok(!hasFeeTable("G&A rose on higher audit fees and tax fees in the quarter."));
+  assert.ok(!hasFeeTable("Honoraires liés aux services juridiques"));
+});
+
+test("only the company's own page vouches for a file on a storage host", () => {
+  const storage = "https://d1io3yog0oux5.cloudfront.net/northco/files/northco-circular-2026.pdf";
+  const allow = new Set(["northco.invalid", "sec.gov", "q4cdn.com"]);
+  const order = readingOrder(kindPriority("TSXV"), 2025);
+  // EDGAR, and q4cdn.com, which many issuers share: another filer's links.
+  for (const pageUrl of ["https://www.sec.gov/Archives/edgar/data/999/0001/ex99-1.htm",
+                         "https://s21.q4cdn.com/123/files/doc_downloads/index.html"]) {
+    assert.deepEqual(linkedFilings([storage], allow, new Set(), order, { pageUrl, siteHost: "northco.invalid" }), [], pageUrl);
+  }
+  const fromSite = linkedFilings([storage, "https://northco.invalid/docs/northco-fs-2025.pdf"], allow, new Set(), order,
+    { pageUrl: "https://www.northco.invalid/investors/agm/", siteHost: "northco.invalid" });
+  const linked = fromSite.find((c) => c.url === storage);
+  assert.equal(linked?.storageLink, true);
+  assert.equal(linked?.siteLink, true);
+  assert.ok(fromSite.every((c) => c.siteLink === true), "every link the company's page printed");
+  // With kinds, the others are dropped before the cap, not after.
+  const statements = Array.from({ length: 12 }, (_, n) => `https://northco.invalid/docs/northco-fs-q${n}-2025.pdf`);
+  const kinds = linkedFilings([...statements, storage], allow, new Set(), order,
+    { pageUrl: "https://northco.invalid/investors/", siteHost: "northco.invalid", kinds: new Set(["information_circular"]) });
+  assert.deepEqual(kinds.map((c) => c.url), [storage]);
+});
+
+test("no fee table read: the circular two clicks from the home page, on the company's storage host, is read", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v, requests } = vendor({ report: { ...ONLY_STATEMENTS, documents: [...ONLY_STATEMENTS.documents.slice(0, 2),
+    // A storage address the model reported: as untrusted as any domain it proposed.
+    { url: MODEL_S3, kind: "information_circular", fiscal_year: 2025, title: "Circular" }] } });
+  const { fetched, fetchDeps } = world({ pages: SITE });
+  const { by, runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+
+  assert.ok(fetched.includes(S3_CIRCULAR), "linked from the company's meeting page");
+  assert.ok(!fetched.includes(MODEL_S3), "a storage address the model reported is never fetched");
+  assert.ok(!fetched.some((u) => u.includes("Form-of-Proxy")), "a proxy form is not a filing");
+  // The circular is read first, so the fee the extraction quotes from document 0 is in it.
+  const extraction = requests.find((r) => (r.output_config as Record<string, unknown>)?.format)!;
+  assert.match(JSON.stringify(extraction.messages), new RegExp(`document index=\\\\"0\\\\" url=\\\\"${S3_CIRCULAR.replace(/[.]/g, "\\.")}`));
+  assert.equal(by.audit_fee.state, "proposed");
+  const stored = await db.get("select source_tier from documents where url = ?", S3_CIRCULAR) as { source_tier: number };
+  assert.equal(Number(stored.source_tier), 2, "issuer-hosted: the company's own page published it");
+  const raw = JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+      where j.run_id = ?`, runId) as { raw: string }).raw);
+  assert.ok(raw.notes.some((n: string) => n.startsWith("read the fee filing linked from the company's site")));
+});
+
+test("five documents read and no fee table among them: the least useful makes room for the fee filing", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v } = vendor({ report: ONLY_STATEMENTS });
+  const { fetchDeps } = world({ pages: SITE });
+  const { by, runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  const raw = JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+      where j.run_id = ?`, runId) as { raw: string }).raw);
+  assert.equal(raw.documents.length, 5, "still five documents");
+  assert.ok(raw.documents.some((d: { url: string }) => d.url === S3_CIRCULAR));
+  assert.ok(raw.notes.some((n: string) => n.startsWith("set aside to make room for the fee filing")));
+  assert.equal(by.audit_fee.state, "proposed");
+});
+
+test("a fee table already read: the company's site is not searched for another", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v } = vendor();
+  const { fetched, fetchDeps } = world({ pages: SITE });
+  await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.ok(!fetched.includes("https://northco.invalid/investors/meeting-materials/"));
+});
+
+test("a download link on the company's page that redirects to its storage host is read there", async () => {
+  // Endeavour, Q4 2026: its site's download links redirect to its S3 bucket.
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const start = "https://northco.invalid/download/northco-circular-2026.pdf";
+  const { v } = vendor({ report: { ...ONLY_STATEMENTS, documents: ONLY_STATEMENTS.documents.slice(0, 2) } });
+  const { fetched, fetchDeps } = world({ pages: { ...SITE,
+    "https://northco.invalid/investors/meeting-materials/": { type: "text/html", body:
+      `<html><body><h1>Northco Mining Corp. Annual Meeting</h1><a href="${start}">Circular</a></body></html>` },
+    [start]: { type: "", body: "", redirect: S3_CIRCULAR } } });
+  const { by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.ok(fetched.includes(start) && fetched.includes(S3_CIRCULAR));
+  assert.equal(by.audit_fee.state, "proposed");
+});
+
+test("an address the model reported is not followed to a storage host, even by the company's own redirect", async () => {
+  // An open redirect on the company's site would otherwise let the model
+  // choose the bucket (review, 11 November 2026).
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const start = "https://northco.invalid/out/northco-circular-2026.pdf";
+  const { v } = vendor({ report: { ...DISCOVERY_REPORT, documents: [
+    { url: start, kind: "information_circular", fiscal_year: 2025, title: "Circular" }] } });
+  const { fetched, fetchDeps } = world({ pages: { ...SITE,
+    "https://northco.invalid/investors/meeting-materials/": { type: "text/html", body: "<html><body>Northco Mining Corp.</body></html>" },
+    [start]: { type: "", body: "", redirect: MODEL_S3 } } });
+  const { runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.ok(fetched.includes(start), "asked");
+  assert.ok(!fetched.includes(MODEL_S3), "not followed");
+  assert.ok((await notesOf(db, runId)).some((n) => n.startsWith(`not fetched: ${start}`)));
+});
+
+test("nothing read but the home page: the circular two clicks away is read in its place", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v } = vendor({ report: { ...DISCOVERY_REPORT, documents: [] } });
+  const { fetched, fetchDeps } = world({ pages: SITE });
+  const { by, runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.ok(fetched.includes(S3_CIRCULAR));
+  const raw = JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+      where j.run_id = ?`, runId) as { raw: string }).raw);
+  assert.deepEqual(raw.documents.map((d: { url: string }) => d.url), [S3_CIRCULAR], "a filing, not the company's pages beside it");
+  assert.ok(raw.notes.includes("the fee filing is read in place of the company's pages"), JSON.stringify(raw.notes));
+  assert.equal(by.audit_fee.state, "proposed");
+});
+
+test("an investor page research already followed is still opened in the hunt for the fee filing", async () => {
+  // /investors/ lists a statement and the meeting page. The home-page path
+  // reads the statement through it; the hunt goes on past it to the circular.
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v } = vendor({ report: { ...DISCOVERY_REPORT, documents: [] } });
+  const { fetched, fetchDeps } = world({ pages: { ...SITE,
+    "https://northco.invalid/investors/": { type: "text/html", body:
+      `<html><body><h1>Northco Mining Corp. Investors</h1><a href="/docs/northco-fs-q1-2026-3.pdf">Q1 statements</a>
+       <a href="/investors/meeting-materials/">Meeting materials</a></body></html>` } } });
+  const { by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.ok(fetched.includes("https://northco.invalid/docs/northco-fs-q1-2026-3.pdf"));
+  assert.ok(fetched.includes(S3_CIRCULAR));
+  assert.equal(by.audit_fee.state, "proposed");
 });

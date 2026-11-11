@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildAllowlist, classifyTier, decodeEntities, defaultHtmlExtractor, fetchDocument, FetchRefused,
-  isAllowedHost, isBlockedAddress, sniffType, type FetchDeps, type HttpResponse,
+  isAllowedHost, isBlockedAddress, isFileStorageHost, sniffType, type FetchDeps, type HttpResponse,
 } from "./fetch.ts";
 import { gate } from "./anchor.ts";
 
@@ -317,4 +317,69 @@ test("the allowlist is derived from the extract, and page titles are ignored", a
   assert.match(stored.text_content, /Audit fees 412/);
   assert.equal(stored.source_tier, 2, "issuer-hosted is tier 2");
   db.close();
+});
+
+// ------------------------------------------------------- file-storage hosts
+
+test("the file-storage hosts are the ones issuers keep their filings on, and only those", () => {
+  for (const h of ["edv-14806-s3.s3.eu-west-2.amazonaws.com", "wp-arizonagoldsilver-2024.s3.ca-central-1.amazonaws.com",
+                   "bucket.s3.amazonaws.com", "s3.ca-central-1.amazonaws.com", "s3-eu-west-1.amazonaws.com",
+                   "wp-banyangold-2026.tor1.cdn.digitaloceanspaces.com", "storage.googleapis.com",
+                   "acct.blob.core.windows.net", "d1abc.cloudfront.net"]) {
+    assert.ok(isFileStorageHost(h), h);
+  }
+  for (const h of ["ec2-1-2-3-4.compute-1.amazonaws.com", "amazonaws.com", "s3.amazonaws.com.evil.invalid",
+                   "notdigitaloceanspaces.com", "googleapis.com", "evil-storage.googleapis.com.invalid", "northco.invalid"]) {
+    assert.ok(!isFileStorageHost(h), h);
+  }
+});
+
+const STORED = "https://northco-files.s3.ca-central-1.amazonaws.com/2026/Northco-Circular-2026.pdf";
+
+test("a file-storage host is never fetched on its own say-so", async () => {
+  // A URL the model proposed on S3 is as untrusted as any other domain it proposed.
+  const d = await deps({ responses: { [STORED]: ok("Northco Mining Corp. circular", "text/plain") } });
+  await assert.rejects(fetchDocument(STORED, ALLOW, d), (e: FetchRefused) => e.code === "host_not_allowed");
+  await assert.rejects(fetchDocument(STORED, ALLOW, d, { redirects: true }), (e: FetchRefused) => e.code === "host_not_allowed",
+                       "redirects alone do not cover a first hop");
+});
+
+test("a file the company's page links to on a storage host is read, at the issuer-hosted tier", async () => {
+  const d = await deps({ responses: { [STORED]: ok("Northco Mining Corp. circular", "text/plain") } });
+  const doc = await fetchDocument(STORED, ALLOW, d, { linked: true });
+  assert.equal(doc.sourceTier, 2, "the company published it, as surely as if it were on its own host");
+});
+
+test("a redirect from the company's host to a storage host is followed only when allowed, and only that far", async () => {
+  const start = "https://northco.invalid/download_file/view/1234/";
+  const responses: Record<string, HttpResponse> = {
+    [start]: { status: 302, headers: {}, body: bytes(""), location: STORED },
+    [STORED]: ok("Northco Mining Corp. AIF", "text/plain"),
+  };
+  // Endeavour, Q4 2026: every download link redirects to its S3 bucket.
+  await assert.rejects(fetchDocument(start, ALLOW, await deps({ responses })), (e: FetchRefused) => e.code === "host_not_allowed");
+  const doc = await fetchDocument(start, ALLOW, await deps({ responses }), { redirects: true });
+  assert.equal(doc.finalUrl, STORED);
+  assert.equal(doc.sourceTier, 2);
+  // A storage host may redirect within itself, but not to another bucket: that
+  // one is the bucket's choice, not the company's.
+  const other = "https://someone-else.s3.amazonaws.com/circular-2026.pdf";
+  const sameHost = new URL("/moved/aif-2025.pdf", STORED).href;
+  await assert.rejects(fetchDocument(STORED, ALLOW, await deps({ responses: {
+    [STORED]: { status: 302, headers: {}, body: bytes(""), location: other },
+    [other]: ok("Northco Mining Corp. circular", "text/plain") } }), { linked: true, redirects: true }),
+    (e: FetchRefused) => e.code === "host_not_allowed");
+  const moved = await fetchDocument(STORED, ALLOW, await deps({ responses: {
+    [STORED]: { status: 301, headers: {}, body: bytes(""), location: sameHost },
+    [sameHost]: ok("Northco Mining Corp. AIF", "text/plain") } }), { linked: true, redirects: true });
+  assert.equal(moved.finalUrl, sameHost);
+  // Never off to anywhere else.
+  const onward: Record<string, HttpResponse> = {
+    [STORED]: { status: 302, headers: {}, body: bytes(""), location: "https://evil.invalid/x.pdf" },
+  };
+  await assert.rejects(fetchDocument(STORED, ALLOW, await deps({ responses: onward }), { linked: true, redirects: true }),
+                       (e: FetchRefused) => e.code === "host_not_allowed");
+  // And every hop's address is still checked.
+  await assert.rejects(fetchDocument(STORED, ALLOW, await deps({ responses, resolve: async () => ["169.254.169.254"] }),
+                                     { linked: true }), (e: FetchRefused) => e.code === "private_address");
 });
