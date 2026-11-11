@@ -1181,6 +1181,85 @@ export function kindFromUrl(url: string): DocKind | null {
 }
 
 /**
+ * Words a link uses for something that is not a filing, whatever its file is
+ * called: the forms that go out with a meeting's circular, a card asking for
+ * the statements by mail, an offering's circular.
+ */
+const NOT_A_FILING_WORDS = [
+  String.raw`\bform of proxy\b`, String.raw`\bproxy (?:form|card)\b`, String.raw`voting instruction`, String.raw`\bvif\b`,
+  String.raw`notice[- ]and[- ]access`, String.raw`\bletter of transmittal\b`,
+  String.raw`\b(?:request|registration|return|consent|enrol?ment|election) (?:form|card)\b`,
+  String.raw`\brequest (?:for|of)\b[^/]{0,40}\bfinancial statements?\b`, String.raw`\bfinancial statements? (?:request|mailing)\b`,
+  String.raw`\bmailing list\b`, String.raw`\bsupplemental (?:mailing|return)`, String.raw`\boffering (?:circular|memorandum)\b`,
+  String.raw`formulaire de (?:procuration|demande)`, String.raw`instructions? de vote`, String.raw`carte de demande`,
+  String.raw`demande (?:des |d['’]|de )?[ée]tats financiers`, String.raw`liste d['’]envoi`,
+].join("|");
+const NOT_A_FILING = new RegExp(NOT_A_FILING_WORDS);
+/** The same, to take every such phrase out of the words (a global pattern's test() is stateful). */
+const NOT_A_FILING_ALL = new RegExp(NOT_A_FILING_WORDS, "g");
+
+/** Words that name the meeting's circular or the AIF: they outrank the forms named beside them. */
+const NAMES_FEE_FILING = /\bcircular\b|circulaire|\bproxy statement\b|annual information form|\baif\b|notice annuelle/;
+
+/**
+ * Subjects a link's words may call an "annual report" or "FS" that are not
+ * the company's statements: a feasibility study, a technical report, the
+ * ESTMA payments report, a sustainability report. Only the words are checked
+ * for these; an address that names a kind still decides.
+ */
+const NOT_STATEMENTS = /feasibility|\bpfs\b|technical report|43-101|estma|extractive sector|transparency|payments to governments|sustainab|\besg\b|responsib|tailings|presentation|fact ?sheet|news release|press release|circular economy/;
+
+/**
+ * Whether a link's words say it is not a filing: they name a form, and no
+ * wording of the link names the circular or AIF beside it. "Notice of
+ * Meeting, Management Information Circular and Form of Proxy", one PDF, is
+ * the circular; "Form of Proxy / Download" is not. The forms' words are
+ * taken out before looking, so an "offering circular" names no circular.
+ * extractLinkTexts joins an address's wordings with " / ".
+ */
+function saysNotAFiling(t: string): boolean {
+  if (!NOT_A_FILING.test(t)) return false;
+  return !t.split(" / ").some((w) => NAMES_FEE_FILING.test(w.replace(NOT_A_FILING_ALL, " ")));
+}
+
+/** What a linked file most likely is, from the words the company's page links it with. */
+export function kindFromText(text: string, url = ""): DocKind | null {
+  const t = text.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!t || saysNotAFiling(t)) return null;
+  const w = t.replace(NOT_A_FILING_ALL, " ");
+  const u = decoded(url).toLowerCase();
+  const interim = /\bq[1-3]\b|\binterim\b|\bquarter|\b(?:three|six|nine) months\b|interm[ée]diaires?|trimestri/.test(w) ||
+    /\bq[123]\b|q[123][-_]|[-_]q[123]|interim|quarter/.test(u);
+  if (/\bcircular\b|\bproxy statement\b|\bmic\b|circulaire/.test(w) && !/circular economy/.test(w)) return "information_circular";
+  if (/annual information form|\baif\b|notice annuelle/.test(w)) return "annual_information_form";
+  if (/change of auditor|auditor change|change in auditor|reporting package|changement de v[ée]rificateur|changement d['’]auditeur/.test(w)) return "change_of_auditor";
+  if (NOT_STATEMENTS.test(w)) return null;
+  // "FS" alone is how a financials table labels the statements beside "MD&A"
+  // (Minaurum, West Point, Sirios, Hannan and four more, 11 November 2026); a
+  // feasibility study's words say so, and NOT_STATEMENTS has refused them.
+  if (/financial statements?|\bfs\b|[ée]tats financiers/.test(w)) return interim ? "interim_report" : "annual_financial_statements";
+  if (/\bmd ?& ?a\b|\bmda\b|management[’']?s? discussion|rapport de gestion/.test(w)) return interim ? "interim_report" : "annual_mdna";
+  if (/\bannual report\b|rapport annuel/.test(w)) return "annual_financial_statements";
+  return null;
+}
+
+/**
+ * What a linked file most likely is, from its address and, where the page
+ * gave them, the words it is linked with. The address decides when it can:
+ * it is what kindFromUrl has always read. The words decide when it cannot --
+ * Graphite One's "Graphite-One-NC-92p.pdf" is its "Management Information
+ * Circular" -- and refuse a file whose words say it is not a filing at all:
+ * its "GHOQ_SEDAR_Proxy_English.pdf" is a "Form of Proxy", which the address
+ * alone took for the circular and read in its place (11 November 2026). Words
+ * that name a form beside the circular do not refuse it (saysNotAFiling).
+ */
+export function kindFromLink(url: string, text?: string | null): DocKind | null {
+  const t = (text ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (t && saysNotAFiling(t)) return null;
+  return kindFromUrl(url) ?? (t ? kindFromText(t, url) : null);
+}
+
+/**
  * The filings an index page links to, on hosts already trusted, most useful
  * first. A link to anything that is not plausibly a filing is ignored.
  *
@@ -1190,10 +1269,13 @@ export function kindFromUrl(url: string): DocKind | null {
  * 2026. A page anywhere else -- EDGAR, or q4cdn.com, which many issuers
  * share -- leads nowhere new: its links are another filer's choice, not the
  * company's. `kinds`, if given, keeps only those kinds, before the cap.
+ * `texts` is what the page links each address with (fetch.ts,
+ * extractLinkTexts): see kindFromLink.
  */
 export function linkedFilings(
   links: string[], allow: Set<string>, seen: Set<string>, order: (a: CandidateDoc, b: CandidateDoc) => number,
-  from: { pageUrl?: string | null; siteHost?: string | null; kinds?: Set<DocKind> } = {},
+  from: { pageUrl?: string | null; siteHost?: string | null; kinds?: Set<DocKind>;
+          texts?: Record<string, string> } = {},
 ): CandidateDoc[] {
   const allowed = (url: string) => {
     const h = hostOf(url);
@@ -1209,9 +1291,14 @@ export function linkedFilings(
     const host = hostOf(url);
     const storage = !allowed(url) && fromIssuer && host !== null && isFileStorageHost(host);
     if (!allowed(url) && !storage) continue;
-    const kind = kindFromUrl(url);
+    const kind = kindFromLink(url, from.texts?.[url]);
     if (!kind || (from.kinds && !from.kinds.has(kind))) continue;
-    const years = [...url.matchAll(/20\d\d/g)].map((m) => Number(m[0]));
+    // The year from the address, else from the words: an address that names
+    // none is otherwise taken for current, and a page of "2019 Management
+    // Information Circular" links under /download/docN.pdf would be read first.
+    const fromUrl = [...url.matchAll(/20\d\d/g)].map((m) => Number(m[0]));
+    const years = fromUrl.length ? fromUrl
+      : [...(from.texts?.[url] ?? "").matchAll(/\b20\d\d\b/g)].map((m) => Number(m[0]));
     found.push({ url, kind, fiscal_year: years.length ? Math.max(...years) : null, title: "linked from the company's page",
                  provenance: "reported", ...(storage ? { storageLink: true as const } : {}),
                  ...(fromIssuer ? { siteLink: true as const } : {}) });
@@ -1312,7 +1399,8 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
       // discovery often stops at "Investors" or "AGM materials" when its search
       // budget runs out (Run 1, Radisson). Follow its links, read none of it.
       if (doc.docType === "html") {
-        const linked = linkedFilings(doc.links ?? [], allow, seen, order, { pageUrl: doc.finalUrl, siteHost });
+        const linked = linkedFilings(doc.links ?? [], allow, seen, order,
+          { pageUrl: doc.finalUrl, siteHost, texts: doc.linkTexts });
         if (linked.length > 0) {
           // Into the reading order, not ahead of it. Put first, a page of 2023
           // filings had Andina read four of them before anything current.
@@ -1357,7 +1445,8 @@ export async function fieldsPrepare(job: LiveJob, deps: LiveDeps, meter: Meter):
     const home = found?.doc ?? null;
     const { index, about } = home ? sitePages(home.links ?? [], siteHost, seen) : { index: [], about: [] };
     if (home) {
-      const filings = linkedFilings(home.links ?? [], allow, seen, order, { pageUrl: home.finalUrl, siteHost });
+      const filings = linkedFilings(home.links ?? [], allow, seen, order,
+        { pageUrl: home.finalUrl, siteHost, texts: home.linkTexts });
       for (const url of index) indexOnly.add(canonicalUrl(url));
       // Only the home page's own leads: pass 1's leftovers past MAX_FETCHES
       // were never going to be read, and would take the site's fetches.
@@ -1528,7 +1617,8 @@ async function findFeeFiling(
   const wanted = new Set<DocKind>([...feeKinds(job.row.exchange), "information_circular", "annual_information_form"]);
   const seen = new Set<string>([canonicalUrl(home.url), canonicalUrl(home.finalUrl), ...readUrls]);
   const filingsOn = (page: FetchedDocument) =>
-    linkedFilings(page.links ?? [], allow, seen, order, { pageUrl: page.finalUrl, siteHost, kinds: wanted });
+    linkedFilings(page.links ?? [], allow, seen, order,
+      { pageUrl: page.finalUrl, siteHost, kinds: wanted, texts: page.linkTexts });
 
   const filings = filingsOn(home);
   const pages = sitePages(home.links ?? [], siteHost, seen).index.map((url) => ({ url, depth: 1 }));

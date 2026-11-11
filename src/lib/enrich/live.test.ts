@@ -11,7 +11,7 @@ import { tick } from "./tick.ts";
 import type { BatchHandle, BatchRequest, BatchResult, BatchVendor } from "./batch.ts";
 import {
   BATCH_DISCOUNT, EXTRACTED_FIELDS, WEB_SEARCH_USD, LIVE_RULES_VERSION, promptVersionFor,
-  canonicalAuditor, collectSearchUrls, discoveryRequest, hasFeeTable, homePageHosts, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany, pageKey, sitePages,
+  canonicalAuditor, collectSearchUrls, discoveryRequest, hasFeeTable, homePageHosts, kindFromLink, kindFromUrl, kindPriority, linkedFilings, Meter, namesCompany, pageKey, sitePages,
   readingOrder, toFinding, windowsOf, type CandidateDoc,
   type LiveDeps, type Vendor, type VendorMessage,
 } from "./live.ts";
@@ -2306,5 +2306,147 @@ test("an investor page research already followed is still opened in the hunt for
   const { by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
   assert.ok(fetched.includes("https://northco.invalid/docs/northco-fs-q1-2026-3.pdf"));
   assert.ok(fetched.includes(S3_CIRCULAR));
+  assert.equal(by.audit_fee.state, "proposed");
+});
+
+/* ------------------------------------------- a link's words, not its file name */
+// Graphite One, 11 November 2026: its financial-reports page links
+// "Graphite-One-NC-92p.pdf" as "Management Information Circular" and
+// "GHOQ_SEDAR_Proxy_English.pdf" as "Form of Proxy". Read by address alone,
+// the circular was no filing at all and the form of proxy was the circular.
+
+test("a link's words say what the file is when its name does not, and refuse what is not a filing", () => {
+  const opaque = "https://x.invalid/wp-content/uploads/2026/05/Graphite-One-NC-92p.pdf";
+  assert.equal(kindFromLink(opaque, "Management Information Circular"), "information_circular");
+  assert.equal(kindFromLink(opaque, "Notice of Meeting and Management Information Circular"), "information_circular");
+  assert.equal(kindFromLink(opaque, "Circulaire de sollicitation de procurations de la direction"), "information_circular");
+  assert.equal(kindFromLink(opaque, "Annual Information Form"), "annual_information_form");
+  assert.equal(kindFromLink(opaque, "Audited Annual Financial Statements"), "annual_financial_statements");
+  assert.equal(kindFromLink(opaque, "Q2 2026 Financial Statements"), "interim_report");
+  assert.equal(kindFromLink(opaque, "Interim MD&A"), "interim_report");
+  assert.equal(kindFromLink(opaque, "MD&A"), "annual_mdna");
+  assert.equal(kindFromLink("https://x.invalid/files/q3-x.pdf", "MD&A"), "interim_report", "the address says interim");
+  assert.equal(kindFromLink(opaque, "Change of Auditor Reporting Package"), "change_of_auditor");
+  assert.equal(kindFromLink(opaque, "Photo gallery"), null);
+  assert.equal(kindFromLink(opaque, ""), null);
+  assert.equal(kindFromLink(opaque), null);
+  // Words that say it is not a filing outrank an address that says it is.
+  const proxy = "https://x.invalid/wp-content/uploads/2026/05/GHOQ_SEDAR_Proxy_English.pdf";
+  assert.equal(kindFromUrl(proxy), "information_circular", "what the address alone said");
+  assert.equal(kindFromLink(proxy, "Form of Proxy"), null);
+  assert.equal(kindFromLink(proxy, "Voting Instruction Form"), null);
+  assert.equal(kindFromLink("https://x.invalid/2026-circular.pdf", "Notice and Access Notification"), null);
+  // Graphite One's page also links "GHOQ.BEN_ia.E.38721.pdf" as "Financial Statements Request Form".
+  assert.equal(kindFromLink("https://x.invalid/GHOQ.BEN_ia.E.38721.pdf", "Financial Statements Request Form"), null);
+  assert.equal(kindFromLink("https://x.invalid/fs-2025.pdf", "Financial statements return card"), null);
+  // Orosur's page links its private placement as an "Offering Circular": not the meeting's.
+  assert.equal(kindFromLink("https://x.invalid/orosur-pp-offering-mar-2025.pdf", "Private Placement Offering Circular"), null);
+  // Otherwise the address decides, as it always has.
+  assert.equal(kindFromLink("https://x.invalid/Northco-AIF-2025.pdf", "Download"), "annual_information_form");
+  assert.equal(kindFromLink(proxy, "Download"), "information_circular");
+});
+
+test("words that name a form beside the circular do not refuse it (review, 11 November 2026)", () => {
+  const circ = "https://x.invalid/2025-Information-Circular.pdf";
+  const opaque = "https://x.invalid/download/doc7.pdf";
+  for (const words of ["Notice of Meeting, Management Information Circular and Form of Proxy",
+    "Management Information Circular (Notice-and-Access)", "Management Information Circular and Letter of Transmittal",
+    "Meeting Materials: Circular, Proxy Form and VIF", "Management Information Circular / Form of Proxy"]) {
+    assert.equal(kindFromLink(circ, words), "information_circular", words);
+    assert.equal(kindFromLink(opaque, words), "information_circular", words);
+  }
+  // A form beside words that name no filing is still a form, whatever the address says.
+  assert.equal(kindFromLink("https://x.invalid/GHOQ_SEDAR_Proxy_English.pdf", "Form of Proxy / Download"), null);
+  // Request cards in every wording, English and French.
+  for (const words of ["Request for Financial Statements", "Request for Annual and Interim Financial Statements",
+    "Financial Statements Mailing List", "Financial Statements Request", "Supplemental Mailing List Return Card",
+    "Formulaire de demande des états financiers", "Carte de demande d’états financiers"]) {
+    assert.equal(kindFromLink(opaque, words), null, words);
+  }
+  // A feasibility study, a technical report, the ESTMA report: not the statements.
+  for (const words of ["Feasibility Study (FS) - NI 43-101 Technical Report", "Pre-FS Presentation", "FS Technical Report Summary",
+    "ESTMA Annual Report 2024", "Extractive Sector Transparency Measures Act - Annual Report", "2025 Sustainability Report",
+    "Circular Economy Strategy"]) {
+    assert.equal(kindFromLink(opaque, words), null, words);
+  }
+  // A curly apostrophe, as WordPress prints it.
+  assert.equal(kindFromLink(opaque, "Management’s Discussion and Analysis"), "annual_mdna");
+  assert.equal(kindFromLink(opaque, "2025 Annual Report"), "annual_financial_statements");
+  // A financials table's "FS" beside "MD&A" is the statements (Minaurum, West Point, Sirios).
+  assert.equal(kindFromLink(opaque, "FS"), "annual_financial_statements");
+  assert.equal(kindFromLink(opaque, "Download FS (PDF)"), "annual_financial_statements");
+  assert.equal(kindFromLink(opaque, "Financial Statement >"), "annual_financial_statements");
+});
+
+test("a link known only by its words takes its year from them", () => {
+  const order = readingOrder(kindPriority("TSXV"), 2025);
+  const allow = new Set(["northco.invalid"]);
+  const dated = ["https://northco.invalid/docs/Northco-Circular-2025.pdf", "https://northco.invalid/docs/Northco-Financial-Statements-2025.pdf",
+    "https://northco.invalid/docs/Northco-MDA-2025.pdf"];
+  const old = [2019, 2020, 2021, 2022, 2023, 2024].map((y, i) => [`https://northco.invalid/download/doc${i}.pdf`, `${y} Management Information Circular`]);
+  const texts = Object.fromEntries(old);
+  const picked = linkedFilings([...dated, ...old.map(([u]) => u)], allow, new Set(), order,
+    { pageUrl: "https://northco.invalid/investors/", siteHost: "northco.invalid", texts });
+  assert.deepEqual(picked.slice(0, 3).map((p) => p.url), dated, "this year's filings first, not six old circulars");
+  assert.equal(picked.find((p) => p.url.endsWith("doc5.pdf"))?.fiscal_year, 2024);
+});
+
+test("linked filings are chosen by what the company's page calls them", () => {
+  const nc = "https://northco.invalid/wp-content/uploads/2026/05/Northco-NC-92p.pdf";
+  const proxy = "https://northco.invalid/wp-content/uploads/2026/05/NRTH_SEDAR_Proxy_English.pdf";
+  const texts = { [nc]: "Management Information Circular", [proxy]: "Form of Proxy" };
+  const order = readingOrder(kindPriority("TSXV"), 2025);
+  const allow = new Set(["northco.invalid"]);
+  const picked = linkedFilings([proxy, nc], allow, new Set(), order, { pageUrl: "https://northco.invalid/financial-reports/",
+    siteHost: "northco.invalid", texts });
+  assert.deepEqual(picked.map((p) => [p.url, p.kind]), [[nc, "information_circular"]]);
+  // The hunt's kinds filter sees the words' kind too.
+  const hunted = linkedFilings([proxy, nc], allow, new Set(), order, { pageUrl: "https://northco.invalid/financial-reports/",
+    siteHost: "northco.invalid", texts, kinds: new Set(["information_circular" as const]) });
+  assert.deepEqual(hunted.map((p) => p.url), [nc]);
+  // No words: as before.
+  assert.deepEqual(linkedFilings([proxy, nc], allow, new Set(), order).map((p) => p.url), [proxy]);
+});
+
+const OPAQUE_NC = "https://northco.invalid/wp-content/uploads/2026/05/Northco-NC-92p.pdf";
+const OPAQUE_PROXY = "https://northco.invalid/wp-content/uploads/2026/05/NRTH_SEDAR_Proxy_English.pdf";
+const FINANCIAL_REPORTS: typeof PAGES = {
+  ...SITE,
+  "https://northco.invalid/financial-reports/": { type: "text/html", body:
+    `<html><body><h1>Northco Mining Corp. Financial Reports</h1>
+     <a href="${OPAQUE_PROXY}" class="kb-advanced-heading-link"><h3 class="kt-adv-heading">Form of Proxy</h3></a>
+     <a href="${OPAQUE_NC}" class="kb-advanced-heading-link"><h3 class="kt-adv-heading">Management Information Circular</h3></a>
+     </body></html>` },
+  [OPAQUE_NC]: { type: "application/pdf", body: CIRCULAR },
+  [OPAQUE_PROXY]: { type: "application/pdf", body: makePdf(["Northco Mining Corp.\nForm of Proxy\n" +
+    "Annual General Meeting of Shareholders. Appointment of proxyholder. Northco Mining Corp. is engaged in exploration."]) },
+};
+
+test("an index page's circular under an opaque file name is read, and its form of proxy is not", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v } = vendor({ report: { ...DISCOVERY_REPORT, documents: [
+    { url: "https://northco.invalid/financial-reports/", kind: "other", fiscal_year: null, title: "Financial reports" }] } });
+  const { fetched, fetchDeps } = world({ pages: FINANCIAL_REPORTS });
+  const { by, runId } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.ok(fetched.includes(OPAQUE_NC), "the circular is fetched");
+  assert.ok(!fetched.includes(OPAQUE_PROXY), "the form of proxy is not");
+  const raw = JSON.parse((await db.get(`select r.raw from enrichment_job_results r join enrichment_jobs j on j.id = r.job_id
+      where j.run_id = ?`, runId) as { raw: string }).raw);
+  assert.deepEqual(raw.documents.map((d: { url: string }) => d.url), [OPAQUE_NC]);
+  assert.equal(by.audit_fee.state, "proposed");
+});
+
+test("the hunt for the fee filing reads a circular by its link's words", async () => {
+  const { db, periodId, northco } = await seeded({ website: "https://northco.invalid" });
+  const { v } = vendor({ report: { ...DISCOVERY_REPORT, documents: [] } });
+  const { fetched, fetchDeps } = world({ pages: { ...SITE,
+    "https://northco.invalid/investors/meeting-materials/": { type: "text/html", body:
+      `<html><body><h1>Northco Mining Corp. Annual Meeting</h1>
+       <a href="${OPAQUE_PROXY}"><span>Form of Proxy</span></a>
+       <a href="${OPAQUE_NC}"><span>Management Information Circular</span></a></body></html>` },
+    [OPAQUE_NC]: FINANCIAL_REPORTS[OPAQUE_NC], [OPAQUE_PROXY]: FINANCIAL_REPORTS[OPAQUE_PROXY] } });
+  const { by } = await runOne(db, periodId, northco.id, "general", deps(db, v, fetchDeps));
+  assert.ok(fetched.includes(OPAQUE_NC));
+  assert.ok(!fetched.includes(OPAQUE_PROXY));
   assert.equal(by.audit_fee.state, "proposed");
 });

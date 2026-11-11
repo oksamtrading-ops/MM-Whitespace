@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildAllowlist, classifyTier, decodeEntities, defaultHtmlExtractor, fetchDocument, FetchRefused,
+  buildAllowlist, classifyTier, decodeEntities, defaultHtmlExtractor, extractLinkTexts, fetchDocument, FetchRefused,
   isAllowedHost, isBlockedAddress, isFileStorageHost, sniffType, type FetchDeps, type HttpResponse,
 } from "./fetch.ts";
 import { gate } from "./anchor.ts";
@@ -382,4 +382,45 @@ test("a redirect from the company's host to a storage host is followed only when
   // And every hop's address is still checked.
   await assert.rejects(fetchDocument(STORED, ALLOW, await deps({ responses, resolve: async () => ["169.254.169.254"] }),
                                      { linked: true }), (e: FetchRefused) => e.code === "private_address");
+});
+
+test("what each link on a page says, by the address the page's links give it", () => {
+  const html = `<html><body>
+    <a href="/uploads/NC-92p.pdf" class="kb-advanced-heading-link"><h3 class="x"><span>Management&nbsp;Information
+      Circular</span></h3></a>
+    <a href="/uploads/NC-92p.pdf"><img src="/icon.png"></a>
+    <a href="/uploads/NC-92p.pdf">Download</a>
+    <a href='/uploads/proxy.pdf' title="Form of Proxy"><img src="/p.png"></a>
+    <a aria-label="Voting instruction form" href="/uploads/vif.pdf"></a>
+    <a href="/uploads/aif.pdf">AIF <script>document.write("x")</script>2025 &amp; Q&#8217;s</a>
+    <a href="#top">Back to top</a>
+    <a href="mailto:ir@northco.invalid">Email us</a>
+    <a href="https://other.invalid/x.pdf?a=1&amp;b=2">Elsewhere</a>
+  </body></html>`;
+  const texts = extractLinkTexts(new TextEncoder().encode(html), "https://northco.invalid/investors/");
+  assert.equal(texts["https://northco.invalid/uploads/NC-92p.pdf"], "Management Information Circular / Download",
+    "the heading's words, spaces folded, and an image-only link adds none");
+  assert.equal(texts["https://northco.invalid/uploads/proxy.pdf"], "Form of Proxy", "a title when the anchor has no words");
+  assert.equal(texts["https://northco.invalid/uploads/vif.pdf"], "Voting instruction form", "an aria-label likewise");
+  assert.equal(texts["https://northco.invalid/uploads/aif.pdf"], "AIF 2025 & Q\u2019s", "no script, entities decoded");
+  assert.equal(texts["https://other.invalid/x.pdf?a=1&b=2"], "Elsewhere", "keyed as extractLinks resolves it");
+  assert.equal(Object.keys(texts).length, 5, "no fragment, no mailto");
+});
+
+test("a fetched page carries its links' words; a PDF carries none", async () => {
+  const pages: Record<string, { type: string; body: string }> = {
+    "https://northco.invalid/investors/": { type: "text/html",
+      body: `<html><body><a href="/docs/nc.pdf"><b>Management Information Circular</b></a></body></html>` },
+  };
+  const deps: FetchDeps = {
+    resolve: async () => ["93.184.216.34"],
+    http: async (url: string): Promise<HttpResponse> => {
+      const page = pages[url];
+      if (!page) return { status: 404, headers: {}, body: new Uint8Array() };
+      return { status: 200, headers: { "content-type": page.type }, body: new TextEncoder().encode(page.body) };
+    },
+  } as FetchDeps;
+  const doc = await fetchDocument("https://northco.invalid/investors/", new Set(["northco.invalid"]), deps);
+  assert.deepEqual(doc.links, ["https://northco.invalid/docs/nc.pdf"]);
+  assert.deepEqual(doc.linkTexts, { "https://northco.invalid/docs/nc.pdf": "Management Information Circular" });
 });

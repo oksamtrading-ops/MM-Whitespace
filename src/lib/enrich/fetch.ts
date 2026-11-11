@@ -276,6 +276,15 @@ export type FetchedDocument = {
    */
   links?: string[];
   /**
+   * For an HTML page, what each link says, by its address in `links`: the
+   * words inside the anchor, else its title or aria-label. A company's own
+   * page names the filing its file name may not: Graphite One links
+   * "Graphite-One-NC-92p.pdf" as "Management Information Circular", and
+   * "GHOQ_SEDAR_Proxy_English.pdf" as "Form of Proxy" (11 November 2026).
+   * Never stored, like the links.
+   */
+  linkTexts?: Record<string, string>;
+  /**
    * Set only on a document pass 2 read because an analyst supplied it: the
    * supplied_documents row it was read through. Never stored with the text --
    * the same bytes fetched by the tool are the same document -- but carried
@@ -296,6 +305,46 @@ export function extractLinks(bytes: Uint8Array, base: string, max = 500): string
     if (out.size >= max) break;
   }
   return [...out];
+}
+
+/** Longest a link's words are kept: a label, not a paragraph. */
+const MAX_LINK_TEXT = 200;
+
+/**
+ * What each link on an HTML page says, by the same absolute address
+ * extractLinks gives it. The anchor's own words, tags and scripts dropped;
+ * failing those, its title or aria-label. An address linked more than once
+ * keeps every distinct wording, joined by " / ": an icon and a heading often
+ * link the same file.
+ */
+export function extractLinkTexts(bytes: Uint8Array, base: string, max = 500): Record<string, string> {
+  const html = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  const out = new Map<string, string[]>();
+  const attr = (tag: string, name: string) =>
+    new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i").exec(tag);
+  for (const m of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)) {
+    const href = attr(m[1], "href");
+    const raw = href ? (href[1] ?? href[2] ?? "") : "";
+    if (!raw || raw.startsWith("#")) continue;
+    let key: string;
+    try {
+      const u = new URL(raw.replace(/&amp;/g, "&"), base);
+      if (u.protocol !== "https:" && u.protocol !== "http:") continue;
+      key = u.href;
+    } catch { continue; }
+    const words = (s: string) => decodeEntities(s).replace(/\s+/g, " ").trim();
+    const inner = words(m[2].replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, " ").replace(/<[^>]*>/g, " "));
+    const label = attr(m[1], "title") ?? attr(m[1], "aria-label");
+    const text = (inner || (label ? words(label[1] ?? label[2] ?? "") : "")).slice(0, MAX_LINK_TEXT);
+    if (!text) continue;
+    if (!out.has(key)) {
+      if (out.size >= max) continue;
+      out.set(key, []);
+    }
+    const said = out.get(key)!;
+    if (!said.includes(text)) said.push(text);
+  }
+  return Object.fromEntries([...out].map(([k, v]) => [k, v.join(" / ").slice(0, MAX_LINK_TEXT * 2)]));
 }
 
 /** T1 hosts: an authoritative filing host. Everything else is scored lower. */
@@ -489,6 +538,8 @@ export async function documentFromBody(
     // A PDF is the only thing that can be scanned: a short web page is short,
     // not an image, and marking it textless would refuse every terse homepage.
     hasTextLayer: type !== "pdf" || charsPerPage >= 100,
-    ...(type === "html" ? { links: extractLinks(body, where.finalUrl) } : {}),
+    ...(type === "html"
+      ? { links: extractLinks(body, where.finalUrl), linkTexts: extractLinkTexts(body, where.finalUrl) }
+      : {}),
   };
 }

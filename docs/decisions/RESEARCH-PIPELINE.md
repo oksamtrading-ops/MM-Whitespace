@@ -250,6 +250,26 @@ What changed:
   only, no model call. With five documents already read, the least useful in
   reading order is set aside for it, never one an analyst supplied, and the
   documents are put back in reading order so the fee filing is read first.
+- **A linked file is known by what the company's page calls it**
+  (`extractLinkTexts`, `fetch.ts`; `kindFromLink`, `live.ts`). A six-company
+  pilot of the fee re-run (run 9648e81f) read Graphite One's "Form of Proxy"
+  (`GHOQ_SEDAR_Proxy_English.pdf`: "proxy" in the address read as the
+  circular) and never its "Management Information Circular"
+  (`Graphite-One-NC-92p.pdf`: no kind in the address). The address still
+  decides when it names a kind. The link's words decide when it does not, and
+  refuse a file whose words name only a form: a form of proxy, voting
+  instruction form, request or return card for the statements, notice and
+  access, letter of transmittal, offering circular. Words that name the
+  circular beside a form ("Notice of Meeting, Management Information
+  Circular and Form of Proxy") are the circular. A kind from the words alone
+  is never a feasibility study, technical report, ESTMA or sustainability
+  report, and takes its fiscal year from the words when the address has none.
+  Swept over the 182 companies without fees, on their real investor pages:
+  21 now reach a circular the address hid, 43 no longer have a form of proxy
+  taken for their circular, and request cards, ESTMA reports and offering
+  circulars are no longer read as filings. An independent review found the
+  first version refused circulars whose words also named a form, and missed
+  "Request for Financial Statements" cards. Both are fixed and tested.
 
 ## Deliberately not in this build
 
